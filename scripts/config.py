@@ -8,12 +8,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.1.0"
-PROJECT_URL = "https://github.com/<username>/img_dedupe"
+__version__ = "0.2.0"
+PROJECT_URL = "https://github.com/sobakah/img_dedupe"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "delete_mode": "trash",       # 'trash', 'permanent', 'dry_run'
-    "viewer": "auto",             # 'auto', 'timg', 'kitty', 'identity'
+    "viewer": "auto",             # 'auto', 'identity', 'imagecompare', 'kitty', 'timg'
     "confirm": "uncertain",       # 'uncertain' (ask for borderline groups), 'always', 'never'
     "strictness": "normal",       # 'strict', 'normal', 'loose' (see STRICTNESS_PRESETS)
     "max_pixel_diff": None,       # number overrides the strictness preset
@@ -23,6 +23,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "hash_size": 8,               # dhash grid; hash has 2*size*size bits (128 by default)
     "hash_max_distance": 28,      # candidate filter only (out of 128 bits); lenient on purpose
     "color": "auto",              # 'auto', 'always', 'never'
+    "include_videos": True,       # also find identical and remuxed copies of videos
     "rename_numbered": True,      # strip "(1)" from a kept copy when the group shows it is a copy number
     "save_sessions": True,        # save review progress so it can be resumed (not for dry runs)
     "log_file": None,             # null = project folder or state dir (see README), false = off, or a path
@@ -34,7 +35,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 
 VALID_CHOICES = {
     "delete_mode": ("trash", "permanent", "dry_run"),
-    "viewer": ("auto", "timg", "kitty", "identity"),
+    "viewer": ("auto", "identity", "imagecompare", "kitty", "timg"),
     "confirm": ("uncertain", "always", "never"),
     "strictness": ("strict", "normal", "loose"),
     "color": ("auto", "always", "never"),
@@ -73,7 +74,7 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
         elif key in VALID_CHOICES and value not in VALID_CHOICES[key]:
             warnings.append(f"Invalid value {value!r} for '{key}', using {DEFAULT_CONFIG[key]!r}. "
                             f"Choices: {', '.join(VALID_CHOICES[key])}.")
-        elif key in ("rename_numbered", "save_sessions") and not isinstance(value, bool):
+        elif key in ("rename_numbered", "save_sessions", "include_videos") and not isinstance(value, bool):
             warnings.append(f"'{key}' must be true or false, using {DEFAULT_CONFIG[key]!r}.")
         elif key == "log_file" and not (value is None or value is False or isinstance(value, str)):
             warnings.append("'log_file' must be null, false or a path, using the default location.")

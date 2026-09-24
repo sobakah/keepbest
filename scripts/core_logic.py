@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +20,10 @@ from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, analyze_image,
 from .ui import (Column, StyleUI, badge, confirm, dim, error, info, print_banner,
                 print_menu, print_primary_action, print_table, progress,
                 safe_input, success, truncate, warn)
+from .video import describe as describe_video
+from .video import is_video, track_signature, video_stream_hash
+from .video import probe as probe_video
+from .video import tools_available as video_tools_available
 from .viewer import open_image_viewer
 
 log = logging.getLogger(__name__)
@@ -31,8 +37,10 @@ class UserQuit(Exception):
 class Stats:
     scanned: int = 0
     exact_deleted: int = 0
+    remux_deleted: int = 0        # videos with the same stream in another container
     similar_deleted: int = 0
     groups_skipped: int = 0
+    groups_ignored: int = 0       # marked "not duplicates"
     renamed: int = 0
     failed: int = 0
     space_saved: int = 0
@@ -42,28 +50,42 @@ class RunContext:
     """Services for one run: action log, saved session and the rename default."""
 
     def __init__(self, action_log=None, store=None, matching: dict | None = None,
-                 created: str | None = None, rename: bool = True):
+                 created: str | None = None, rename: bool = True, dry: bool = False,
+                 scanned: int = 0):
         self.log = action_log
         self.store = store
         self.matching = matching or {}
         self.created = created or datetime.now().isoformat(timespec="seconds")
         self.rename = rename
+        self.dry = dry            # a dry run: nothing was deleted, the session must say so
+        self.scanned = scanned
         self.groups: list[Group] | None = None
+        self.exact_groups: list[ExactGroup] = []   # kept for dry runs, to carry them out later
         self.index = 0
+        self.finished = False
+        self.ignores = None       # IgnoreList of pairs marked "not duplicates"
 
     def record(self, kind: str, path: Path, kept: Path | None = None, detail: str = "") -> None:
         if self.log is not None:
             self.log.action(kind, path, kept, detail)
 
-    def save(self, groups=None, index: int | None = None) -> None:
+    def save(self, groups=None, index: int | None = None, finished: bool | None = None) -> None:
         if groups is not None:
             self.groups = groups
         if index is not None:
             self.index = index
-        if self.store is None or self.groups is None:
+        if finished is not None:
+            self.finished = finished
+        # Nothing is worth saving before the groups are known, except a finished dry run.
+        if self.store is None or (self.groups is None and not self.finished):
             return
-        self.store.save({"created": self.created, "matching": self.matching, "index": self.index,
-                         "groups": [g.to_dict() for g in self.groups]})
+        self.store.save({
+            "created": self.created, "matching": self.matching, "index": self.index,
+            "dry_run": self.dry, "finished": self.finished, "scanned": self.scanned,
+            "groups": [g.to_dict() for g in self.groups or []],
+            # A real run removed its exact copies right away; a dry run still has to.
+            "exact_groups": [e.to_dict() for e in self.exact_groups] if self.dry else [],
+        })
 
     @property
     def has_saved_session(self) -> bool:
@@ -137,6 +159,8 @@ def execute_deletion(keep: Path, others: list[tuple[Path, int]], delete_mode: st
         stats.space_saved += size
         if kind == "exact":
             stats.exact_deleted += 1
+        elif kind == "remux":
+            stats.remux_deleted += 1
         else:
             stats.similar_deleted += 1
     return removed
@@ -175,31 +199,74 @@ def rename_kept(keep: Path, group_paths: list[Path], delete_mode: str, stats: St
 # --- Stage 1 -----------------------------------------------------------------
 @dataclass
 class ExactGroup:
-    """Byte-identical files; files[0] is kept. Each entry: path, size, mtime_ns."""
+    """Files with identical content; files[0] is kept. Each entry: path, size,
+    mtime_ns, and for remuxes a 'streams' description.
+
+    kind "exact": byte-identical files. kind "remux": videos whose video stream
+    is identical, in different containers (tracks may differ).
+    """
     files: list[dict]
+    kind: str = "exact"
 
     @property
     def paths(self) -> list[Path]:
         return [f["path"] for f in self.files]
 
+    def to_dict(self) -> dict:
+        return {"kind": self.kind, "files": [{**f, "path": str(f["path"])} for f in self.files]}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ExactGroup":
+        return cls([{**f, "path": Path(f["path"])} for f in data["files"]], data.get("kind", "exact"))
+
 
 EXACT_REASON = "exact copy (identical bytes), automatic"
+REMUX_REASON = "remux (same video stream, other container)"
+
+
+def _reason(group: ExactGroup, how: str) -> str:
+    if group.kind == "remux":
+        return f"{REMUX_REASON}, {how}"
+    return f"exact copy (identical bytes), {how}"
+
+
+def _exact_heading(group: ExactGroup, number: int, total: int, extra: str = "") -> None:
+    if group.kind == "remux":
+        label = badge("REMUX", StyleUI.CYAN)
+        detail = f"{len(group.files)} files · same video stream in different containers"
+    else:
+        label = badge("IDENTICAL", StyleUI.MAGENTA)
+        detail = f"{len(group.files)} files · {format_size(group.files[0]['size'])} each"
+    print(f"\n{StyleUI.BOLD}[{number}/{total}]{StyleUI.RESET} {label} {extra}{detail}")
+
+
+def _exact_table(group: ExactGroup, rel, keep_index: int = 0) -> None:
+    remux = group.kind == "remux"
+    rows = []
+    for i, f in enumerate(group.files):
+        kept = i == keep_index
+        row = [("▶", StyleUI.GREEN + StyleUI.BOLD) if kept else " ",
+               (f"[{i}]", "key"),
+               ("KEEP", StyleUI.GREEN) if kept else ("DEL", StyleUI.RED),
+               (rel(f["path"]), StyleUI.BOLD) if kept else rel(f["path"])]
+        if remux:
+            row += [format_size(f["size"]), (f.get("streams", ""), StyleUI.GRAY)]
+        rows.append(row)
+    columns = [Column(""), Column("#"), Column("Action"), Column("File", flex=True)]
+    if remux:
+        columns += [Column("Size", align="right"), Column("Streams", optional=True)]
+    print_table(columns, rows)
 
 
 def _apply_exact(group: ExactGroup, number: int, total: int, config: dict, stats: Stats,
-                 rel, ctx: RunContext, reason: str = EXACT_REASON) -> Path:
-    """Show one exact group and remove its copies. Returns the kept file's path."""
-    keep, size = group.paths[0], group.files[0]["size"]
-    print(f"\n{StyleUI.BOLD}[{number}/{total}]{StyleUI.RESET} {badge('IDENTICAL', StyleUI.MAGENTA)} "
-          f"{len(group.files)} files · {format_size(size)} each")
-    rows = [[("▶", StyleUI.GREEN + StyleUI.BOLD) if i == 0 else " ",
-             (f"[{i}]", "key"),
-             ("KEEP", StyleUI.GREEN) if i == 0 else ("DEL", StyleUI.RED),
-             (rel(p), StyleUI.BOLD) if i == 0 else rel(p)]
-            for i, p in enumerate(group.paths)]
-    print_table([Column(""), Column("#"), Column("Action"), Column("File", flex=True)], rows)
-    execute_deletion(keep, [(p, size) for p in group.paths[1:]], config["delete_mode"], stats, "exact",
-                     rel, ctx, reason)
+                 rel, ctx: RunContext, reason: str | None = None, show: bool = True) -> Path:
+    """Show one exact/remux group and remove its copies. Returns the kept file's path."""
+    keep = group.paths[0]
+    if show:
+        _exact_heading(group, number, total)
+        _exact_table(group, rel)
+    execute_deletion(keep, [(f["path"], f["size"]) for f in group.files[1:]], config["delete_mode"], stats,
+                     group.kind, rel, ctx, reason or _reason(group, "automatic"))
     if ctx.rename:
         keep = rename_kept(keep, group.paths, config["delete_mode"], stats, rel, ctx)
     return keep
@@ -248,6 +315,122 @@ def find_exact_duplicates(files: list[Path], config: dict, stats: Stats, rel,
     return sorted(remaining), groups
 
 
+def _remux_decision(group: ExactGroup, number: int, total: int, config: dict, rel) -> int | None:
+    """Ask which file of a remux group to keep. Returns its index, or None to skip."""
+    count = len(group.files)
+    others = "1" if count == 2 else f"1-{count - 1}"
+    while True:
+        _exact_heading(group, number, total, extra=badge("TRACKS DIFFER", StyleUI.YELLOW) + " ")
+        dim("The video is identical; the files differ in their audio or subtitle tracks.")
+        _exact_table(group, rel)
+        fate = {"trash": "move the other {n} to the trash", "permanent": "permanently delete the other {n}",
+                "dry_run": "delete the other {n} (dry run)"}.get(config["delete_mode"], "remove the other {n}")
+        print_primary_action("Enter", f"Keep ▶ #0 {truncate(rel(group.paths[0]), 40, keep_end=True)}, "
+                                      + fate.format(n=count - 1))
+        print_menu([("Resolve", [(others, "Keep that file instead"), ("s", "Skip, keep all files")]),
+                    ("Navigate", [("q", "Quit")])])
+        choice = safe_input(f"{StyleUI.BOLD}Remux {number}/{total} action: {StyleUI.RESET}").strip().lower()
+        if choice == "q":
+            raise UserQuit
+        if choice == "s":
+            dim("Skipped - all files kept.")
+            return None
+        keep_index = 0 if choice == "" else int(choice) if choice.isdigit() else None
+        if keep_index is None or not 0 <= keep_index < count:
+            warn("Unknown option.")
+            continue
+        if keep_index != 0:
+            print()
+            _exact_table(group, rel, keep_index=keep_index)
+        if config["delete_mode"] == "permanent" and not confirm(
+                f"{StyleUI.RED}Permanently delete {count - 1} file(s)? This cannot be undone.{StyleUI.RESET}"):
+            info("Nothing deleted.")
+            continue
+        return keep_index
+
+
+def find_remuxes(files: list[Path], config: dict, confirm_mode: str, stats: Stats, rel,
+                 ctx: RunContext) -> tuple[list[Path], list[ExactGroup]]:
+    """Find videos whose video stream is identical in different containers.
+
+    ffprobe reads only the headers; the stream hash (which reads the whole file,
+    without decoding) is computed only for videos that another video could
+    match: same codec and resolution, nearly the same duration.
+    Returns (files left, the remux groups carried out)."""
+    videos = [f for f in files if is_video(f)]
+    if len(videos) < 2:
+        return files, []
+    print_banner("Stage 1 · Remuxed videos")
+    if not video_tools_available():
+        warn("ffmpeg/ffprobe not found - remuxed videos can't be detected (identical copies still are).")
+        return files, []
+
+    workers = min(8, os.cpu_count() or 4)
+    with concurrent.futures.ThreadPoolExecutor(workers) as pool:
+        metas = []
+        with progress("Reading video details", len(videos)) as bar:
+            for meta in pool.map(probe_video, videos):
+                metas.append(meta)
+                bar.advance()
+    unreadable = [v for v, m in zip(videos, metas) if m is None]
+    if unreadable:
+        warn(f"{len(unreadable)} video(s) could not be read and were left out of the remux check.")
+    metas = [m for m in metas if m is not None]
+
+    # Candidates: same codec and resolution, durations within 1 s (or 1 %).
+    buckets = defaultdict(list)
+    for meta in metas:
+        buckets[(meta["codec"], meta["width"], meta["height"])].append(meta)
+    candidates = []
+    for bucket in buckets.values():
+        bucket.sort(key=lambda m: m["duration"])
+        for i, meta in enumerate(bucket):
+            tolerance = max(1.0, meta["duration"] * 0.01)
+            neighbours = bucket[max(0, i - 1):i] + bucket[i + 1:i + 2]
+            if any(abs(meta["duration"] - n["duration"]) <= tolerance for n in neighbours):
+                candidates.append(meta)
+
+    by_hash = defaultdict(list)
+    if candidates:
+        with concurrent.futures.ThreadPoolExecutor(min(4, workers)) as pool:
+            with progress("Hashing video streams", len(candidates)) as bar:
+                for meta, digest in zip(candidates, pool.map(
+                        lambda m: video_stream_hash(m["path"], m["codec"]), candidates)):
+                    if digest is None:
+                        warn(f"Could not read the video stream of {rel(meta['path'])}; left out.")
+                    else:
+                        by_hash[(meta["codec"], digest)].append(meta)
+                    bar.advance()
+
+    found = [sorted(g, key=lambda m: (-len(m["audio"]), -len(m["subtitles"]), has_copy_number(m["path"]),
+                                      m["mtime_ns"], str(m["path"])))
+             for g in by_hash.values() if len(g) > 1]
+    found.sort(key=lambda g: str(g[0]["path"]).lower())
+    if not found:
+        dim("No remuxed videos found.")
+        return files, []
+
+    in_groups = {m["path"] for g in found for m in g}
+    remaining = [f for f in files if f not in in_groups]
+    groups: list[ExactGroup] = []
+    for number, members in enumerate(found, 1):
+        group = ExactGroup([{"path": m["path"], "size": m["size"], "mtime_ns": m["mtime_ns"],
+                             "streams": describe_video(m)} for m in members], kind="remux")
+        same_tracks = len({track_signature(m) for m in members}) == 1
+        ask = confirm_mode == "always" or (confirm_mode == "uncertain" and not same_tracks)
+        keep_index = _remux_decision(group, number, len(found), config, rel) if ask else 0
+        if keep_index is None:
+            remaining.extend(group.paths)
+            continue
+        if keep_index:
+            group.files.insert(0, group.files.pop(keep_index))
+        how = "automatic" if not ask else ("confirmed by user" if keep_index == 0 else "chosen by user")
+        remaining.append(_apply_exact(group, number, len(found), config, stats, rel, ctx,
+                                      reason=_reason(group, how), show=not ask))
+        groups.append(group)
+    return sorted(remaining), groups
+
+
 # --- Stage 2: finding groups -------------------------------------------------
 _SAVED_FIELDS = ("width", "height", "resolution", "format", "format_rank", "lossless",
                  "bpp", "age", "size", "mtime_ns", "numbered")
@@ -259,7 +442,7 @@ class Group:
     diffs: list[int | None]       # difference of each image to images[0]
     limit: int
     borderline_above: float
-    status: str = "pending"       # pending | skipped | done
+    status: str = "pending"       # pending | skipped | done | ignored ("not duplicates")
     kept: int | None = None
     removed: int = 0
     rename: bool = True           # strip "(1)" from the kept file's name
@@ -277,6 +460,11 @@ class Group:
     def paths(self) -> list[Path]:
         return [m["path"] for m in self.images]
 
+    @property
+    def is_open(self) -> bool:
+        """Still waiting for a decision (not resolved, not marked "not duplicates")."""
+        return self.status in ("pending", "skipped")
+
     def verdict(self) -> str:
         if self.borderline:
             return badge("BORDERLINE", StyleUI.YELLOW)
@@ -287,6 +475,8 @@ class Group:
             return badge("DONE   ", StyleUI.GREEN)
         if self.status == "skipped":
             return badge("SKIPPED", StyleUI.YELLOW)
+        if self.status == "ignored":
+            return badge("NOT DUP", StyleUI.MAGENTA)
         return badge("OPEN   ", StyleUI.GRAY)
 
     def to_dict(self) -> dict:
@@ -369,6 +559,33 @@ def _parallel(executor, fn, items: list, label: str, *extra) -> list:
             results.append(result)
             bar.advance()
     return results
+
+
+def drop_ignored(groups: list[Group], ignores) -> tuple[list[Group], int]:
+    """Leave out images marked "not duplicates" of their group's recommended image.
+    Returns (remaining groups, images left out)."""
+    if ignores is None or not ignores.enabled or not len(ignores):
+        return groups, 0
+    kept, hidden = [], 0
+    for group in groups:
+        if not group.is_open:
+            kept.append(group)
+            continue
+        pairs = [(m, d) for m, d in zip(group.images[1:], group.diffs[1:])
+                 if not ignores.contains(group.images[0], m)]
+        hidden += len(group.images) - 1 - len(pairs)
+        if pairs:
+            group.images = [group.images[0]] + [m for m, _ in pairs]
+            group.diffs = [None] + [d for _, d in pairs]
+            kept.append(group)
+    return kept, hidden
+
+
+def report_ignored(hidden: int, groups: list[Group]) -> None:
+    if hidden:
+        remaining = sum(g.is_open for g in groups)
+        dim(f"{hidden} image(s) you marked as not duplicates were left out, {remaining} group(s) remain "
+            f"(--no-ignore shows them again).")
 
 
 def find_groups(files: list[Path], config: dict, rel) -> list[Group]:
@@ -539,7 +756,10 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
         _group_table(group, rel)
 
         print_primary_action("Enter", _keep_description(group, config["delete_mode"], rel))
-        resolve = [(others, "Keep that image instead"), ("s", "Skip, keep all files")]
+        resolve = [(others, "Keep that image instead"), ("s", "Skip, keep all files"),
+                   ("i", "Not duplicates - don't show again")]
+        if count > 2:
+            resolve.append((f"i1-i{count - 1}", "Only that image is not a duplicate"))
         if renamable:
             resolve.append(("n", f"Remove \"(1)\" from kept name: {'on' if group.rename else 'off'}"))
         print_menu([
@@ -562,13 +782,42 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
             return "prev"
         if choice == "t":
             return "overview"
+        if choice == "i":
+            for meta in group.images[1:]:
+                ctx.ignores.add(group.images[0], meta)
+            if group.status == "skipped":
+                stats.groups_skipped -= 1
+            group.status = "ignored"
+            stats.groups_ignored += 1
+            dim("Marked as not duplicates - this group won't be shown again.")
+            return "next"
+        single = re.fullmatch(r"i(\d+)", choice)
+        if single:
+            number = int(single[1])
+            if not 1 <= number < count:
+                warn(f"Choose an image from 1 to {count - 1}.")
+                continue
+            ctx.ignores.add(group.images[0], group.images[number])
+            dim(f"Marked #{number} {rel(group.images[number]['path'])} as not a duplicate.")
+            del group.images[number], group.diffs[number]
+            if len(group.images) == 1:
+                if group.status == "skipped":
+                    stats.groups_skipped -= 1
+                group.status = "ignored"
+                stats.groups_ignored += 1
+                return "next"
+            count = len(group.images)
+            others = "1" if count == 2 else f"1-{count - 1}"
+            renamable = any(rename_target(p, group.paths) for p in group.paths)
+            ctx.save()
+            continue
         if choice == "n" and renamable:
             group.rename = not group.rename
             ctx.save()
             continue
         if choice == "v":
-            open_image_viewer(group.paths, config["viewer"])
-            dim(f"Opened {count} images with the '{config['viewer']}' viewer.")
+            used = open_image_viewer(group.paths, config["viewer"])
+            dim(f"Opened {count} images with {used}.")
             continue
 
         # Enter keeps the recommendation; "k" still works for old muscle memory.
@@ -594,8 +843,13 @@ def _handled_screen(group: Group, position: str, rel) -> str:
     print_banner(f"[{position}] Duplicate group · {len(group.images)} images")
     print(_group_heading(group))
     print()
-    _group_table(group, rel, keep_index=group.kept or 0, done=True)
-    info(f"\nAlready handled: kept #{group.kept}, {group.removed} file(s) removed.")
+    if group.status == "ignored":
+        _group_table(group, rel)
+        info("\nMarked as not duplicates - all files were kept. Delete .img_dedupe_ignore.json "
+             "in the scanned folder to be asked about such pairs again.")
+    else:
+        _group_table(group, rel, keep_index=group.kept or 0, done=True)
+        info(f"\nAlready handled: kept #{group.kept}, {group.removed} file(s) removed.")
     print_primary_action("Enter", "Continue")
     print_menu([("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])])
     choice = safe_input(f"{StyleUI.BOLD}Group {position} action: {StyleUI.RESET}").strip().lower()
@@ -618,9 +872,13 @@ def _overview(groups: list[Group], current: int | None, rel) -> int | None:
 
         done = sum(g.status == "done" for g in groups)
         skipped = sum(g.status == "skipped" for g in groups)
-        pending = len(groups) - done - skipped
-        print(f"\n{StyleUI.BOLD}Progress:{StyleUI.RESET} {StyleUI.GREEN}{done} done{StyleUI.RESET}   "
-              f"{StyleUI.YELLOW}{skipped} skipped{StyleUI.RESET}   {StyleUI.GRAY}{pending} open{StyleUI.RESET}")
+        ignored = sum(g.status == "ignored" for g in groups)
+        pending = len(groups) - done - skipped - ignored
+        progress_line = (f"\n{StyleUI.BOLD}Progress:{StyleUI.RESET} {StyleUI.GREEN}{done} done{StyleUI.RESET}   "
+                         f"{StyleUI.YELLOW}{skipped} skipped{StyleUI.RESET}   ")
+        if ignored:
+            progress_line += f"{StyleUI.MAGENTA}{ignored} not duplicates{StyleUI.RESET}   "
+        print(progress_line + f"{StyleUI.GRAY}{pending} open{StyleUI.RESET}")
         if current is not None:
             print_primary_action("Enter", f"Continue with group {current + 1}")
         else:
@@ -660,7 +918,9 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
                 if choice is not None:
                     index, revisit = choice, True
                     continue
-            left = sum(g.status != "done" for g in groups)
+            if ctx.dry:  # a dry run's session is always kept, to carry it out later
+                return True
+            left = sum(g.is_open for g in groups)
             if left and ctx.store is not None:
                 return confirm(f"Keep the saved session to come back to the {left} skipped group(s) later?")
             return False
@@ -669,7 +929,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
         position = f"{index + 1}/{total}"
         needs_prompt = confirm_mode == "always" or (confirm_mode == "uncertain" and group.borderline)
 
-        if group.status == "done":
+        if not group.is_open:
             if not revisit:
                 index += 1
                 continue
@@ -688,7 +948,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
         if navigation == "next":
             index += 1
         elif navigation == "prev":
-            earlier = [i for i in range(index) if groups[i].status != "done"]
+            earlier = [i for i in range(index) if groups[i].is_open]
             if earlier:
                 index, revisit = earlier[-1], True
             else:
@@ -707,7 +967,8 @@ def find_similar_images(files: list[Path], config: dict, confirm_mode: str, stat
     print(f"{StyleUI.BOLD}Limit:{StyleUI.RESET} {limit} ({preset})   "
           f"{StyleUI.BOLD}Confirm:{StyleUI.RESET} {confirm_mode}   {mode_badge(config['delete_mode'])}")
 
-    groups = find_groups(files, config, rel)
+    groups, hidden = drop_ignored(find_groups(files, config, rel), ctx.ignores)
+    report_ignored(hidden, groups)
     if not groups:
         dim("No visually identical images found.")
         return False, groups
@@ -731,7 +992,7 @@ def validate_groups(groups: list[Group]) -> tuple[list[Group], int, int]:
     is dropped entirely. Returns (groups, dropped groups, dropped images)."""
     kept_groups, dropped_groups, dropped_images = [], 0, 0
     for group in groups:
-        if group.status == "done":
+        if not group.is_open:
             kept_groups.append(group)
             continue
         if not _stamp_matches(group.images[0]):
@@ -749,13 +1010,18 @@ def validate_groups(groups: list[Group]) -> tuple[list[Group], int, int]:
 
 
 def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel, ctx: RunContext) -> bool:
-    print_banner("Stage 2 · Visually identical images (resumed)")
+    print_banner("Stage 2 · Visually identical images (resumed)" + (" - dry run" if ctx.dry else ""))
+    ctx.exact_groups = [ExactGroup.from_dict(e) for e in data.get("exact_groups", [])]
     groups = [Group.from_dict(g) for g in data["groups"]]
     groups, dropped_groups, dropped_images = validate_groups(groups)
+    ctx.groups = groups
     if dropped_groups or dropped_images:
         warn(f"Files changed on disk since the session was saved: {dropped_groups} group(s) and "
              f"{dropped_images} image(s) were dropped. Run a new scan to pick them up again.")
-    open_groups = [i for i, g in enumerate(groups) if g.status != "done"]
+    groups, hidden = drop_ignored(groups, ctx.ignores)
+    ctx.groups = groups
+    report_ignored(hidden, groups)
+    open_groups = [i for i, g in enumerate(groups) if g.is_open]
     if not open_groups:
         info("Nothing left to review in the saved session.")
         return False
@@ -786,7 +1052,7 @@ def _check_exact(groups: list[ExactGroup]) -> tuple[list[ExactGroup], int]:
                                     if _file_unchanged(f["path"], f["size"], f["mtime_ns"])]
         dropped += len(group.files) - len(files)
         if len(files) > 1:
-            checked.append(ExactGroup(files))
+            checked.append(ExactGroup(files, group.kind))
     return checked, dropped
 
 
@@ -824,12 +1090,12 @@ def _follow_renames(groups: list[Group], renamed: dict[Path, Path]) -> None:
 
 
 def _apply_all_exact(exact_groups: list[ExactGroup], config: dict, stats: Stats, rel,
-                     ctx: RunContext, reason: str) -> dict[Path, Path]:
+                     ctx: RunContext, how: str) -> dict[Path, Path]:
     renamed = {}
     if exact_groups:
-        print_banner("Stage 1 · Exact duplicates")
+        print_banner("Stage 1 · Exact duplicates and remuxed videos")
     for number, group in enumerate(exact_groups, 1):
-        new_path = _apply_exact(group, number, len(exact_groups), config, stats, rel, ctx, reason)
+        new_path = _apply_exact(group, number, len(exact_groups), config, stats, rel, ctx, _reason(group, how))
         if new_path != group.paths[0]:
             renamed[group.paths[0]] = new_path
     return renamed
@@ -839,8 +1105,7 @@ def apply_dry_run(exact_groups: list[ExactGroup], groups: list[Group], config: d
                   stats: Stats, rel, ctx: RunContext) -> None:
     """Carry out exactly what the dry run showed, without asking again."""
     exact_groups, dropped_files = _check_exact(exact_groups)
-    renamed = _apply_all_exact(exact_groups, config, stats, rel, ctx,
-                               "exact copy (identical bytes), as shown in the dry run")
+    renamed = _apply_all_exact(exact_groups, config, stats, rel, ctx, "as shown in the dry run")
     _follow_renames(groups, renamed)
 
     decided = [g for g in groups if g.status == "done"]
@@ -858,22 +1123,40 @@ def apply_dry_run(exact_groups: list[ExactGroup], groups: list[Group], config: d
         automatic = group.decision == "automatic"
         _resolve(group, 0, config, stats, rel, ctx, automatic=automatic, reason=reason)
     if skipped:
-        stats.groups_skipped += len(skipped)
-        dim(f"\n{len(skipped)} group(s) skipped in the dry run were left as they are.")
+        stats.groups_skipped += sum(g.status != "ignored" for g in skipped)
+        dim(f"\n{len(skipped)} group(s) skipped or marked as not duplicates in the dry run were left as they are.")
 
 
 def review_dry_run_again(exact_groups: list[ExactGroup], groups: list[Group], config: dict,
                          confirm_mode: str, stats: Stats, rel, ctx: RunContext) -> bool:
     """Apply the exact copies, then walk through the visual groups afresh."""
     exact_groups, dropped_files = _check_exact(exact_groups)
-    renamed = _apply_all_exact(exact_groups, config, stats, rel, ctx, EXACT_REASON)
+    renamed = _apply_all_exact(exact_groups, config, stats, rel, ctx, "automatic")
     _follow_renames(groups, renamed)
-    for group in groups:  # forget the dry run's decisions
-        group.status, group.kept, group.removed, group.decision = "pending", None, 0, None
+    for group in groups:  # forget the dry run's decisions, but not "not duplicates" marks
+        if group.status != "ignored":
+            group.status, group.kept, group.removed, group.decision = "pending", None, 0, None
     groups, dropped_groups, dropped_images = validate_groups(groups)
+    groups, hidden = drop_ignored(groups, ctx.ignores)
+    report_ignored(hidden, groups)
     if dropped_files or dropped_groups or dropped_images:
         warn("Some files changed on disk since the dry run and were left alone.")
     if not groups:
         return False
     print_banner("Stage 2 · Visually identical images")
     return review_groups(groups, config, confirm_mode, stats, rel, ctx)
+
+
+def planned_changes(exact_groups: list[ExactGroup], groups: list[Group], rename: bool) -> tuple[int, int]:
+    """(files a dry run would remove, files it would rename)."""
+    remove = sum(len(e.files) - 1 for e in exact_groups)
+    remove += sum(g.removed for g in groups if g.status == "done")
+    renames = sum(1 for e in exact_groups if rename and rename_target(e.paths[0], e.paths))
+    renames += sum(1 for g in groups if g.status == "done" and g.rename
+                   and rename_target(g.images[g.kept or 0]["path"], g.paths))
+    return remove, renames
+
+
+def dry_run_from_session(data: dict) -> tuple[list[ExactGroup], list[Group]]:
+    return ([ExactGroup.from_dict(e) for e in data.get("exact_groups", [])],
+            [Group.from_dict(g) for g in data.get("groups", [])])

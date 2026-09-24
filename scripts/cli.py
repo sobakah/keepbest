@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
                       help="with -r, skip this subfolder (relative to the scanned folder; repeatable)")
     scan.add_argument("--stages", choices=("1", "2", "both"), default="both",
                       help="1 = exact copies only, 2 = visual matches only, both (default)")
+    scan.add_argument("--no-videos", action="store_true", help="leave video files out of the scan")
     scan.add_argument("--strictness", choices=("strict", "normal", "loose"), help="override the configured strictness")
 
     review = parser.add_argument_group("review")
@@ -40,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--dry-run", action="store_true", help="show what would be deleted, delete nothing")
     review.add_argument("--no-rename", action="store_true",
                         help='keep "(1)" in the names of kept copies')
+    review.add_argument("--no-ignore", action="store_true",
+                        help='show pairs marked "not duplicates" again, for this run')
 
     output = parser.add_argument_group("output")
     output.add_argument("--color", choices=("auto", "always", "never"), help="override colour handling")
@@ -85,9 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     missing = missing_packages()
     if missing:
         ui.error(f"Missing required packages: {', '.join(missing)}")
-        print("Install img_dedupe with its dependencies, e.g.:")
-        print("  pipx install .          (from the project folder)")
-        print("  pip install -e .        (inside a virtual environment, for development)")
+        print("To run img_dedupe without installing it, set up the packages once in the project folder:")
+        print("  python3 -m venv .venv")
+        print(f"  .venv/bin/pip install {' '.join(missing)}")
+        print("  .venv/bin/python -m scripts /path/to/pictures")
+        print("Or install img_dedupe with pipx, which takes care of this (see the README).")
         return 2
     if not ui.HAS_READLINE and not args.auto:
         ui.warn("readline is unavailable - Tab completion and prefilled prompts are disabled. "
@@ -96,6 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     settings = {
         "stages": args.stages,
         "recursive": args.recursive,
+        "no_ignore": args.no_ignore,
+        "videos": config["include_videos"] and not args.no_videos,
         "confirm": "always" if args.interactive else "never" if args.auto else config["confirm"],
     }
 
