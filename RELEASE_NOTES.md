@@ -1,5 +1,17 @@
 # Release notes
 
+## img_dedupe 0.5.1
+
+*Released 2026-10-05*
+
+This release lets a dry run take back a decision.
+
+**Upgrading:** `pipx upgrade img-dedupe`.
+
+### New
+
+- **Undo a decision in a dry run.** A group you already decided can be opened again from the overview (`t`, then its number) and `u` takes the decision back, so you can keep another image. The group gets back all its images and the totals no longer count it. Real runs can't undo, since the files are already in the trash.
+
 ## img_dedupe 0.5.0
 
 *Released 2026-10-02*

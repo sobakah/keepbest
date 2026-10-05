@@ -181,3 +181,22 @@ def test_another_keeper_without_any_close_image_changes_nothing(library):
     group = found_group(library, ["a.png", "a edited.jpg"], [15])
     assert regroup_around(group, 1, COMPARE) is None
     assert [m["path"].name for m in group.images] == ["a.png", "a edited.jpg"]
+
+
+def test_undo_brings_back_the_images_a_chosen_keeper_took_out(library):
+    from scripts.core_logic import (Group, RunContext, Stats, _resolve, _snapshot, regroup_around,
+                                    undo_decision)
+    library.photo("a.png", 1)
+    library.variant("a.png", "a.jpg", quality=90)
+    library.variant("a.png", "a edited.jpg", pictures.with_patch, quality=90)
+    group = found_group(library, ["a.png", "a edited.jpg", "a.jpg"], [15, 2])
+    stats = Stats(scanned=3)
+    before = _snapshot(group)
+    regroup_around(group, 2, COMPARE)                          # keep a.jpg: "a edited.jpg" leaves
+    _resolve(group, 0, {"delete_mode": "dry_run"}, stats, str, RunContext(), automatic=False, before=before)
+    assert (group.status, stats.similar_deleted) == ("done", 1)
+    group = Group.from_dict(group.to_dict())                   # as saved in the session
+    undo_decision(group, stats)
+    assert [m["path"].name for m in group.images] == ["a.png", "a edited.jpg", "a.jpg"]
+    assert (group.status, group.undo, group.diffs) == ("pending", None, [None, 15, 2])
+    assert (stats.similar_deleted, stats.space_saved, stats.scanned) == (0, 0, 3)

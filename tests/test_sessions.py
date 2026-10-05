@@ -199,3 +199,31 @@ def test_a_dry_run_chosen_on_the_start_screen_can_still_be_carried_out(three_gro
     result = run_cli(three_groups.path, keys=["4", "", ""])         # trash -> dry run, start, apply
     assert "Apply exactly what the dry run showed" in result.stdout
     assert len(three_groups.files()) == 3
+
+
+# --- undoing a decision -------------------------------------------------------------
+@pytest.fixture
+def one_group(library):
+    """One group of three images: a.png (#0), a 95.jpg (#1), a.jpg (#2)."""
+    library.photo("a.png", 1)
+    library.variant("a.png", "a 95.jpg", quality=95)
+    library.variant("a.png", "a.jpg", quality=90)
+    return library
+
+
+def test_a_dry_run_decision_can_be_undone(one_group, run_cli):
+    # start, keep #1, jump to group 1 in the overview, undo, keep #0, finish, quit
+    result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "u", "", "", ""])
+    assert "Undo this decision and choose again" in result.stdout
+    assert "Decision undone - choose again." in result.stdout
+    assert summary(result)["visual"] == 2                      # counted once, not twice
+    assert one_group.files() == ["a 95.jpg", "a.jpg", "a.png"]
+    run_cli(one_group.path, keys=["", ""])                     # carry out the saved dry run
+    assert one_group.files() == ["a.png"]                      # the second choice counts
+
+
+def test_a_real_decision_offers_no_undo(one_group, run_cli):
+    # start, keep #1, jump to group 1, "u" does nothing here, finish, quit
+    result = run_cli(one_group.path, "-i", keys=["", "1", "1", "u", "", ""])
+    assert "Undo this decision" not in result.stdout
+    assert one_group.files() == ["a 95.jpg"]

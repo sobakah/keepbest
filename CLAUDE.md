@@ -21,7 +21,7 @@ Owner: sobakah (GitHub `sobakah/img_dedupe`, public). Developed on Fedora, insta
 ## Commands
 
 ```bash
-python3 -m pytest                 # 138 tests, ~10 s; video tests skip without ffmpeg
+python3 -m pytest                 # 141 tests, ~10 s; video tests skip without ffmpeg
 python3 -m pytest -k video        # a subset
 python3 -m scripts ~/Pictures --dry-run      # run from the checkout
 ```
@@ -52,6 +52,9 @@ packages"). With the pipx install: `pipx inject img-dedupe pytest`, then
   (default No). Home and root folder are refused in every mode (`is_protected`, one shared message).
 - Choosing another keeper than the recommended one (`regroup_around`) compares every other image
   with the chosen one afresh; images above the limit stay on disk and leave the group.
+- Dry runs can undo a decided group (`u` on the handled screen, `undo_decision`): `_resolve` stores
+  the group before the decision (`Group.undo`, saved in the session) and what it added to the
+  totals; undo restores both and the group is always asked again. Real runs store no undo data.
 - Before resuming a session or carrying out a dry run, every file is checked against the disk
   (size + mtime); changed or missing files are left alone.
 - `--dry-run` on the command line always wins (`config["_cli_dry_run"]`): nothing is deleted or
@@ -119,11 +122,10 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.4)
+## Open tasks (target: release 1.5)
 
-Done since 1.3 (uncommitted at the time of writing): the shared home/root message
-(`protected_message`) and the data-safety fixes above (dry-run, remux tracks, keeper recompare,
-permanent confirmation, JXL/TIFF, high bit depth); release notes are under "Unreleased".
+1.4 (data-safety fixes) and 1.4.1 (undo in dry runs) are released and tagged. New changes go
+under an "Unreleased" heading at the top of `RELEASE_NOTES.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
   Dry-run "not duplicates" marks write `.img_dedupe_ignore.json` into the picture folder, which
@@ -147,5 +149,6 @@ permanent confirmation, JXL/TIFF, high bit depth); release notes are under "Unre
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Release 1.4:** `__version__` → 1.4, turn "Unreleased" into 1.4 in `RELEASE_NOTES.md` (add the
-  home/root message under Changed), README in sync, tests, commit, tag `v1.4`, push with tags.
+- **Next release:** raise `__version__` (1.5 for behaviour changes, else 1.4.2) before tagging,
+  turn "Unreleased" into that version in `RELEASE_NOTES.md`, tests, commit, `git tag -a`, push with
+  tags. 1.4 was first tagged without the version bump, so `pipx upgrade` saw nothing new.

@@ -515,6 +515,7 @@ class Group:
     removed: int = 0
     rename: bool = True           # strip "(1)" from the kept file's name
     decision: str | None = None   # 'automatic' or 'user', for the log
+    undo: dict | None = None      # dry runs: the group before its decision, to decide again
 
     @property
     def worst(self) -> int:
@@ -548,20 +549,51 @@ class Group:
         return badge("OPEN   ", StyleUI.GRAY)
 
     def to_dict(self) -> dict:
+        undo = None
+        if self.undo is not None:
+            undo = {**self.undo, "images": [_image_to_dict(m) for m in self.undo["images"]]}
         return {
-            "images": [{"path": str(m["path"]), **{k: m[k] for k in _SAVED_FIELDS}} for m in self.images],
+            "images": [_image_to_dict(m) for m in self.images],
             "diffs": self.diffs, "limit": self.limit, "borderline_above": self.borderline_above,
             "status": self.status, "kept": self.kept, "removed": self.removed, "rename": self.rename,
-            "decision": self.decision,
+            "decision": self.decision, "undo": undo,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Group":
-        images = [{**m, "path": Path(m["path"])} for m in data["images"]]
-        return cls(images=images, diffs=list(data["diffs"]), limit=data["limit"],
-                   borderline_above=data["borderline_above"], status=data["status"],
+        undo = data.get("undo")
+        if undo is not None:
+            undo = {**undo, "images": [_image_from_dict(m) for m in undo["images"]]}
+        return cls(images=[_image_from_dict(m) for m in data["images"]], diffs=list(data["diffs"]),
+                   limit=data["limit"], borderline_above=data["borderline_above"], status=data["status"],
                    kept=data.get("kept"), removed=data.get("removed", 0), rename=data.get("rename", True),
-                   decision=data.get("decision"))
+                   decision=data.get("decision"), undo=undo)
+
+
+def _image_to_dict(meta: dict) -> dict:
+    return {"path": str(meta["path"]), **{k: meta[k] for k in _SAVED_FIELDS}}
+
+
+def _image_from_dict(data: dict) -> dict:
+    return {**data, "path": Path(data["path"])}
+
+
+def _snapshot(group: Group) -> dict:
+    """The group's images and scores as they are now, for undoing a decision."""
+    return {"images": [dict(m) for m in group.images], "diffs": list(group.diffs), "rename": group.rename}
+
+
+def undo_decision(group: Group, stats: Stats) -> None:
+    """Take back a dry run's decision: the group is open again, with the images it
+    had before (also those a chosen keeper had taken out), and the totals no
+    longer count it."""
+    undo = group.undo
+    for name, amount in undo["stats"].items():
+        setattr(stats, name, getattr(stats, name) - amount)
+    group.images = [dict(m) for m in undo["images"]]
+    group.diffs = list(undo["diffs"])
+    group.rename = undo.get("rename", group.rename)
+    group.status, group.kept, group.removed, group.decision, group.undo = "pending", None, 0, None, None
 
 
 def _candidate_pairs(hashes: list[int], n_bits: int, max_dist: int) -> set[tuple[int, int]]:
@@ -779,7 +811,15 @@ def _how(automatic: bool, keep_index: int) -> str:
 
 
 def _resolve(group: Group, keep_index: int, config: dict, stats: Stats, rel,
-             ctx: RunContext, automatic: bool, reason: str | None = None) -> None:
+             ctx: RunContext, automatic: bool, reason: str | None = None,
+             before: dict | None = None) -> None:
+    """Carry out a decision. In a dry run, the group as it was *before* (default:
+    as it is now) and what the decision added to the totals are kept, so it can
+    be undone (undo_decision)."""
+    dry = config["delete_mode"] == "dry_run"
+    if dry:
+        before = before or _snapshot(group)
+        totals = asdict(stats)
     keep = group.images[keep_index]["path"]
     others = [(m["path"], m["size"]) for i, m in enumerate(group.images) if i != keep_index]
     group.decision = "automatic" if automatic else "user"
@@ -790,6 +830,11 @@ def _resolve(group: Group, keep_index: int, config: dict, stats: Stats, rel,
         group.images[keep_index]["path"] = rename_kept(keep, group.paths, config["delete_mode"], stats, rel, ctx)
     group.kept = keep_index
     group.status = "done"
+    if dry:
+        added = {name: value - totals[name] for name, value in asdict(stats).items() if value != totals[name]}
+        group.undo = {**before, "stats": added}
+    else:  # files are really gone: nothing to undo
+        group.undo = None
 
 
 def regroup_around(group: Group, keep_index: int, config: dict) -> list[tuple[dict, int | None]] | None:
@@ -923,6 +968,7 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
             continue
 
         reason = None
+        before = _snapshot(group)  # with every image, also those a chosen keeper takes out
         if keep_index != 0:
             chosen = keep_index
             with transient(f"Comparing the other images with #{chosen}..."):
@@ -949,11 +995,14 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
             continue
         if group.status == "skipped":
             stats.groups_skipped -= 1
-        _resolve(group, keep_index, config, stats, rel, ctx, automatic=False, reason=reason)
+        _resolve(group, keep_index, config, stats, rel, ctx, automatic=False, reason=reason, before=before)
         return "next"
 
 
 def _handled_screen(group: Group, position: str, rel) -> str:
+    """A resolved or "not duplicates" group. Returns 'next', 'prev', 'overview', or
+    'undo' (only offered for a dry run's decision)."""
+    can_undo = group.status == "done" and group.undo is not None
     print_banner(f"[{position}] Duplicate group · {len(group.images)} images")
     print(_group_heading(group))
     print()
@@ -963,12 +1012,21 @@ def _handled_screen(group: Group, position: str, rel) -> str:
              "in the scanned folder to be asked about such pairs again.")
     else:
         _group_table(group, rel, keep_index=group.kept or 0, done=True)
-        info(f"\nAlready handled: kept #{group.kept}, {group.removed} file(s) removed.")
+        kept = rel(group.images[group.kept or 0]["path"])
+        if can_undo:
+            info(f"\nAlready decided in this dry run: keep {kept}, {group.removed} file(s) would be removed.")
+        else:
+            info(f"\nAlready handled: kept {kept}, {group.removed} file(s) removed.")
     print_primary_action("Enter", "Continue")
-    print_menu([("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])])
+    menu = [("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])]
+    if can_undo:
+        menu.insert(0, ("Change", [("u", "Undo this decision and choose again")]))
+    print_menu(menu)
     choice = safe_input(f"{StyleUI.BOLD}Group {position} action: {StyleUI.RESET}").strip().lower()
     if choice == "q":
         raise UserQuit
+    if choice == "u" and can_undo:
+        return "undo"
     return {"p": "prev", "t": "overview"}.get(choice, "next")
 
 
@@ -1024,6 +1082,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
     index = start
     revisit = start > 0    # arrived via overview/prev/resume: show handled groups too
     interactive = False    # at least one decision screen was shown
+    reopened = set()       # undone decisions: always asked again, never resolved automatically
 
     while True:
         if index >= total:
@@ -1043,7 +1102,8 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
 
         group = groups[index]
         position = f"{index + 1}/{total}"
-        needs_prompt = confirm_mode == "always" or (confirm_mode == "uncertain" and group.borderline)
+        needs_prompt = (confirm_mode == "always" or (confirm_mode == "uncertain" and group.borderline)
+                        or index in reopened)
 
         if not group.is_open:
             if not revisit:
@@ -1064,7 +1124,13 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
             navigation = _decision_screen(group, position, config, stats, rel, ctx)
 
         revisit = False
-        if navigation == "next":
+        if navigation == "undo":
+            undo_decision(group, stats)
+            reopened.add(index)
+            ctx.save(groups, index)
+            info("Decision undone - choose again.")
+            revisit = True
+        elif navigation == "next":
             index += 1
         elif navigation == "prev":
             earlier = [i for i in range(index) if groups[i].is_open]
@@ -1285,7 +1351,7 @@ def review_dry_run_again(exact_groups: list[ExactGroup], groups: list[Group], co
     _follow_renames(groups, renamed)
     for group in groups:  # forget the dry run's decisions, but not "not duplicates" marks
         if group.status != "ignored":
-            group.status, group.kept, group.removed, group.decision = "pending", None, 0, None
+            group.status, group.kept, group.removed, group.decision, group.undo = "pending", None, 0, None, None
     groups, dropped_groups, dropped_images = validate_groups(groups)
     groups, hidden = drop_ignored(groups, ctx.ignores)
     report_ignored(hidden, groups)
