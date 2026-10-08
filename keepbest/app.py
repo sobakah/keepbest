@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from .config import __version__
+from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
                         dry_run_from_session, format_size, mode_badge, planned_changes,
@@ -27,7 +27,7 @@ ROOT = "."
 
 # Choices per setting, in the order the setting key cycles through them.
 STAGE_OPTIONS = {"1,2,3": "all", "1,2": "identical copies (1+2)", "3": "visual only (3)"}
-_LEGACY_STAGES = {"both": "1,2,3", "1": "1,2", "2": "3"}  # values stored by sessions before 1.2.1
+_LEGACY_STAGES = {"both": "1,2,3", "1": "1,2", "2": "3"}  # values stored by sessions before 0.4.0
 
 
 def stage_options(current: str) -> dict:
@@ -481,7 +481,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         in_scope = len(scope_files)
         scope_videos = sum(1 for p in scope_files if is_video(p))
 
-        print_banner("img_dedupe · Duplicate image finder")
+        print_banner(f"{NAME} · Duplicate image finder")
         print(f"{StyleUI.BOLD}Folder:{StyleUI.RESET}  {StyleUI.GRAY}{target}{StyleUI.RESET}")
         scope = (f"{StyleUI.BOLD}{in_scope}{StyleUI.RESET} file(s) in scope "
                  f"{StyleUI.GRAY}({in_scope - scope_videos} images, {scope_videos} videos){StyleUI.RESET}")
@@ -504,11 +504,11 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         forced_dry = bool(config.get("_cli_dry_run"))
         blocked = None
         if forced_dry and session and saved_finished:
-            blocked = ("--dry-run was given, so the saved dry run is not carried out. Start img_dedupe "
+            blocked = ("--dry-run was given, so the saved dry run is not carried out. Start keepbest "
                        "without --dry-run to carry it out, or press n to discard it and scan again.")
         elif forced_dry and session and not saved_dry:
             blocked = ("--dry-run was given, but the saved session is a real run that would delete files. "
-                       "Start img_dedupe without --dry-run to resume it, or press n to discard it.")
+                       "Start keepbest without --dry-run to resume it, or press n to discard it.")
         matching = (saved or {}).get("matching") or {}
         fixed = "fixed by the saved session"
         cap = session_limit(saved) if session and not saved_finished else None
@@ -754,7 +754,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
             else "dry run applied" if applying else "dry run reviewed again" if from_dry else "new scan")
     action_log = ActionLog(
         None if dry else resolve_log_path(config["log_file"]),
-        f"img_dedupe {__version__} · folder {target} · mode {config['delete_mode']} · "
+        f"{NAME} {__version__} · folder {target} · mode {config['delete_mode']} · "
         f"limit {limit} ({preset}) · {kind}",
     )
     ctx = RunContext(
@@ -828,7 +828,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         action_log.end(f"interrupted · {_summary_text(stats)}")
         note = None
         if ctx.has_saved_session:
-            note = "Progress saved - run img_dedupe on this folder again to resume."
+            note = "Progress saved - run keepbest on this folder again to resume."
         elif applying and store is not None and store.load() is not None:
             note = ("The saved dry run is still there - carry it out again to finish; "
                     "files already handled are skipped.")
@@ -845,7 +845,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
             if result.has_changes:
                 ctx.save(finished=True)  # kept until it is carried out
                 if config.get("_cli_dry_run"):
-                    note = ("Dry run saved - to carry it out without a rescan, start img_dedupe on this "
+                    note = ("Dry run saved - to carry it out without a rescan, start keepbest on this "
                             "folder again without --dry-run and press Enter on the start screen.")
                 else:
                     note = "Dry run saved - it can also be carried out later from the start screen."

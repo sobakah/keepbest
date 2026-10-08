@@ -9,24 +9,34 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from .config import project_dir
+from .config import NAME, OLD_NAME, project_dir
 from .ui import warn
 
 SESSION_VERSION = 2          # 2: dry-run sessions and exact-copy groups
 _READABLE_VERSIONS = (1, 2)
 
 
-def state_dir() -> Path:
-    """~/.local/state/img_dedupe (or $XDG_STATE_HOME), %LOCALAPPDATA% on Windows.
-    $IMG_DEDUPE_STATE_DIR overrides it (used by the tests)."""
-    override = os.environ.get("IMG_DEDUPE_STATE_DIR")
-    if override:
-        return Path(override)
+LOG_NAME = f"{NAME}.log"
+OLD_LOG_NAME = f"{OLD_NAME}.log"
+
+
+def state_override() -> Path | None:
+    """$KEEPBEST_STATE_DIR (or the old $IMG_DEDUPE_STATE_DIR) replaces the state
+    directory and the project folder for the log and sessions (used by the tests)."""
+    value = os.environ.get("KEEPBEST_STATE_DIR") or os.environ.get("IMG_DEDUPE_STATE_DIR")
+    return Path(value) if value else None
+
+
+def state_base() -> Path:
+    """$XDG_STATE_HOME or ~/.local/state, %LOCALAPPDATA% on Windows."""
     if os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    else:
-        base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
-    return base / "img_dedupe"
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+
+
+def state_dir() -> Path:
+    """~/.local/state/keepbest, unless overridden (state_override)."""
+    return state_override() or state_base() / NAME
 
 
 def _stamp() -> str:
@@ -53,20 +63,20 @@ def _write_atomically(fd: int, tmp: str, target: Path, write) -> None:
 def resolve_log_path(setting) -> Path | None:
     """config 'log_file': null = default location, false = off, string = that file.
 
-    Default: ``img_dedupe.log`` in the project folder when running from a
+    Default: ``keepbest.log`` in the project folder when running from a
     source checkout, otherwise in the state directory
-    (~/.local/state/img_dedupe). Relative paths count from that same folder.
+    (~/.local/state/keepbest). Relative paths count from that same folder.
     """
     if setting is False:
         return None
-    base = None if os.environ.get("IMG_DEDUPE_STATE_DIR") else project_dir()
+    base = None if state_override() else project_dir()
     if base is not None and not os.access(base, os.W_OK):
         warn(f"The project folder {base} is not writable - logging to {state_dir()} instead.")
         base = None
     if base is None:
         base = state_dir()
     if setting in (None, "", True):
-        return base / "img_dedupe.log"
+        return base / LOG_NAME
     path = Path(str(setting)).expanduser()
     return path if path.is_absolute() else base / path
 
@@ -116,7 +126,7 @@ class ActionLog:
 def sessions_dir() -> Path:
     """Where saved sessions live: ``sessions/`` in the project folder when running
     from a source checkout, otherwise the state directory."""
-    project = None if os.environ.get("IMG_DEDUPE_STATE_DIR") else project_dir()
+    project = None if state_override() else project_dir()
     if project is not None and os.access(project, os.W_OK):
         return project / "sessions"
     return state_dir() / "sessions"
@@ -132,7 +142,7 @@ class SessionStore:
     def __init__(self, target: Path):
         key = hashlib.sha1(str(target).encode("utf-8")).hexdigest()[:16]
         self.path = sessions_dir() / f"{key}.json"
-        # Before 1.1, checkouts also kept their sessions in the state directory.
+        # Before 0.2.0, checkouts also kept their sessions in the state directory.
         self._legacy = state_dir() / "sessions" / f"{key}.json"
         self.target = target
         self.saved = False
@@ -194,7 +204,8 @@ class SessionStore:
         self.saved = False
 
 
-IGNORE_FILE = ".img_dedupe_ignore.json"
+IGNORE_FILE = f".{NAME}_ignore.json"
+OLD_IGNORE_FILE = f".{OLD_NAME}_ignore.json"   # read until the next mark replaces it
 
 
 class IgnoreList:
@@ -209,6 +220,7 @@ class IgnoreList:
     def __init__(self, base: Path, enabled: bool = True):
         self.base = base
         self.path = base / IGNORE_FILE
+        self._old_path = base / OLD_IGNORE_FILE
         self.enabled = enabled
         self._pairs: dict[tuple, dict] = {}
         self._warned = False
@@ -226,12 +238,13 @@ class IgnoreList:
         return tuple(sorted((a, b)))
 
     def _load(self) -> None:
+        source = self.path if self.path.exists() or not self._old_path.exists() else self._old_path
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
+            data = json.loads(source.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return
         except (OSError, ValueError) as exc:
-            warn(f"Could not read {self.path} ({exc}); marked pairs are ignored this time.")
+            warn(f"Could not read {source} ({exc}); marked pairs are ignored this time.")
             return
         for entry in data.get("pairs", []) if isinstance(data, dict) else []:
             try:
@@ -261,14 +274,21 @@ class IgnoreList:
 
     def _save(self) -> None:
         payload = {
-            "about": "Image pairs marked 'not duplicates' in img_dedupe. Delete this file to see them again.",
+            "about": f"Image pairs marked 'not duplicates' in {NAME}. Delete this file to see them again.",
             "version": 1,
             "pairs": list(self._pairs.values()),
         }
         try:
-            fd, tmp = tempfile.mkstemp(dir=self.base, prefix=".img_dedupe_ignore-", suffix=".tmp")
+            fd, tmp = tempfile.mkstemp(dir=self.base, prefix=f".{NAME}_ignore-", suffix=".tmp")
             _write_atomically(fd, tmp, self.path, lambda handle: json.dump(payload, handle, indent=1))
         except OSError as exc:
             if not self._warned:
                 self._warned = True
                 warn(f"Could not save the 'not duplicates' marks to {self.path}: {exc}")
+            return
+        try:  # the new file has every mark of the old one: it replaces it
+            self._old_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            warn(f"Could not remove the old marks file {self._old_path}: {exc}")

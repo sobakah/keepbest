@@ -36,7 +36,7 @@ def test_real_run_moves_copies_to_the_trash_and_logs_them(mixed, run_cli, isolat
     assert mixed.files() == ["a text.jpg", "a.png", "b.png"]
     trash = isolated / "home" / ".local" / "share" / "Trash" / "files"
     assert sorted(p.name for p in trash.iterdir()) == ["a copy.png", "a small.jpg", "a.jpg"]
-    log = (isolated / "state" / "img_dedupe.log").read_text()
+    log = (isolated / "state" / "keepbest.log").read_text()
     assert log.count("| TRASHED  |") == 3
     assert "exact copy (identical bytes), automatic" in log
 
@@ -90,7 +90,7 @@ def test_exclude_leaves_out_subfolders_too(library, run_cli):
     ([], ["q"], 0),                       # interactive: refused, asked for another folder (q quits)
 ])
 def test_the_home_folder_is_refused_with_the_same_message(run_cli, isolated, mode, keys, code):
-    from scripts.app import protected_message
+    from keepbest.app import protected_message
     home = isolated / "home"
     pictures.save(pictures.photo(1), home / "a.png")
     result = run_cli(home, *mode, keys=keys)
@@ -125,7 +125,7 @@ def test_marked_pairs_are_left_out(library, run_cli):
     # interactively: Enter starts, i marks the only group, Enter finishes
     result = run_cli(library.path, "--dry-run", "-i", keys=["", "i", ""])
     assert "Marked as not duplicates" in result.stdout
-    assert (library / ".img_dedupe_ignore.json").exists()
+    assert (library / ".keepbest_ignore.json").exists()
     assert summary(run_cli(library.path, "--auto", "--dry-run"))["visual"] == 0
     assert summary(run_cli(library.path, "--auto", "--dry-run", "--no-ignore"))["visual"] == 2
 
@@ -135,7 +135,7 @@ def test_keeping_another_image_removes_the_others(library, run_cli, isolated):
     library.variant("a.png", "a.jpg", quality=90)
     run_cli(library.path, "-i", keys=["", "1", ""])                 # start, keep #1, finish
     assert library.files() == ["a.jpg"]
-    assert "to the chosen image), user kept #1" in (isolated / "state" / "img_dedupe.log").read_text()
+    assert "to the chosen image), user kept #1" in (isolated / "state" / "keepbest.log").read_text()
 
 
 def test_permanent_mode_asks_once_before_starting(mixed, run_cli, config_file):
@@ -150,7 +150,7 @@ def test_permanent_mode_asks_once_before_starting(mixed, run_cli, config_file):
     assert "a copy.png" not in " ".join(mixed.files())
 
 
-@pytest.mark.skipif(not __import__("scripts.image_utils").image_utils.JXL_SUPPORTED,
+@pytest.mark.skipif(not __import__("keepbest.image_utils").image_utils.JXL_SUPPORTED,
                     reason="pillow-jxl-plugin not installed")
 @pytest.mark.parametrize("prefer_jxl, kept", [(False, "a.png"), (True, "a.jxl")])
 def test_prefer_jxl_chooses_between_png_and_jpeg_xl(library, run_cli, config_file, prefer_jxl, kept):

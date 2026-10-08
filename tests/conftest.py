@@ -1,4 +1,4 @@
-"""Shared fixtures and helpers for the img_dedupe tests.
+"""Shared fixtures and helpers for the keepbest tests.
 
 Every test runs isolated: its own home folder, config and state folder, so
 your real config, log, sessions and trash are never touched.
@@ -42,7 +42,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))  # the trash lives here
-    monkeypatch.setenv("IMG_DEDUPE_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("KEEPBEST_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("NO_COLOR", "1")
     return tmp_path
 
@@ -105,13 +105,13 @@ def config_file(tmp_path):
 
 @pytest.fixture
 def run_cli(config_file):
-    """Run img_dedupe as a user would: run_cli(folder, "--auto", keys=["", "q"]).
+    """Run keepbest as a user would: run_cli(folder, "--auto", keys=["", "q"]).
 
     *keys* are typed answers, one per prompt (use "" for Enter). The program
     always gets the test's own config file, so no real config is read.
     """
     def run(*args, keys=(), env=None, timeout=180):
-        argv = [sys.executable, "-m", "scripts", "-c", str(config_file.path), "--color", "never", *map(str, args)]
+        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", *map(str, args)]
         stdin = "".join(f"{key}\n" for key in keys)
         return subprocess.run(argv, input=stdin, capture_output=True, text=True, cwd=REPO,
                               env={**os.environ, **(env or {})}, timeout=timeout)

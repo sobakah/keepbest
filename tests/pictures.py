@@ -1,7 +1,7 @@
 """Synthetic test pictures that behave like photos: deterministic, no downloads.
 
 A picture mixes smooth colour areas, medium detail, fine texture and a few
-shapes, so that re-encoded copies score low in img_dedupe's comparison while
+shapes, so that re-encoded copies score low in keepbest's comparison while
 small edits (text, a patch, a crop) score high.
 """
 

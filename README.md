@@ -1,4 +1,4 @@
-# img_dedupe
+# keepbest
 
 Finds duplicate images and videos in a folder and removes the redundant copies, keeping the best one.
 
@@ -13,28 +13,37 @@ It is deliberately cautious: pictures that merely *look similar* (an edited vers
 You need Python 3.9 or newer and [pipx](https://pipx.pypa.io/) (on Fedora: `sudo dnf install pipx`).
 
 ```bash
-pipx install git+https://github.com/sobakah/img_dedupe.git
+pipx install git+https://github.com/sobakah/keepbest.git
 ```
 
-With JPEG XL support: `pipx install "img-dedupe[jxl] @ git+https://github.com/sobakah/img_dedupe.git"`. To install a specific release, add it to the URL: `...img_dedupe.git@v0.4.0`.
+With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`. To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases (0.1.0 to 0.5.1).
 
 **For videos**, also install ffmpeg (a system package): on Fedora `sudo dnf install ffmpeg-free`, or `ffmpeg` from RPM Fusion. Without it, identical video copies are still found, but not remuxes.
 
 | Task | Command |
 |---|---|
-| Update | `pipx upgrade img-dedupe` (new version) or `pipx reinstall img-dedupe` (latest commit) |
-| Uninstall | `pipx uninstall img-dedupe` |
-| `img_dedupe` not found | run `pipx ensurepath` once and open a new terminal |
+| Update | `pipx upgrade keepbest` (new version) or `pipx reinstall keepbest` (latest commit) |
+| Uninstall | `pipx uninstall keepbest` |
+| `keepbest` not found | run `pipx ensurepath` once and open a new terminal |
 
-The package is called `img-dedupe` (with a hyphen); the command is `img_dedupe`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
+The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
+
+**Coming from img_dedupe?** keepbest is its new name (since 1.0.0). `pipx upgrade` can't follow a rename, so switch once:
+
+```bash
+pipx uninstall img-dedupe
+pipx install git+https://github.com/sobakah/keepbest.git
+```
+
+On its first start, keepbest moves your config, log and saved sessions from the old `img_dedupe` folders to the new ones and says so. "Not duplicates" marks in your picture folders are taken over the next time you use that folder.
 
 ## First run
 
 ```bash
-img_dedupe ~/Pictures --dry-run
+keepbest ~/Pictures --dry-run
 ```
 
-`--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start img_dedupe on the same folder without `--dry-run` and press Enter on the start screen.
+`--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and press Enter on the start screen.
 
 The program opens on a **start screen** with the folder, the number of files in scope and all settings. Each setting shows its choices: the current one in bold, the others greyed out. Press a setting's number to switch it, and **Enter** to start.
 
@@ -95,7 +104,7 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `▶`. By defa
 
 In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing.
 
-**"Not duplicates" marks** (`i`) are saved in a hidden file, `.img_dedupe_ignore.json`, in the scanned folder, so they stay with your pictures. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
+**"Not duplicates" marks** (`i`) are saved in a hidden file, `.keepbest_ignore.json`, in the scanned folder, so they stay with your pictures. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
 
 ## Dry runs and saved progress
 
@@ -125,7 +134,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 | `identity` | [Identity](https://apps.gnome.org/Identity/): tabs or side by side. `flatpak install flathub org.gnome.gitlab.YaLTeR.Identity` |
 | `kitty`, `timg` | Previews inside the terminal (kitty terminal, or `timg`) |
 
-If the chosen app is missing, img_dedupe says so and uses your default viewer. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
+If the chosen app is missing, keepbest says so and uses your default viewer. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
 ## Command-line options
 
@@ -183,12 +192,12 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 
 | File | Installed with pipx | Running from the project folder |
 |---|---|---|
-| Config `config.json` | `~/.config/img_dedupe/` | the project folder, else `~/.config/img_dedupe/` |
-| Log `img_dedupe.log` | `~/.local/state/img_dedupe/` | the project folder |
-| Saved sessions | `~/.local/state/img_dedupe/sessions/` | `sessions/` in the project folder |
-| "Not duplicates" marks | `.img_dedupe_ignore.json` in the scanned folder | the same |
+| Config `config.json` | `~/.config/keepbest/` | the project folder, else `~/.config/keepbest/` |
+| Log `keepbest.log` | `~/.local/state/keepbest/` | the project folder |
+| Saved sessions | `~/.local/state/keepbest/sessions/` | `sessions/` in the project folder |
+| "Not duplicates" marks | `.keepbest_ignore.json` in the scanned folder | the same |
 
-`$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\img_dedupe`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
+`$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\keepbest`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
 
 **The log** records every change, one line per file: what happened, the full path, the file kept instead, and why. Trashed files can be restored from the system trash using these paths. Dry runs are not logged.
 
@@ -200,7 +209,7 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 
 ## Other ways to run it
 
-**From a local clone:** `git clone https://github.com/sobakah/img_dedupe.git`, then `pipx install .` in that folder. To update, `git pull` and `pipx install --force .`.
+**From a local clone:** `git clone https://github.com/sobakah/keepbest.git`, then `pipx install .` in that folder. To update, `git pull` and `pipx install --force .`.
 
 **For development:** an editable install, where code changes take effect immediately:
 
@@ -209,57 +218,57 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[jxl]"
 ```
 
-**Without installing:** get the code (clone it, or *Code → Download ZIP* on GitHub and rename `img_dedupe-main` to `img_dedupe`), set up the two packages once, and start it as a module:
+**Without installing:** get the code (clone it, or *Code → Download ZIP* on GitHub and rename `keepbest-main` to `keepbest`), set up the two packages once, and start it with `run.py`:
 
 ```bash
-cd ~/img_dedupe
+cd ~/keepbest
 python3 -m venv .venv
 .venv/bin/pip install Pillow send2trash        # optional: pillow-jxl-plugin
-.venv/bin/python -m scripts ~/Pictures
+.venv/bin/python run.py ~/Pictures
 ```
 
-From another folder, tell Python where the project is: `PYTHONPATH=~/img_dedupe ~/img_dedupe/.venv/bin/python -m scripts ~/Pictures`. As a shortcut, add this line to `~/.bashrc`:
+`run.py` works from any folder: `~/keepbest/.venv/bin/python ~/keepbest/run.py ~/Pictures`. As a shortcut, add this line to `~/.bashrc`:
 
 ```bash
-alias img_dedupe='PYTHONPATH=~/img_dedupe ~/img_dedupe/.venv/bin/python -m scripts'
+alias keepbest='~/keepbest/.venv/bin/python ~/keepbest/run.py'
 ```
 
 | Error | Cause |
 |---|---|
-| *attempted relative import with no known parent package* | started as `python3 scripts/…`; use `python3 -m scripts` |
-| *No module named scripts* | started from another folder without `PYTHONPATH` |
+| *the 'keepbest' package was not found* | the `keepbest/` folder is missing next to `run.py`; the message says how to fix it |
+| *attempted relative import with no known parent package* | started as `python3 keepbest/…`; use `run.py` or `python3 -m keepbest` |
 | *Missing required packages* | started without `.venv/bin/python` |
 
-On Windows (not tested yet): `py -m venv .venv`, `.venv\Scripts\pip install Pillow send2trash pyreadline3`, `.venv\Scripts\python -m scripts C:\Pictures`.
+On Windows (not tested yet): `py -m venv .venv`, `.venv\Scripts\pip install Pillow send2trash pyreadline3`, `.venv\Scripts\python run.py C:\Pictures`.
 
 ## Running the tests
 
-The tests belong to the repository, not to the installed program: pipx installs only img_dedupe itself, without the tests or pytest. So you need a clone of the repository, and the tests check the code in that clone.
+The tests belong to the repository, not to the installed program: pipx installs only keepbest itself, without the tests or pytest. So you need a clone of the repository, and the tests check the code in that clone.
 
 **With your pipx installation.** It already has Pillow and send2trash; add pytest to it once, then run the tests of a clone with its Python:
 
 ```bash
-pipx inject img-dedupe pytest
-git clone https://github.com/sobakah/img_dedupe.git
-cd img_dedupe
-git checkout v0.4.0        # optional: the version you have installed (see img_dedupe --version)
-"$(pipx environment --value PIPX_LOCAL_VENVS)/img-dedupe/bin/python" -m pytest
+pipx inject keepbest pytest
+git clone https://github.com/sobakah/keepbest.git
+cd keepbest
+git checkout 1.0.0       # optional: the version you have installed (see keepbest --version)
+"$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest
 ```
 
-`pipx uninject img-dedupe pytest` removes pytest again; the program keeps working. (`pipx run pytest` does *not* work: it starts pytest in a separate environment without Pillow.)
+`pipx uninject keepbest pytest` removes pytest again; the program keeps working. (`pipx run pytest` does *not* work: it starts pytest in a separate environment without Pillow.)
 
 **In a development setup**, independent of any pipx installation:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[test]"
+.venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest              # everything, about 15 seconds
 .venv/bin/python -m pytest -k video     # only tests with "video" in their name
 ```
 
 Video tests are skipped if ffmpeg isn't installed, and the H.264 cases if your ffmpeg has no H.264 encoder (like Fedora's `ffmpeg-free`). Every test runs in its own temporary home, config and state folder, so your real settings, log, sessions and trash are never touched.
 
-**Writing a test** is quick with the helpers in `tests/conftest.py`: `library` builds a picture folder (`photo`, `variant`, `copy_of`), `run_cli` runs img_dedupe like a user would, including typed answers (`keys=[...]`), and `summary()` reads the final numbers:
+**Writing a test** is quick with the helpers in `tests/conftest.py`: `library` builds a picture folder (`photo`, `variant`, `copy_of`), `run_cli` runs keepbest like a user would, including typed answers (`keys=[...]`), and `summary()` reads the final numbers:
 
 ```python
 from conftest import summary
@@ -275,14 +284,15 @@ def test_a_backup_copy_is_found(library, run_cli):
 
 ## Releasing a new version
 
-Raise `__version__` in `scripts/config.py` (the only place the version is set), add the changes to `RELEASE_NOTES.md`, run the tests, commit, then tag and push:
+Versions have three parts: a new feature or changed behaviour raises the middle number (1.1.0), a pure fix the last one (1.0.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
 
 ```bash
-git tag -a v0.5.0 -m "img_dedupe 0.5.0"
+git tag -a 1.1.0 -m "keepbest 1.1.0"
 git push && git push --tags
+gh release create 1.1.0 --title "keepbest 1.1.0" --notes-file notes.md   # that version's changelog section
 ```
 
-Without the version bump, `pipx upgrade img-dedupe` doesn't see the new release.
+Without the version bump, `pipx upgrade keepbest` doesn't see the new release. Never move or delete a published tag; release a fix as a new version instead.
 
 ## Known limitations
 

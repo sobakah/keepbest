@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 
 from . import ui
-from .config import __version__, load_config
+from .config import NAME, __version__, load_config
+from .migrate import migrate_old_locations
 
 REQUIRED_PACKAGES = {"PIL": "Pillow", "send2trash": "send2trash"}
 
@@ -28,12 +29,12 @@ def parse_stages(text: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="img_dedupe",
+        prog=NAME,
         description="Find exact and visually identical duplicate images and remove the "
                     "redundant copies, keeping the best one.",
     )
     parser.add_argument("path", nargs="?", default=".", help="picture directory (default: current directory)")
-    parser.add_argument("--version", action="version", version=f"img_dedupe {__version__}")
+    parser.add_argument("--version", action="version", version=f"{NAME} {__version__}")
     parser.add_argument("-c", "--config", type=Path, metavar="FILE", help="use this config file instead of the search paths")
 
     scan = parser.add_argument_group("scanning")
@@ -90,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     configure_logging(args.verbose)
 
+    moved, migration_warnings = migrate_old_locations()  # before the config is looked for
     config, warnings = load_config(args.config)
+    warnings = migration_warnings + warnings
     if args.color:
         config["color"] = args.color
     config["_configured_delete_mode"] = config["delete_mode"]  # what "for real" means after a dry run
@@ -103,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
         config["strictness"], config["max_pixel_diff"] = args.strictness, None
     ui.apply_color_settings(config["color"])
 
+    for message in moved:
+        ui.info(message)
     for message in warnings:
         ui.warn(f"Warning: {message}")
     if args.config and not args.config.is_file():
@@ -112,11 +117,11 @@ def main(argv: list[str] | None = None) -> int:
     missing = missing_packages()
     if missing:
         ui.error(f"Missing required packages: {', '.join(missing)}")
-        print("To run img_dedupe without installing it, set up the packages once in the project folder:")
+        print(f"To run {NAME} without installing it, set up the packages once in the project folder:")
         print("  python3 -m venv .venv")
         print(f"  .venv/bin/pip install {' '.join(missing)}")
-        print("  .venv/bin/python -m scripts /path/to/pictures")
-        print("Or install img_dedupe with pipx, which takes care of this (see the README).")
+        print("  .venv/bin/python run.py /path/to/pictures")
+        print(f"Or install {NAME} with pipx, which takes care of this (see the README).")
         return 2
     if not ui.HAS_READLINE and not args.auto:
         ui.warn("readline is unavailable - Tab completion and prefilled prompts are disabled. "

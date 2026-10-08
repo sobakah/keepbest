@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 
 from conftest import summary
-from scripts import session as session_mod
-from scripts.core_logic import (Group, RunContext, Stats, stats_from_session, tighten_groups,
+from keepbest import session as session_mod
+from keepbest.core_logic import (Group, RunContext, Stats, stats_from_session, tighten_groups,
                                 validate_groups)
-from scripts.session import IgnoreList, SessionStore
+from keepbest.session import IgnoreList, SessionStore
 
 
 def meta(path: Path) -> dict:
@@ -47,7 +47,7 @@ def test_a_failed_save_leaves_no_temporary_file(tmp_path, monkeypatch, capsys):
 
 
 def test_sessions_from_the_old_location_are_found_and_moved(tmp_path, monkeypatch):
-    monkeypatch.delenv("IMG_DEDUPE_STATE_DIR")
+    monkeypatch.delenv("KEEPBEST_STATE_DIR")
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(session_mod, "project_dir", lambda: project)
@@ -65,7 +65,7 @@ def test_sessions_from_the_old_location_are_found_and_moved(tmp_path, monkeypatc
 def test_marks_are_remembered_until_a_file_changes(library):
     a, b = library.photo("a.png", 1), library.photo("b.png", 2)
     IgnoreList(library.path).add(meta(a), meta(b))
-    assert (library / ".img_dedupe_ignore.json").exists()
+    assert (library / ".keepbest_ignore.json").exists()
     assert IgnoreList(library.path).contains(meta(b), meta(a))
     os.utime(b, ns=(b.stat().st_atime_ns, b.stat().st_mtime_ns + 10**9))   # "edited"
     assert not IgnoreList(library.path).contains(meta(a), meta(b))
@@ -104,7 +104,7 @@ def test_a_looser_limit_changes_nothing():
 def test_statistics_continue_from_the_session():
     stats = stats_from_session({"stats": {"scanned": 51, "exact_deleted": 1, "similar_deleted": 7}}, 0)
     assert (stats.scanned, stats.exact_deleted, stats.similar_deleted) == (51, 1, 7)
-    assert stats_from_session({}, 12).scanned == 12              # sessions from before 1.2
+    assert stats_from_session({}, 12).scanned == 12              # sessions from before 0.3.0
 
 
 def test_automatic_progress_is_saved_at_most_once_a_second():
@@ -191,7 +191,7 @@ def test_dry_run_is_not_carried_out_right_after_it_finished(three_groups, run_cl
     before = three_groups.files()
     result = run_cli(three_groups.path, "--dry-run", keys=["", "", ""])   # start, then Enter twice
     assert "Apply exactly what the dry run showed" not in result.stdout
-    assert "start img_dedupe on this folder again without --dry-run" in result.stdout
+    assert "start keepbest on this folder again without --dry-run" in result.stdout
     assert three_groups.files() == before
 
 

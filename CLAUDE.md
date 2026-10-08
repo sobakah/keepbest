@@ -1,16 +1,23 @@
-# img_dedupe – notes for Claude Code
+# keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
 Terminal app (no GUI), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
-Owner: sobakah (GitHub `sobakah/img_dedupe`, public). Developed on Fedora, installed with pipx (Python 3.14).
+Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
+Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/Git-Repos/keepbest`.
 
 ## Layout – important
 
-- The package lives in **`scripts/`** (owner's choice, keep it) but is installed as the package
-  **`img_dedupe`** via `package-dir = { img_dedupe = "scripts" }` in `pyproject.toml`.
-  All imports inside `scripts/` are relative. The command is `img_dedupe`; the pipx name is `img-dedupe`.
-- From the checkout: `python3 -m scripts <folder>` (not `-m img_dedupe`).
-- `scripts/cli.py` arguments → `app.py` (start screen, folder list, run_scan, sessions flow)
+- Same layout as the owner's project lyrembed: the package is the folder **`keepbest/`**,
+  `run.py` is the launcher for a checkout (explains a missing package folder), tests in `tests/`,
+  `CHANGELOG.md` in the root. All imports inside `keepbest/` are relative. Command, package and
+  pipx name are all `keepbest`. The name lives in `NAME` (and the old one in `OLD_NAME`) in
+  `config.py`; use them in new code.
+- From the checkout: `./run.py <folder>` or `python3 -m keepbest <folder>`. `build/` and
+  `*.egg-info/` appear after `pip install .`/`pipx install .` from the checkout; ignored, deletable.
+- `migrate.py` moves the files kept under the old name (config and state folders, log file) on
+  every start, before the config is read; `IgnoreList` takes over `.img_dedupe_ignore.json`.
+  Existing new-name folders are never overwritten. Keep this in place for a long time.
+- `keepbest/cli.py` arguments → `app.py` (start screen, folder list, run_scan, sessions flow)
   → `core_logic.py` (the three stages, review loop, deletion, resume) → `image_utils.py`
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
@@ -21,27 +28,29 @@ Owner: sobakah (GitHub `sobakah/img_dedupe`, public). Developed on Fedora, insta
 ## Commands
 
 ```bash
-python3 -m pytest                 # 141 tests, ~10 s; video tests skip without ffmpeg
+python3 -m pytest                 # 148 tests, ~11 s; video tests skip without ffmpeg
 python3 -m pytest -k video        # a subset
-python3 -m scripts ~/Pictures --dry-run      # run from the checkout
+./run.py ~/Pictures --dry-run                # run from the checkout
 ```
 
 Run the tests with a Python that has Pillow, send2trash and pytest. If those are missing, the CLI
 tests fail with misleading assertions like `(0, 0) == (1, 0)` (the program exits "Missing required
-packages"). With the pipx install: `pipx inject img-dedupe pytest`, then
-`"$(pipx environment --value PIPX_LOCAL_VENVS)/img-dedupe/bin/python" -m pytest`.
+packages"). With the pipx install: `pipx inject keepbest pytest`, then
+`"$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest`. Without
+pytest in pipx, the system Python works if send2trash's user site-packages are on `PYTHONPATH`
+(the tests use their own HOME, so the user site isn't found otherwise).
 
 ## Tests
 
-- `tests/conftest.py`: autouse isolation (own HOME, XDG dirs, trash and `IMG_DEDUPE_STATE_DIR`),
+- `tests/conftest.py`: autouse isolation (own HOME, XDG dirs, trash and `KEEPBEST_STATE_DIR`),
   `library` (build picture folders: `photo`, `variant`, `copy_of`), `run_cli(folder, *args,
   keys=[...])` (runs the real CLI, typed answers via stdin), `summary(result)` (parses the final
   numbers), `fake_command` (stand-in programs on PATH; `.calls(count=…)` waits for background calls),
   `make_video` / `remux` (ffmpeg).
 - `tests/pictures.py`: deterministic photo-like pictures. Calibrated: re-encodes/resizes score ≤ 16,
   edits (`with_text`, `with_patch`, `brighter`) ≥ 32, limit 20.
-- `IMG_DEDUPE_STATE_DIR` redirects log and sessions (otherwise a checkout writes them into the
-  project folder). Never let tests touch the real project folder, config or trash.
+- `KEEPBEST_STATE_DIR` (old: `IMG_DEDUPE_STATE_DIR`) redirects log and sessions (otherwise a
+  checkout writes them into the project folder). Never let tests touch the real project folder, config or trash.
 - Every fix gets a test that fails without the fix. Prefer reproducing a reported bug first.
 
 ## Behaviour that must not regress (safety rules)
@@ -99,11 +108,24 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - README is in English, concise, reader-first order; every option/key documented once. Keep it in
   sync with behaviour (reviews found mismatches before).
 - Commit messages: English, subject ≤ 72 chars, body wrapped at 72, explain what and why.
-- Versions: `__version__` in `scripts/config.py` is the only source. Behaviour changes → minor
-  version (1.3 → 1.4), pure fixes → patch. Release: update `RELEASE_NOTES.md` (newest first,
-  sections New/Changed/Fixed, upgrade notes), run tests, commit, `git tag -a vX.Y -m "img_dedupe X.Y"`,
-  push with tags. Without a version bump `pipx upgrade` doesn't pick up changes.
-- Shell scripts/examples: the owner's shell is bash on Fedora; don't rely on tools only some
+- Versions: three parts (`1.0.0`); `__version__` in `keepbest/config.py` is the only source.
+  Features or behaviour changes → minor (1.0.0 → 1.1.0), pure fixes → patch (1.0.1). Tags have
+  **no `v`** (`1.0.0`), like lyrembed. Release: update `CHANGELOG.md` (Keep a Changelog: newest
+  first, `## [X.Y.Z] — date`, sections Added/Changed/Fixed, upgrade notes, link line at the
+  bottom), run tests, commit, `git tag -a X.Y.Z -m "keepbest X.Y.Z"`, push with tags, then create
+  the GitHub release: `gh release create X.Y.Z --title "keepbest X.Y.Z" --notes-file <that
+  version's section of CHANGELOG.md, without heading>`. Without a version bump
+  `pipx upgrade` doesn't pick up changes.
+- Since 1.0.0 the history and published tags are never rewritten, moved or deleted; a mistake in
+  a release is fixed with a new version. (Before 1.0.0, releases 1.0–1.4.1 were renumbered as
+  pre-releases 0.1.0–0.5.1 and the history was rebuilt with one commit per release; a backup of
+  the old history and releases is in `~/Software/Claude/Projects/img_dedupe-backup-2026-10-08/`.
+  The same day, a keepbest 1.1.0 (the rename) was folded into a new 1.0.0 together with the move
+  to the lyrembed layout, and all tags lost their `v`; backup in
+  `~/Software/Claude/Projects/keepbest-backup-2026-10-08/`.)
+- Shell: the owner uses **fish** on Fedora. Commands meant for the owner to paste (loops,
+  `&&` chains, `$(...)`) must be written for fish (`for x in …; …; end`, `; and`, `(…)`).
+  Examples in the README are for all users and stay in bash. Don't rely on tools only some
   distributions ship.
 
 ## Environment notes
@@ -122,13 +144,13 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.5)
+## Open tasks (target: release 1.1.0)
 
-1.4 (data-safety fixes) and 1.4.1 (undo in dry runs) are released and tagged. New changes go
-under an "Unreleased" heading at the top of `RELEASE_NOTES.md`.
+1.0.0 is the first stable release and the first under the name keepbest. New changes go under
+an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
-  Dry-run "not duplicates" marks write `.img_dedupe_ignore.json` into the picture folder, which
+  Dry-run "not duplicates" marks write `.keepbest_ignore.json` into the picture folder, which
   contradicts "changes nothing" – change the README wording or store marks elsewhere (see E3).
 - **Quick fixes:** Tab completion with spaces (`set_delims` in `ui.py` → `"\t\n"`); unhandled
   `p.stat()` in `find_exact_duplicates` when a file vanishes; README describes `n`/`x` differently
@@ -149,6 +171,6 @@ under an "Unreleased" heading at the top of `RELEASE_NOTES.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.5 for behaviour changes, else 1.4.2) before tagging,
-  turn "Unreleased" into that version in `RELEASE_NOTES.md`, tests, commit, `git tag -a`, push with
-  tags. 1.4 was first tagged without the version bump, so `pipx upgrade` saw nothing new.
+- **Next release:** raise `__version__` (1.1.0 for behaviour changes, else 1.0.1) before
+  tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
+  push with tags, GitHub release.

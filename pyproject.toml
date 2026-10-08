@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "img-dedupe"
+name = "keepbest"
 dynamic = ["version"]
 description = "Find exact and visually identical duplicate images and remove the redundant copies, keeping the best one."
 readme = "README.md"
@@ -25,22 +25,20 @@ classifiers = [
 
 [project.optional-dependencies]
 jxl = ["pillow-jxl-plugin"]  # read .jxl files in Stage 3
-test = ["pytest>=7"]
+dev = ["pytest>=7", "pyflakes>=3"]
 
 [project.scripts]
-img_dedupe = "img_dedupe.cli:main"
+keepbest = "keepbest.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/sobakah/img_dedupe"
+Homepage = "https://github.com/sobakah/keepbest"
 
 [tool.setuptools]
-# The code lives in the scripts/ folder of the repository but is installed
-# as the Python package "img_dedupe".
-packages = ["img_dedupe"]
-package-dir = { img_dedupe = "scripts" }
+packages = ["keepbest"]
 
 [tool.setuptools.dynamic]
-version = { attr = "img_dedupe.config.__version__" }
+# Single source of truth; read statically, the package is not imported.
+version = { attr = "keepbest.config.__version__" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

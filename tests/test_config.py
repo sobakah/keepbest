@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.config import DEFAULT_CONFIG, load_config
+from keepbest.config import DEFAULT_CONFIG, load_config
 
 
 def load(tmp_path, data):

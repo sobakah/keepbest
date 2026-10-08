@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 import pictures
-from scripts.image_utils import (analyze_image, aspect_ratio_close, comparison_thumbnail,
+from keepbest.image_utils import (analyze_image, aspect_ratio_close, comparison_thumbnail,
                                  is_lossless, pixel_difference, score_image)
 
 LIMIT = 20  # the "normal" strictness
@@ -152,7 +152,7 @@ def test_prefer_jxl_decides_between_jpeg_xl_and_a_lossless_original():
 # --- keeping another image than the recommended one ---------------------------------
 def found_group(library, names, diffs):
     """A group as Stage 3 would build it; *diffs* are the scores against names[0]."""
-    from scripts.core_logic import Group
+    from keepbest.core_logic import Group
     metas = [analyze_image(library / name, 8, {}) for name in names]
     return Group(images=metas, diffs=[None, *diffs], limit=LIMIT, borderline_above=LIMIT * 0.8)
 
@@ -161,7 +161,7 @@ COMPARE = {"compare_size": 512, "max_aspect_diff": 0.02}
 
 
 def test_another_keeper_is_compared_with_every_image_it_replaces(library):
-    from scripts.core_logic import regroup_around
+    from keepbest.core_logic import regroup_around
     library.photo("a.png", 1)
     library.variant("a.png", "a.jpg", quality=90)
     library.variant("a.png", "a edited.jpg", pictures.with_patch, quality=90)
@@ -175,7 +175,7 @@ def test_another_keeper_is_compared_with_every_image_it_replaces(library):
 
 
 def test_another_keeper_without_any_close_image_changes_nothing(library):
-    from scripts.core_logic import regroup_around
+    from keepbest.core_logic import regroup_around
     library.photo("a.png", 1)
     library.variant("a.png", "a edited.jpg", pictures.with_patch, quality=90)
     group = found_group(library, ["a.png", "a edited.jpg"], [15])
@@ -184,7 +184,7 @@ def test_another_keeper_without_any_close_image_changes_nothing(library):
 
 
 def test_undo_brings_back_the_images_a_chosen_keeper_took_out(library):
-    from scripts.core_logic import (Group, RunContext, Stats, _resolve, _snapshot, regroup_around,
+    from keepbest.core_logic import (Group, RunContext, Stats, _resolve, _snapshot, regroup_around,
                                     undo_decision)
     library.photo("a.png", 1)
     library.variant("a.png", "a.jpg", quality=90)

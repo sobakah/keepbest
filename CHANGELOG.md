@@ -1,20 +1,78 @@
-# Release notes
+# Changelog
 
-## img_dedupe 0.5.1
+All notable changes to this project are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-*Released 2026-10-05*
+## [1.0.0] — 2026-10-08
+
+The first stable release, under a new name: **keepbest** (formerly img_dedupe).
+The name says what it does; "img_dedupe" was one of many similar names. After
+five pre-releases and two independent code reviews, the program is the state
+of 0.5.1 under the new name.
+
+The history before this release was consolidated: 0.1.0 to 0.5.1 are the
+pre-releases that were published as 1.0 to 1.4.1. A keepbest 1.1.0 that was
+published for a few minutes on the same day is now part of this release.
+
+**What it does:**
+
+- **Three stages.** Identical files (SHA-256, whatever their names and folders); remuxed videos (the same video stream in another container, with the audio and subtitle tracks compared by content); visually identical images (the same picture in another format, quality or size, found by comparing pixels).
+- **Keeps the best copy:** the highest resolution, lossless over lossy, your preferred format, a name without a copy number like "(1)", the less compressed file, the oldest.
+- **Cautious.** Edited versions, watermarks, crops and the next frame of a burst are left alone; every deleted image is compared with the one that is kept.
+- **Safe by default.** Files go to the system trash; `--dry-run` never deletes anything; permanent mode asks before it starts; every change is logged with the file kept instead and the reason.
+- **You decide what is borderline:** keep another image (the others are compared with it afresh), skip a group, mark images as not duplicates, open them in a viewer, or undo a decision in a dry run.
+- **Interruptible.** Progress is saved as you go, so a review can be resumed, and a finished dry run can be carried out later without scanning again.
+
+### Changed
+
+- **Renamed to keepbest.** The command and the package are `keepbest`, the repository is `github.com/sobakah/keepbest` (the old address forwards there), the config folder is `~/.config/keepbest/`, the log `~/.local/state/keepbest/keepbest.log`, and "not duplicates" marks are stored in `.keepbest_ignore.json`.
+- **Your files move along by themselves.** The first start moves `~/.config/img_dedupe/` and `~/.local/state/img_dedupe/` (log and saved sessions) to the new folders and renames the log file; folders that already exist under the new name are never overwritten. If a move fails, keepbest says why, and the old config is still read. Marks in `.img_dedupe_ignore.json` keep working and are moved to `.keepbest_ignore.json` the next time you mark a pair in that folder. `IMG_DEDUPE_STATE_DIR` is still accepted next to the new `KEEPBEST_STATE_DIR`.
+- **Repository layout.** The code moved from `scripts/` to `keepbest/`. From a checkout, start it with `./run.py` or `python3 -m keepbest` instead of `python3 -m scripts`. The development extra is now `.[dev]` (pytest and pyflakes) instead of `.[test]`.
+- **Release tags have no `v`** (`1.0.0`, `0.5.1`). Add the version without `v` to install a specific release: `...keepbest.git@1.0.0`.
+- The release notes are now this changelog.
+
+### Upgrading from img_dedupe
+
+`pipx upgrade` can't follow a rename. It stops with *inconsistent name* and leaves the old version in place, so nothing breaks. Switch once:
+
+```bash
+pipx uninstall img-dedupe
+pipx install git+https://github.com/sobakah/keepbest.git
+```
+
+With JPEG XL support, install `"keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"` instead. On its first start, keepbest moves your config, log and saved sessions over and says so.
+
+If you installed the short-lived keepbest 1.1.0, `pipx upgrade` won't go back to 1.0.0; reinstall with `pipx install --force git+https://github.com/sobakah/keepbest.git`.
+
+## Pre-releases
+
+The releases before 1.0.0 were renumbered; their notes below use the new numbers.
+
+| Pre-release | Formerly | Released |
+|---|---|---|
+| 0.5.1 | 1.4.1 | 2026-10-05 |
+| 0.5.0 | 1.4 | 2026-10-02 |
+| 0.4.0 | 1.3 | 2026-09-27 |
+| 0.3.0 | 1.2 | 2026-09-24 |
+| 0.2.1 | 1.1.1 | 2026-09-24 |
+| 0.2.0 | 1.1 | 2026-09-24 |
+| 0.1.0 | 1.0 | 2026-09-23 |
+
+## [0.5.1] — 2026-10-05
+
+*Pre-release; published as img_dedupe 1.4.1.*
 
 This release lets a dry run take back a decision.
 
 **Upgrading:** `pipx upgrade img-dedupe`.
 
-### New
+### Added
 
 - **Undo a decision in a dry run.** A group you already decided can be opened again from the overview (`t`, then its number) and `u` takes the decision back, so you can keep another image. The group gets back all its images and the totals no longer count it. Real runs can't undo, since the files are already in the trash.
 
-## img_dedupe 0.5.0
+## [0.5.0] — 2026-10-02
 
-*Released 2026-10-02*
+*Pre-release; published as img_dedupe 1.4.*
 
 This release fixes the data-safety problems found in an independent code review.
 
@@ -32,9 +90,9 @@ This release fixes the data-safety problems found in an independent code review.
 - **If your library has lossless JPEG XL copies next to PNG originals**, the PNGs are now kept. Set `"prefer_jxl": true` in your config to keep the JXL copies as before.
 - **Permanent mode asks once before a run starts**, since automatic decisions delete without further questions. The README claimed every deletion asked first.
 
-## img_dedupe 0.4.0
+## [0.4.0] — 2026-09-27
 
-*Released 2026-09-24*
+*Pre-release; published as img_dedupe 1.3.*
 
 This release fixes the problems found in a code review, numbers the stages consistently, and adds a test suite.
 
@@ -58,20 +116,20 @@ This release fixes the problems found in a code review, numbers the stages consi
 - **Stages are numbered 1 to 3** everywhere: in the output, in setting 1 on the start screen (*all*, *identical copies (1+2)*, *visual only (3)*) and in `--stages`.
 - README corrections: the keys for keeping another file, and when exit code 2 is used.
 
-### New
+### Added
 
 - **A test suite** of 116 tests covering the comparison, the three stages, deleting, logging, renaming, folders, sessions, videos, viewers and the command line. Run it with `python3 -m pytest`; `tests/conftest.py` has helpers for writing new tests (see *Running the tests* in the README).
 - `IMG_DEDUPE_STATE_DIR` redirects the log and saved sessions to another folder (used by the tests).
 
-## img_dedupe 0.3.0
+## [0.3.0] — 2026-09-24
 
-*Released 2026-09-24*
+*Pre-release; published as img_dedupe 1.2.*
 
 This release makes saved sessions clearer and more robust, and asks fewer questions.
 
 **Upgrading:** `pipx upgrade img-dedupe`. If your own `config.json` contains `"uncertain_ratio": 0.6` (for example because it was copied from the old example file), change it to `0.8` or remove the line, otherwise it keeps the old behaviour.
 
-### New
+### Added
 
 - **The start screen shows what a saved session allows.** Settings that belong to the session (stages, videos, subfolders, folder choice) are greyed out and show the session's values; unavailable choices are struck through. `n` discards the session and unlocks all settings, without starting the new scan straight away.
 - **Stricter without a new scan.** When resuming, strictness can be made stricter: images whose saved score is above the new limit are taken out of their groups. A looser limit still needs a new scan.
@@ -90,9 +148,9 @@ This release makes saved sessions clearer and more robust, and asks fewer questi
 - When resuming, the rename setting (`6`) and `uncertain_ratio` were not applied to the groups still open.
 - When carrying out a saved dry run from the start screen, the delete mode chosen there was ignored.
 
-## img_dedupe 0.2.1
+## [0.2.1] — 2026-09-24
 
-*Released 2026-09-24*
+*Pre-release; published as img_dedupe 1.1.1.*
 
 ### Fixed
 
@@ -100,15 +158,15 @@ This release makes saved sessions clearer and more robust, and asks fewer questi
 
 **Upgrading:** `pipx upgrade img-dedupe`.
 
-## img_dedupe 0.2.0
+## [0.2.0] — 2026-09-24
 
-*Released 2026-09-24*
+*Pre-release; published as img_dedupe 1.1.*
 
 This release adds duplicate detection for videos, remembers matches you mark as "not duplicates", and saves dry runs so they can be carried out later.
 
-**Upgrading:** `pipx upgrade img-dedupe`, or install this release directly with `pipx install --force "git+https://github.com/sobakah/img_dedupe.git@v0.2.0"`. Your config and saved sessions from 0.1.0 keep working.
+**Upgrading:** `pipx upgrade img-dedupe`, or install this release directly with `pipx install --force "git+https://github.com/sobakah/img_dedupe.git@0.2.0"`. Your config and saved sessions from 0.1.0 keep working.
 
-### New
+### Added
 
 - **Videos.** Identical copies of videos are found whatever their names and folders, and so are **remuxes**: the same video stream in another container (MP4, MKV, MPEG-TS, …). Nothing is decoded; if the copies have different audio or subtitle tracks, you are asked, and the copy with the most tracks is recommended. Needs ffmpeg for remuxes; without it, identical copies are still found. Switch videos off with setting `7`, `--no-videos` or `"include_videos": false`. Re-encoded videos are not compared.
 - **"Not duplicates" marks.** In a group, `i` keeps all files and remembers the match, so it isn't shown again; `i2` marks only image #2. Marks are saved in a hidden `.img_dedupe_ignore.json` in the scanned folder. `--no-ignore` shows them again for one run.
@@ -131,9 +189,9 @@ This release adds duplicate detection for videos, remembers matches you mark as 
 
 Unchanged from 0.1.0, except that dry runs are now saved as sessions. Videos are only compared by content, so a re-encoded copy isn't recognised. The full list is in the README.
 
-## img_dedupe 0.1.0
+## [0.1.0] — 2026-09-23
 
-*Released 2026-09-23 · first public release*
+*Pre-release, first public release; published as img_dedupe 1.0.*
 
 img_dedupe finds duplicate images in a folder and removes the redundant copies, keeping the best one. It recognises byte-identical files as well as the same picture saved in another format, quality or size, and it is deliberately conservative: pictures that merely look similar, like an edited version or the next frame of a burst, are left alone.
 
@@ -149,7 +207,7 @@ With JPEG XL support:
 pipx install "img-dedupe[jxl] @ git+https://github.com/sobakah/img_dedupe.git"
 ```
 
-To install exactly this release, add `@v0.1.0` to the end of the URL. Requires Python 3.9 or newer; Pillow and send2trash are installed automatically.
+To install exactly this release, add `@0.1.0` to the end of the URL. Requires Python 3.9 or newer; Pillow and send2trash are installed automatically.
 
 ### Highlights
 
@@ -195,3 +253,12 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Dry runs and `--auto` runs are not saved as sessions.
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
+
+[1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
+[0.5.1]: https://github.com/sobakah/keepbest/releases/tag/0.5.1
+[0.5.0]: https://github.com/sobakah/keepbest/releases/tag/0.5.0
+[0.4.0]: https://github.com/sobakah/keepbest/releases/tag/0.4.0
+[0.3.0]: https://github.com/sobakah/keepbest/releases/tag/0.3.0
+[0.2.1]: https://github.com/sobakah/keepbest/releases/tag/0.2.1
+[0.2.0]: https://github.com/sobakah/keepbest/releases/tag/0.2.0
+[0.1.0]: https://github.com/sobakah/keepbest/releases/tag/0.1.0

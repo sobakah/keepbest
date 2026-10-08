@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from scripts.app import (ROOT, FolderIndex, find_images, folder_entries, normalize_excluded,
+from keepbest.app import (ROOT, FolderIndex, find_images, folder_entries, normalize_excluded,
                          parse_numbers, switch_folders)
 
 

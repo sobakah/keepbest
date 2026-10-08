@@ -2,7 +2,7 @@
 
 import pytest
 
-from scripts import viewer
+from keepbest import viewer
 
 
 @pytest.fixture

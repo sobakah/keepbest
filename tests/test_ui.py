@@ -1,6 +1,6 @@
 """Terminal helpers: text width, truncation, tables and path completion."""
 
-from scripts import ui
+from keepbest import ui
 
 
 def test_wide_characters_count_double():

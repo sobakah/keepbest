@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.image_utils import has_copy_number, rename_target, strip_copy_number
+from keepbest.image_utils import has_copy_number, rename_target, strip_copy_number
 
 
 @pytest.mark.parametrize("name, numbered, renamed", [

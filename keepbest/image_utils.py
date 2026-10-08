@@ -1,5 +1,6 @@
 """Image loading, hashing and pixel-level comparison. Depends only on Pillow."""
 import hashlib
+import importlib
 import io
 import re
 import signal
@@ -15,7 +16,7 @@ except Exception:  # pragma: no cover - Pillow built without littlecms
 # Optional JPEG XL support. Pillow cannot read JXL on its own; without this
 # plugin JXL files are still handled by Stage 1 but skipped (and reported) in Stage 3.
 try:
-    import pillow_jxl  # noqa: F401  (registers the JXL format with Pillow)
+    importlib.import_module("pillow_jxl")  # registers the JXL format with Pillow
     JXL_SUPPORTED = True
 except ImportError:
     JXL_SUPPORTED = False

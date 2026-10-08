@@ -1008,7 +1008,7 @@ def _handled_screen(group: Group, position: str, rel) -> str:
     print()
     if group.status == "ignored":
         _group_table(group, rel)
-        info("\nMarked as not duplicates - all files were kept. Delete .img_dedupe_ignore.json "
+        info("\nMarked as not duplicates - all files were kept. Delete .keepbest_ignore.json "
              "in the scanned folder to be asked about such pairs again.")
     else:
         _group_table(group, rel, keep_index=group.kept or 0, done=True)

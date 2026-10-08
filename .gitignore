@@ -1,15 +1,15 @@
-# Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-build/
-dist/
 .venv/
 venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
 
-# Personal settings and the action log stay out of the repository
-config.json
-img_dedupe.log
-
-# Saved review sessions when running from the project folder
-sessions/
+# Personal config, the action log and saved review sessions in a checkout;
+# the config template is config.example.json
+/config.json
+/keepbest.log
+/img_dedupe.log
+/sessions/

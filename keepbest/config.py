@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.5.1"
-PROJECT_URL = "https://github.com/sobakah/img_dedupe"
+__version__ = "1.0.0"
+NAME = "keepbest"
+OLD_NAME = "img_dedupe"           # the name before 1.0.0; its folders are moved over (migrate.py)
+PROJECT_URL = "https://github.com/sobakah/keepbest"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "delete_mode": "trash",       # 'trash', 'permanent', 'dry_run'
@@ -66,7 +68,7 @@ def _number_ok(key: str, value) -> bool:
 
 def project_dir() -> Path | None:
     """The project folder when running from a source checkout (git clone,
-    ``python -m img_dedupe`` or ``pip install -e .``), else None.
+    ``run.py``, ``python -m keepbest`` or ``pip install -e .``), else None.
 
     A regular install lives in site-packages, which is no place for a user's
     config or log file.
@@ -75,10 +77,14 @@ def project_dir() -> Path | None:
     return root if (root / "pyproject.toml").is_file() else None
 
 
-def config_search_paths() -> list[Path]:
+def config_home() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
-    config_home = Path(xdg) if xdg else Path.home() / ".config"
-    paths = [config_home / "img_dedupe" / "config.json"]
+    return Path(xdg) if xdg else Path.home() / ".config"
+
+
+def config_search_paths() -> list[Path]:
+    # The old folder comes last: only used if moving it to the new name failed.
+    paths = [config_home() / NAME / "config.json", config_home() / OLD_NAME / "config.json"]
     project = project_dir()
     if project is not None:
         paths.insert(0, project / "config.json")

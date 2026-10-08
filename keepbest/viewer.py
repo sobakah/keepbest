@@ -31,7 +31,7 @@ def _flatpak_installed(app_id: str) -> bool | None:
 
 
 def _start(argv: list[str]) -> None:
-    # Own session: Ctrl+C in img_dedupe must not close a comparison window you still look at.
+    # Own session: Ctrl+C in keepbest must not close a comparison window you still look at.
     subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
