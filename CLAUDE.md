@@ -146,9 +146,10 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.1.0)
+## Open tasks (target: release 1.2.0)
 
-1.0.0 is the first stable release and the first under the name keepbest. New changes go under
+1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
+media-optimizer hand-off on the end screen. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -173,6 +174,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.1.0 for behaviour changes, else 1.0.1) before
+- **Next release:** raise `__version__` (1.2.0 for behaviour changes, else 1.1.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

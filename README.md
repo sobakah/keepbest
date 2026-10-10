@@ -257,7 +257,7 @@ The tests belong to the repository, not to the installed program: pipx installs 
 pipx inject keepbest pytest
 git clone https://github.com/sobakah/keepbest.git
 cd keepbest
-git checkout 1.0.0       # optional: the version you have installed (see keepbest --version)
+git checkout 1.1.0       # optional: the version you have installed (see keepbest --version)
 "$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest
 ```
 
@@ -290,12 +290,12 @@ def test_a_backup_copy_is_found(library, run_cli):
 
 ## Releasing a new version
 
-Versions have three parts: a new feature or changed behaviour raises the middle number (1.1.0), a pure fix the last one (1.0.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
+Versions have three parts: a new feature or changed behaviour raises the middle number (1.2.0), a pure fix the last one (1.1.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
 
 ```bash
-git tag -a 1.1.0 -m "keepbest 1.1.0"
+git tag -a 1.2.0 -m "keepbest 1.2.0"
 git push && git push --tags
-gh release create 1.1.0 --title "keepbest 1.1.0" --notes-file notes.md   # that version's changelog section
+gh release create 1.2.0 --title "keepbest 1.2.0" --notes-file notes.md   # that version's changelog section
 ```
 
 Without the version bump, `pipx upgrade keepbest` doesn't see the new release. Never move or delete a published tag; release a fix as a new version instead.
