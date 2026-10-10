@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Run media-optimizer afterwards.** If [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, the end screen of a run that removed files offers `m` to run it on the same folder. When it ends, keepbest's end screen comes back for a new scan. Ctrl+C stops only media-optimizer.
+
 ## [1.0.0] — 2026-10-08
 
 The first stable release, under a new name: **keepbest** (formerly img_dedupe).

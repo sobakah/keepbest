@@ -123,6 +123,12 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 **When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. Press **`n`** to discard the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
 
+## After a run
+
+The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter or `q`).
+
+**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer always includes all subfolders, also those keepbest left out; keepbest warns about that. Ctrl+C stops media-optimizer, not keepbest.
+
 ## Viewers
 
 `v` opens all images of a group at once, with the viewer chosen by setting `5` or `"viewer"` in the config:

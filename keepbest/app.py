@@ -8,6 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from . import handoff
 from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
@@ -923,6 +924,7 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
                                       review=(action == "review_saved"), mode=carry_out_mode(config))
             if stats is None:  # declined the permanent-deletion question
                 continue
+            real_run = True
         else:
             run_config = config
             if action == "resume":
@@ -934,17 +936,15 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
             index.clear()  # files were removed or renamed, recount on the next screen
             if quit_requested:
                 exit_script(1 if stats.failed else 0)
+            real_run = run_config["delete_mode"] != "dry_run"
             # Started with --dry-run, nothing is carried out in this run; the saved
             # dry run can be carried out by starting again without it.
             if dry_result is not None and dry_result.has_changes and not config.get("_cli_dry_run"):
                 choice = continue_after_dry_run(target, config, base_config, settings, index, store, dry_result)
+                real_run = choice is None  # None: it was carried out
 
         if choice is None:
-            print_primary_action("Enter", "Quit")
-            print_menu([("Navigate", [("b", "Back to settings (scan again)"),
-                                      ("c", "Change directory"), ("q", "Quit")])])
-            answer = safe_input(f"{StyleUI.BOLD}Action: {StyleUI.RESET}").strip().lower()
-            choice = {"b": "back", "c": "change"}.get(answer, "quit")
+            choice = end_menu(target, settings, index, offer_optimizer=real_run)
         if choice == "change":
             changed = resolve_directory(None, index, allow_cancel=True)
             if changed is not None:
@@ -953,6 +953,41 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
                 success(f"Switched to {target}.")
         elif choice != "back":
             exit_script(1 if stats.failed else 0)
+
+
+def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: bool) -> str:
+    """The menu after a run. Returns 'back', 'change' or 'quit'.
+
+    After a real run, media-optimizer is offered for the same folder if it is
+    installed; when it exits, this menu comes back for a new run.
+    """
+    optimizer = offer_optimizer and handoff.available() is not None
+    while True:
+        print_primary_action("Enter", "Quit")
+        groups = []
+        if optimizer:
+            groups.append(("Next", [("m", "Optimize this folder with media-optimizer")]))
+        groups.append(("Navigate", [("b", "Back to settings (scan again)"),
+                                    ("c", "Change directory"), ("q", "Quit")]))
+        print_menu(groups)
+        answer = safe_input(f"{StyleUI.BOLD}Action: {StyleUI.RESET}").strip().lower()
+        if answer == "m" and optimizer:
+            run_optimizer(target, settings)
+            index.clear()  # media-optimizer converts and renames files
+            optimizer = False
+            continue
+        return {"b": "back", "c": "change"}.get(answer, "quit")
+
+
+def run_optimizer(target: Path, settings: dict) -> None:
+    info(f"\nStarting media-optimizer on {target}.")
+    if not settings["recursive"] or settings["excluded"]:
+        warn("media-optimizer includes all subfolders, also those this run left out.")
+    code = handoff.run(target)
+    print()
+    if code == 127:
+        error("media-optimizer could not be started.")
+    success(f"Back in {NAME}. Scan again, change the directory or quit.")
 
 
 def confirm_permanent() -> bool:

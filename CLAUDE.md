@@ -21,14 +21,16 @@ Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/
   → `core_logic.py` (the three stages, review loop, deletion, resume) → `image_utils.py`
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
-  `ui.py` (terminal styling, menus, tables), `viewer.py`.
+  `ui.py` (terminal styling, menus, tables), `viewer.py`, `handoff.py` (runs media-optimizer
+  from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0`; keepbest ignores
+  SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on).
 - `core_logic.py` mixes logic and terminal output (21 of 46 functions print/ask). Known; a GUI
   would need that separated first.
 
 ## Commands
 
 ```bash
-python3 -m pytest                 # 148 tests, ~11 s; video tests skip without ffmpeg
+python3 -m pytest                 # 156 tests, ~17 s; video tests skip without ffmpeg
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

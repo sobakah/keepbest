@@ -12,8 +12,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-MODULES = ["app.py", "cli.py", "config.py", "core_logic.py", "image_utils.py", "migrate.py",
-           "session.py", "ui.py", "video.py", "viewer.py"]
+MODULES = ["app.py", "cli.py", "config.py", "core_logic.py", "handoff.py", "image_utils.py",
+           "migrate.py", "session.py", "ui.py", "video.py", "viewer.py"]
 
 try:
     from keepbest.cli import main
@@ -43,7 +43,7 @@ except ModuleNotFoundError as exc:
             "    run.py\n"
             "    keepbest/\n"
             "        __init__.py  __main__.py  app.py  cli.py  config.py  core_logic.py\n"
-            "        image_utils.py  migrate.py  session.py  ui.py  video.py  viewer.py\n",
+            "        handoff.py  image_utils.py  migrate.py  session.py  ui.py  video.py  viewer.py\n",
             file=sys.stderr,
         )
     sys.exit(2)
