@@ -120,13 +120,17 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   the GitHub release: `gh release create X.Y.Z --title "keepbest X.Y.Z" --notes-file <that
   version's section of CHANGELOG.md, without heading>`. Without a version bump
   `pipx upgrade` doesn't pick up changes.
-- Since 1.0.0 the history and published tags are never rewritten, moved or deleted; a mistake in
-  a release is fixed with a new version. (Before 1.0.0, releases 1.0–1.4.1 were renumbered as
+- Since 1.0.0 the history is never rewritten (no rebase, no force-push of `main`); a mistake in
+  a release is fixed with a new version. If the owner wants a release folded into the previous one,
+  do it like media-optimizer: a new commit sets the version back and merges the CHANGELOG
+  sections, the older tag is moved to it and the newer tag and release are deleted. (Before 1.0.0, releases 1.0–1.4.1 were renumbered as
   pre-releases 0.1.0–0.5.1 and the history was rebuilt with one commit per release; a backup of
   the old history and releases is in `~/Software/Claude/Projects/img_dedupe-backup-2026-10-08/`.
   The same day, a keepbest 1.1.0 (the rename) was folded into a new 1.0.0 together with the move
   to the lyrembed layout, and all tags lost their `v`; backup in
-  `~/Software/Claude/Projects/keepbest-backup-2026-10-08/`.)
+  `~/Software/Claude/Projects/keepbest-backup-2026-10-08/`. On 2026-10-10, 1.2.0 was folded into
+  1.1.0 that way, an hour after both were published; backup in
+  `~/Software/Claude/Projects/keepbest-backup-2026-10-10/`.)
 - Shell: the owner uses **fish** on Fedora. Commands meant for the owner to paste (loops,
   `&&` chains, `$(...)`) must be written for fish (`for x in …; …; end`, `; and`, `(…)`).
   Examples in the README are for all users and stay in bash. Don't rely on tools only some
@@ -148,11 +152,11 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.3.0)
+## Open tasks (target: release 1.2.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
-media-optimizer hand-off on the end screen; 1.2.0 the image/video counts and the subfolder
-question in the folder list. New changes go under
+media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
+in the folder list. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -177,6 +181,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.3.0 for behaviour changes, else 1.2.1) before
+- **Next release:** raise `__version__` (1.2.0 for behaviour changes, else 1.1.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

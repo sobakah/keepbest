@@ -3,19 +3,6 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.2.0] — 2026-10-10
-
-**Upgrading:** `pipx upgrade keepbest`.
-
-### Changed
-
-- **The folder list counts images and videos apart** (`3 images · 1 video`), for the main folder, every subfolder and the selection total. Before, every file was counted as an image. With videos switched off, their count is marked *not scanned*.
-- **Switching a folder asks about its subfolders.** In the folder list, a folder used to take every folder below it along. Now you are asked first (`Also switch the 2 subfolders below Urlaub/? [Y/n]`, Enter: yes), so a folder can be left out while its subfolders are still scanned. No question when nothing below would change, or when the subfolders are listed in the same input.
-
-### Fixed
-
-- **A SIGTERM right when media-optimizer started could stop keepbest** instead of being passed on, leaving media-optimizer running on its own. keepbest now takes over the signals before it starts media-optimizer.
-
 ## [1.1.0] — 2026-10-10
 
 **Upgrading:** `pipx upgrade keepbest`.
@@ -23,6 +10,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **Run media-optimizer afterwards.** If [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, the end screen of a run that removed files offers `m` to run it on the same folder. When it ends, keepbest's end screen comes back for a new scan. Ctrl+C stops only media-optimizer.
+
+### Changed
+
+- **The folder list counts images and videos apart** (`3 images · 1 video`), for the main folder, every subfolder and the selection total. Before, every file was counted as an image. With videos switched off, their count is marked *not scanned*.
+- **Switching a folder asks about its subfolders.** In the folder list, a folder used to take every folder below it along. Now you are asked first (`Also switch the 2 subfolders below Urlaub/? [Y/n]`, Enter: yes), so a folder can be left out while its subfolders are still scanned. No question when nothing below would change, or when the subfolders are listed in the same input.
 
 ## [1.0.0] — 2026-10-08
 
@@ -275,7 +267,6 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
-[1.2.0]: https://github.com/sobakah/keepbest/releases/tag/1.2.0
 [1.1.0]: https://github.com/sobakah/keepbest/releases/tag/1.1.0
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
 [0.5.1]: https://github.com/sobakah/keepbest/releases/tag/0.5.1
