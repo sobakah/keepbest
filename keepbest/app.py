@@ -1021,9 +1021,11 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
 
 def run_optimizer(target: Path, settings: dict) -> None:
     info(f"\nStarting media-optimizer on {target}.")
-    if not settings["recursive"] or settings["excluded"]:
-        warn("media-optimizer includes all subfolders, also those this run left out.")
-    code = handoff.run(target)
+    if not settings["recursive"]:
+        info("It gets the same choice: only the main folder, no subfolders.")
+    elif settings["excluded"]:
+        info(f"It gets the same folder choice: {len(settings['excluded'])} folder(s) left out.")
+    code = handoff.run(target, settings["recursive"], settings["excluded"])
     print()
     if code == 127:
         error("media-optimizer could not be started.")

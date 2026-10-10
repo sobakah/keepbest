@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **media-optimizer gets keepbest's folder choice.** Started with `m` from the end screen, media-optimizer now covers the same folders as the run: without `r` only the main folder, otherwise all subfolders except the ones left out with `f` or `--exclude`. Before, it always included every subfolder and keepbest only warned about it. The choice is passed as `MO_SUBFOLDERS` and `MO_EXCLUDE_FOLDERS` (a JSON list, since folder names may contain `:`); media-optimizer then skips its own subfolder question.
+
 ## [1.1.0] — 2026-10-10
 
 **Upgrading:** `pipx upgrade keepbest`.

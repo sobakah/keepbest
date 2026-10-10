@@ -127,7 +127,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter or `q`).
 
-**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer always includes all subfolders, also those keepbest left out; keepbest warns about that. Ctrl+C stops media-optimizer, not keepbest.
+**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs a media-optimizer newer than release 2.1; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest.
 
 ## Viewers
 

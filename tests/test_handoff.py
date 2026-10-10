@@ -19,9 +19,12 @@ def optimizer(fake_command, tmp_path):
     env_log = tmp_path / "optimizer.env"
 
     def make(script: str = "", exit_code: int = 0):
+        folders_log = tmp_path / "optimizer.folders"
         command = fake_command("media-optimizer", exit_code=exit_code,
-                               script=f"echo \"$MO_CALLER $MO_HOLD\" >> '{env_log}'\n{script}")
+                               script=f"echo \"$MO_CALLER $MO_HOLD\" >> '{env_log}'\n"
+                                      f"echo \"$MO_SUBFOLDERS $MO_EXCLUDE_FOLDERS\" >> '{folders_log}'\n{script}")
         command.env = lambda: env_log.read_text().split() if env_log.exists() else []
+        command.folders = lambda: folders_log.read_text().strip() if folders_log.exists() else None
         return command
     return make
 
@@ -60,10 +63,31 @@ def test_not_offered_when_not_installed(one_copy, run_cli, tmp_path):
     assert OFFER not in result.stdout
 
 
-def test_a_partial_scan_warns_that_it_covers_all_subfolders(one_copy, run_cli, optimizer):
-    optimizer()
+def test_without_subfolders_media_optimizer_gets_none(one_copy, run_cli, optimizer):
+    command = optimizer()
     result = run_cli(one_copy.path, keys=["", "m", "q"])            # without -r
-    assert "includes all subfolders" in result.stdout
+    assert "only the main folder, no subfolders" in result.stdout
+    assert command.folders() == "exclude []"
+
+
+def test_the_folder_choice_is_passed_on(one_copy, run_cli, optimizer):
+    one_copy.photo("Urlaub/Strand/b.png", 2)
+    one_copy.photo("Familie: 2024/c.png", 3)                         # ':' needs JSON
+    one_copy.photo("Arbeit/d.png", 4)
+    command = optimizer()
+    result = run_cli(one_copy.path, "-r", "--exclude", "Urlaub", "--exclude", "Familie: 2024",
+                     keys=["", "m", "q"])
+    assert "3 folder(s) left out" in result.stdout, result.stdout
+    assert command.folders() == 'include ["Familie: 2024", "Urlaub", "Urlaub/Strand"]'
+
+
+def test_folder_env_matches_media_optimizer():
+    """The settings media-optimizer reads; checked against its parser when installed."""
+    from keepbest.handoff import folder_env
+    env = folder_env(True, {"a:b", ".", "x/y"})
+    assert env == {"MO_SUBFOLDERS": "include", "MO_EXCLUDE_FOLDERS": '[".", "a:b", "x/y"]'}
+    config = pytest.importorskip("media_optimizer.config")
+    assert config.parse_value(config.RULES["exclude_folders"], env["MO_EXCLUDE_FOLDERS"]) == [".", "a:b", "x/y"]
 
 
 def test_failing_optimizer_still_returns_to_keepbest(one_copy, run_cli, optimizer):

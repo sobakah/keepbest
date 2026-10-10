@@ -7,6 +7,7 @@ returns when it exits.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -21,16 +22,27 @@ def available() -> str | None:
     return shutil.which(COMMAND)
 
 
-def run(target: Path) -> int:
+def folder_env(recursive: bool, excluded) -> dict[str, str]:
+    """keepbest's folder choice as media-optimizer settings, so it covers the
+    same folders and does not ask about subfolders again. Both use the same
+    model: an excluded folder ('/' form, '.' = the main folder) loses only its
+    own files. JSON, because a folder name may contain ':'."""
+    if not recursive:
+        return {"MO_SUBFOLDERS": "exclude", "MO_EXCLUDE_FOLDERS": "[]"}
+    return {"MO_SUBFOLDERS": "include", "MO_EXCLUDE_FOLDERS": json.dumps(sorted(excluded))}
+
+
+def run(target: Path, recursive: bool = True, excluded=()) -> int:
     """Run media-optimizer on *target* in this terminal and return its exit code.
 
     MO_CALLER tells media-optimizer who started it; MO_HOLD=0 stops it from
-    keeping the window open at the end, since keepbest continues in it.
+    keeping the window open at the end, since keepbest continues in it. The
+    folder choice of this run is passed on (folder_env).
     """
     executable = available()
     if executable is None:
         return 127
-    env = {**os.environ, "MO_CALLER": "keepbest", "MO_HOLD": "0"}
+    env = {**os.environ, "MO_CALLER": "keepbest", "MO_HOLD": "0", **folder_env(recursive, excluded)}
     # Ctrl+C and a closed terminal reach media-optimizer directly (same process
     # group); it stops its encoders cleanly. keepbest must neither stop nor kill
     # it then. A SIGTERM sent only to keepbest is passed on. The handlers are in
