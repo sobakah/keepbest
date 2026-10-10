@@ -30,7 +30,7 @@ Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 156 tests, ~17 s; video tests skip without ffmpeg
+python3 -m pytest                 # 164 tests, ~20 s; video tests skip without ffmpeg
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

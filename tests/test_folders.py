@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from keepbest.app import (ROOT, FolderIndex, find_images, folder_entries, normalize_excluded,
+from keepbest.app import (ROOT, FolderIndex, find_images, folder_entries, media_text, normalize_excluded,
                          parse_numbers, switch_folders)
 
 
@@ -62,6 +62,43 @@ def test_files_in_scope(tree):
 
 
 # --- the folder list ----------------------------------------------------------
+def test_folders_count_images_and_videos_apart(tree):
+    (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")   # the list goes by extension
+    (tree.path / "Urlaub" / "Strand" / "wave.mkv").write_bytes(b"not decoded")
+    kinds = FolderIndex().folder_kinds(tree.path)
+    assert kinds == {ROOT: (1, 0), "Familie": (1, 0), "Urlaub": (0, 1), "Urlaub/Strand": (1, 1),
+                     "Urlaub/Berge": (1, 0)}
+
+
+@pytest.mark.parametrize("images, videos, scanned, text", [
+    (1, 0, True, "1 image"),
+    (3, 1, True, "3 images · 1 video"),
+    (0, 2, True, "2 videos"),
+    (2, 1, False, "2 images · 1 video (not scanned)"),
+    (0, 0, True, ""),
+])
+def test_media_text(images, videos, scanned, text):
+    assert media_text(images, videos, scanned) == text
+
+
+def test_the_folder_list_shows_images_and_videos(tree, run_cli):
+    (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")
+    (tree.path / "Urlaub" / "Strand" / "wave.mkv").write_bytes(b"not decoded")
+    screen = run_cli(tree.path, "-r", keys=["f", "", "q"]).stdout   # open the list, done, quit
+    assert "Main folder  1 image directly in it" in screen
+    assert "Familie/   1 image\n" in screen
+    assert "Urlaub/    1 video\n" in screen
+    assert "Strand/  1 image · 1 video\n" in screen
+    assert "Selected: main folder + 4 of 4 subfolders · 4 images · 2 videos\n" in screen
+
+
+def test_the_folder_list_marks_videos_that_are_not_scanned(tree, run_cli):
+    (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")
+    screen = run_cli(tree.path, "-r", "--no-videos", keys=["f", "", "q"]).stdout
+    assert "1 video (not scanned)" in screen
+    assert "Selected: main folder + 4 of 4 subfolders · 4 images\n" in screen
+
+
 @pytest.fixture
 def entries(tree):
     found = folder_entries(tree.path, FolderIndex())

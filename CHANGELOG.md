@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **The folder list counts images and videos apart** (`3 images · 1 video`), for the main folder, every subfolder and the selection total. Before, every file was counted as an image. With videos switched off, their count is marked *not scanned*.
+
 ## [1.1.0] — 2026-10-10
 
 **Upgrading:** `pipx upgrade keepbest`.

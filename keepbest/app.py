@@ -109,6 +109,15 @@ class FolderIndex:
                 counts[rel] = counts.get(rel, 0) + 1
         return counts
 
+    def folder_kinds(self, base_dir: Path) -> dict[str, tuple[int, int]]:
+        """(images, videos) directly in each folder, relative in '/' form."""
+        kinds: dict[str, tuple[int, int]] = {}
+        for path in self.images(base_dir):
+            rel = folder_of(path, base_dir)
+            images, videos = kinds.get(rel, (0, 0))
+            kinds[rel] = (images, videos + 1) if is_video(path) else (images + 1, videos)
+        return kinds
+
     def in_scope_files(self, base_dir: Path, settings: dict) -> list[Path]:
         files = []
         for path in self.images(base_dir):
@@ -175,6 +184,14 @@ def resolve_directory(initial: Path | None, index: FolderIndex,
 
 
 # --- folder picker -----------------------------------------------------------
+def media_text(images: int, videos: int, videos_scanned: bool = True) -> str:
+    """'3 images · 1 video', '2 videos', ... or '' when there are none."""
+    parts = [f"{images} image{'s' if images != 1 else ''}"] if images else []
+    if videos:
+        parts.append(f"{videos} video{'s' if videos != 1 else ''}" + ("" if videos_scanned else " (not scanned)"))
+    return " · ".join(parts)
+
+
 def folder_entries(base_dir: Path, index: FolderIndex) -> list[tuple[str, int]]:
     """(relative folder, images directly in it) for every subfolder holding images,
     plus the folders above them so the list reads like a tree. The main folder is
@@ -237,9 +254,10 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
     while True:
         entries = folder_entries(base_dir, index)
         print_banner(f"Choose folders to scan ({len(entries)} subfolders)")
-        main_count = index.folder_counts(base_dir).get(ROOT, 0)
+        kinds = index.folder_kinds(base_dir)
+        videos_on = settings.get("videos", True)
         main_on = ROOT not in excluded
-        files_text = f"{main_count} file{'s' if main_count != 1 else ''} directly in it"
+        files_text = f"{media_text(*kinds.get(ROOT, (0, 0)), videos_on) or 'no files'} directly in it"
         if main_on:
             print(f"  [{StyleUI.GREEN}  m{StyleUI.RESET}] {StyleUI.GREEN}[✓]{StyleUI.RESET} {StyleUI.BOLD}Main folder{StyleUI.RESET}"
                   f"  {StyleUI.GRAY}{files_text}{StyleUI.RESET}\n")
@@ -259,18 +277,20 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
             names.append("  " * (len(parts) - 1) + parts[-1] + "/")
         name_width = min(max(display_width(n) for n in names), max(20, terminal_width() - 30))
 
-        for number, ((rel, count), name) in enumerate(zip(entries, names), 1):
+        for number, ((rel, _), name) in enumerate(zip(entries, names), 1):
             on = rel not in excluded
             box = f"{StyleUI.GREEN}[✓]{StyleUI.RESET}" if on else f"{StyleUI.GRAY}[ ]{StyleUI.RESET}"
             shown = pad(truncate(name, name_width), name_width)
             shown = shown if on else f"{StyleUI.GRAY}{shown}{StyleUI.RESET}"
-            amount = f"{count} image{'s' if count != 1 else ''}" if count else "—"
+            amount = media_text(*kinds.get(rel, (0, 0)), videos_on) or "—"
             print(f"  [{StyleUI.GREEN}{number:3d}{StyleUI.RESET}] {box} {shown}  {StyleUI.GRAY}{amount}{StyleUI.RESET}")
 
         chosen = sum(1 for rel, _ in entries if rel not in excluded)
         main_text = "main folder" if main_on else f"{StyleUI.YELLOW}main folder excluded{StyleUI.RESET}"
+        scope = index.in_scope_files(base_dir, settings)
+        scope_videos = sum(1 for path in scope if is_video(path))
         print(f"\n{StyleUI.BOLD}Selected:{StyleUI.RESET} {main_text} + {chosen} of {len(entries)} subfolders · "
-              f"{index.in_scope(base_dir, settings)} files")
+              f"{media_text(len(scope) - scope_videos, scope_videos) or 'no files'}")
         print_primary_action("Enter", "Done")
         print_menu([
             ("Select", [
