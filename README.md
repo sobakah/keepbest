@@ -60,7 +60,7 @@ The program opens on a **start screen** with the folder, the number of files in 
 | `f` | Choose subfolders (with `r` on) |
 | `c` | Change folder (with Tab completion) |
 
-**Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. A number switches that subfolder and everything below it; `2-5` or `1,3,7` switch several at once, each on its own (`4,1` selects 4 and unselects 1); `a` selects all subfolders, `n` none. The **main folder** is switched only with its own key `m`, so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
+**Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. A number switches that subfolder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). `2-5` or `1,3,7` switch several at once, each on its own (`4,1` selects 4 and unselects 1); `a` selects all subfolders, `n` none. The **main folder** is switched only with its own key `m`, so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
 
 Hidden folders such as `.thumbnails` or `.Trash` are never scanned, and the home or root folder is refused.
 

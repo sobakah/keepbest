@@ -5,7 +5,7 @@ import os
 import pytest
 
 from keepbest.app import (ROOT, FolderIndex, find_images, folder_entries, media_text, normalize_excluded,
-                         parse_numbers, switch_folders)
+                         parse_numbers, subfolders_along, switch_folders)
 
 
 @pytest.fixture
@@ -62,6 +62,31 @@ def test_files_in_scope(tree):
 
 
 # --- the folder list ----------------------------------------------------------
+def test_a_folder_can_be_switched_without_its_subfolders(entries):
+    excluded = set()
+    switch_folders(excluded, entries, [2], with_subfolders=False)    # Urlaub only
+    assert excluded == {"Urlaub"}
+
+
+def test_subfolders_along_tells_what_would_change(entries):
+    assert subfolders_along(set(), entries, [2]) == (["Urlaub"], 2)          # Berge and Strand
+    assert subfolders_along(set(), entries, [1]) == ([], 0)                  # Familie has none
+    assert subfolders_along(set(), entries, [2, 3, 4]) == ([], 0)            # all listed themselves
+    assert subfolders_along(set(), entries, [2, 4]) == (["Urlaub"], 1)       # only Berge goes along
+    assert subfolders_along({"Urlaub"}, entries, [2]) == ([], 0)             # they are on already
+
+
+def test_the_folder_list_asks_before_switching_subfolders(tree, run_cli):
+    # f opens the list, 2 is Urlaub with Berge and Strand below it
+    declined = run_cli(tree.path, "-r", keys=["f", "2", "n", "", "q"]).stdout
+    assert "Also switch the 2 subfolders below Urlaub/? [Y/n]" in declined
+    assert "Selected: main folder + 3 of 4 subfolders" in declined
+    accepted = run_cli(tree.path, "-r", keys=["f", "2", "", "", "q"]).stdout   # Enter = yes
+    assert "Selected: main folder + 1 of 4 subfolders" in accepted
+    no_question = run_cli(tree.path, "-r", keys=["f", "1", "", "q"]).stdout   # Familie has none
+    assert "Also switch" not in no_question
+
+
 def test_folders_count_images_and_videos_apart(tree):
     (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")   # the list goes by extension
     (tree.path / "Urlaub" / "Strand" / "wave.mkv").write_bytes(b"not decoded")

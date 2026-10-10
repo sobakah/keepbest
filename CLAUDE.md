@@ -30,7 +30,7 @@ Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 164 tests, ~20 s; video tests skip without ffmpeg
+python3 -m pytest                 # 167 tests, ~20 s; video tests skip without ffmpeg
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -82,7 +82,8 @@ pytest in pipx, the system Python works if send2trash's user site-packages are o
   looser, videos, subfolders) are locked on the start screen; stricter strictness works without a
   rescan (`tighten_groups`).
 - The main folder is only excluded with its own key `m` (or `--exclude .`); numbers/ranges/a/n in
-  the folder list change subfolders only; each listed folder switches on its own (`switch_folders`).
+  the folder list change subfolders only; each listed folder switches on its own (`switch_folders`);
+  subfolders that would change along are only switched after a `[Y/n]` question (`subfolders_along`).
 - Copy numbers "(n)" are only removed from a kept file when another file of the group shares the
   base name (series names like `Holiday (12).jpg` stay); never overwrite an existing name.
 - Keeper ranking: resolution → lossless over lossy/unknown → `format_ranks` → no copy number → bpp

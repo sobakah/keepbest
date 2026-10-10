@@ -228,21 +228,35 @@ def parse_numbers(text: str, upper: int) -> list[int] | None:
     return numbers or None
 
 
-def switch_folders(excluded: set, entries: list[tuple[str, int]], numbers: list[int]) -> None:
+def switch_folders(excluded: set, entries: list[tuple[str, int]], numbers: list[int],
+                   with_subfolders: bool = True) -> None:
     """Switch the listed folders (1-based numbers into *entries*) in *excluded*.
 
     Every listed folder switches on its own, judged by its state before this
-    input ("4,1" selects 4 and unselects 1). A folder takes the folders below it
-    along; parents go first, so a listed subfolder's own switch wins over its
-    parent's."""
+    input ("4,1" selects 4 and unselects 1). With *with_subfolders*, a folder
+    takes the folders below it along; parents go first, so a listed subfolder's
+    own switch wins over its parent's."""
     listed = {entries[n - 1][0] for n in numbers}
     targets = {rel: rel in excluded for rel in listed}  # True = switch on
     for rel in sorted(listed, key=lambda r: r.count("/")):
-        for below in _below(rel, entries):
+        for below in (_below(rel, entries) if with_subfolders else [rel]):
             if targets[rel]:
                 excluded.discard(below)
             else:
                 excluded.add(below)
+
+
+def subfolders_along(excluded: set, entries: list[tuple[str, int]], numbers: list[int]) -> tuple[list[str], int]:
+    """What switching the listed folders would change below them: the listed
+    folders concerned and how many subfolders would change with them. ([], 0)
+    when the subfolders already have that state or are listed themselves."""
+    alone, along = set(excluded), set(excluded)
+    switch_folders(alone, entries, numbers, with_subfolders=False)
+    switch_folders(along, entries, numbers)
+    changed = alone ^ along
+    listed = [entries[n - 1][0] for n in sorted(set(numbers))]
+    parents = [rel for rel in listed if any(c.startswith(rel + "/") for c in changed)]
+    return parents, len(changed)
 
 
 def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
@@ -294,7 +308,7 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
         print_primary_action("Enter", "Done")
         print_menu([
             ("Select", [
-                (f"1-{len(entries)}", "Switch folder and its subfolders on/off"),
+                (f"1-{len(entries)}", "Switch a folder on/off (asks about its subfolders)"),
                 ("a", "Select all subfolders"),
                 ("n", "Select no subfolders"),
                 ("m", "Switch the main folder on/off"),
@@ -323,7 +337,13 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
             if numbers is None:
                 warn("Unknown option.")
                 continue
-            switch_folders(excluded, entries, numbers)
+            parents, count = subfolders_along(excluded, entries, numbers)
+            along = True
+            if parents:
+                names = ", ".join(f"{rel}/" for rel in parents)
+                along = confirm(f"Also switch the {count} subfolder{'s' if count != 1 else ''} below {names}?",
+                                default=True)
+            switch_folders(excluded, entries, numbers, with_subfolders=along)
 
 
 # --- start screen ------------------------------------------------------------

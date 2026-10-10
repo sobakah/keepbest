@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **The folder list counts images and videos apart** (`3 images · 1 video`), for the main folder, every subfolder and the selection total. Before, every file was counted as an image. With videos switched off, their count is marked *not scanned*.
+- **Switching a folder asks about its subfolders.** In the folder list, a folder used to take every folder below it along. Now you are asked first (`Also switch the 2 subfolders below Urlaub/? [Y/n]`, Enter: yes), so a folder can be left out while its subfolders are still scanned. No question when nothing below would change, or when the subfolders are listed in the same input.
 
 ## [1.1.0] — 2026-10-10
 
