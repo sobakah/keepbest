@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **The folder list counts images and videos apart** (`3 images · 1 video`), for the main folder, every subfolder and the selection total. Before, every file was counted as an image. With videos switched off, their count is marked *not scanned*.
 - **Switching a folder asks about its subfolders.** In the folder list, a folder used to take every folder below it along. Now you are asked first (`Also switch the 2 subfolders below Urlaub/? [Y/n]`, Enter: yes), so a folder can be left out while its subfolders are still scanned. No question when nothing below would change, or when the subfolders are listed in the same input.
 
+### Fixed
+
+- **A SIGTERM right when media-optimizer started could stop keepbest** instead of being passed on, leaving media-optimizer running on its own. keepbest now takes over the signals before it starts media-optimizer.
+
 ## [1.1.0] — 2026-10-10
 
 **Upgrading:** `pipx upgrade keepbest`.

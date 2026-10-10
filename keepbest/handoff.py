@@ -31,21 +31,35 @@ def run(target: Path) -> int:
     if executable is None:
         return 127
     env = {**os.environ, "MO_CALLER": "keepbest", "MO_HOLD": "0"}
-    try:
-        child = subprocess.Popen([executable, "run", str(target)], env=env)
-    except OSError:
-        return 127
     # Ctrl+C and a closed terminal reach media-optimizer directly (same process
     # group); it stops its encoders cleanly. keepbest must neither stop nor kill
-    # it then. A SIGTERM sent only to keepbest is passed on.
+    # it then. A SIGTERM sent only to keepbest is passed on. The handlers are in
+    # place before the start, so no signal slips through in between; they are
+    # Python handlers, not SIG_IGN, because an ignored signal would stay ignored
+    # in media-optimizer, while a handler is reset to the default there.
+    child = None
+    pending: list[int] = []
+
+    def ignore(signum, frame):
+        pass
+
+    def forward(signum, frame):
+        if child is None:
+            pending.append(signum)  # arrived while starting: sent right after
+        else:
+            child.send_signal(signum)
+
     previous = {name: signal.getsignal(getattr(signal, name))
                 for name in ("SIGINT", "SIGHUP", "SIGTERM") if hasattr(signal, name)}
-    for name in ("SIGINT", "SIGHUP"):
-        if name in previous:
-            signal.signal(getattr(signal, name), signal.SIG_IGN)
-    if "SIGTERM" in previous:
-        signal.signal(signal.SIGTERM, lambda signum, frame: child.send_signal(signum))
+    for name in previous:
+        signal.signal(getattr(signal, name), forward if name == "SIGTERM" else ignore)
     try:
+        try:
+            child = subprocess.Popen([executable, "run", str(target)], env=env)
+        except OSError:
+            return 127
+        for signum in pending:
+            child.send_signal(signum)
         return child.wait()
     finally:
         for name, handler in previous.items():

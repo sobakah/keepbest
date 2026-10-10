@@ -89,3 +89,35 @@ def test_sigterm_to_keepbest_is_passed_on(one_copy, run_cli, optimizer, tmp_path
     result = run_cli(one_copy.path, keys=["", "m", "q"])
     assert got.read_text().strip() == "TERM"
     assert BACK in result.stdout
+
+
+def test_sigterm_while_starting_is_passed_on(fake_command, monkeypatch, tmp_path):
+    """A SIGTERM that arrives while media-optimizer is being started must not stop
+    keepbest (it did about one time in five): it is passed on once the child runs."""
+    import os
+    import signal
+    import subprocess
+
+    from keepbest import handoff
+
+    fake_command("media-optimizer", script="sleep 5")
+    real_popen = subprocess.Popen
+
+    def popen_with_sigterm(*args, **kwargs):
+        os.kill(os.getpid(), signal.SIGTERM)     # right in the window before the child exists
+        return real_popen(*args, **kwargs)
+
+    def stop(signum, frame):                     # keepbest's own handler (cli.stop_on_signals)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(handoff.subprocess, "Popen", popen_with_sigterm)
+    previous = signal.signal(signal.SIGTERM, stop)
+    try:
+        try:
+            code = handoff.run(tmp_path)
+        except KeyboardInterrupt:
+            pytest.fail("keepbest stopped on a SIGTERM meant for media-optimizer")
+        assert signal.getsignal(signal.SIGTERM) is stop                # restored afterwards
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+    assert code == -signal.SIGTERM                                     # the child got it
