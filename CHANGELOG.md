@@ -3,7 +3,9 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.2.0] — 2026-10-16
+
+**Upgrading:** `pipx upgrade keepbest`. Passing the folder choice to media-optimizer needs media-optimizer 2.2.
 
 ### Added
 
@@ -301,6 +303,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
+[1.2.0]: https://github.com/sobakah/keepbest/releases/tag/1.2.0
 [1.1.0]: https://github.com/sobakah/keepbest/releases/tag/1.1.0
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
 [0.5.1]: https://github.com/sobakah/keepbest/releases/tag/0.5.1

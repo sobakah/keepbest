@@ -189,16 +189,14 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.2.0)
+## Open tasks (target: release 1.3.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
 media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
-in the folder list. New changes go under
-an `## [Unreleased]` heading at the top of `CHANGELOG.md`. Unreleased so far (`__version__` is
-still 1.1.0): media-optimizer gets the run's folder choice, and the fixes from an outside review
-checked on 2026-10-16 (16-bit greyscale, extra video streams, track order, protected folders,
-marks, MPO/TIFF, dry-run carry-out, `i0`; see CHANGELOG). Behaviour changes, so the next release
-is 1.2.0.
+in the folder list; 1.2.0 (2026-10-16) passes the folder choice to media-optimizer (needs its 2.2)
+and has the fixes from an outside review (16-bit greyscale, extra video streams, track order,
+protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`). New changes go under
+an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
   Dry-run "not duplicates" marks write `.keepbest_ignore.json` into the picture folder, which
@@ -222,6 +220,6 @@ is 1.2.0.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.2.0 for behaviour changes, else 1.1.1) before
+- **Next release:** raise `__version__` (1.3.0 for behaviour changes, else 1.2.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

@@ -128,7 +128,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter or `q`).
 
-**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs a media-optimizer newer than release 2.1; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest.
+**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs media-optimizer 2.2 or newer; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest.
 
 ## Viewers
 
@@ -258,7 +258,7 @@ The tests belong to the repository, not to the installed program: pipx installs 
 pipx inject keepbest pytest
 git clone https://github.com/sobakah/keepbest.git
 cd keepbest
-git checkout 1.1.0       # optional: the version you have installed (see keepbest --version)
+git checkout 1.2.0       # optional: the version you have installed (see keepbest --version)
 "$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest
 ```
 
@@ -291,12 +291,12 @@ def test_a_backup_copy_is_found(library, run_cli):
 
 ## Releasing a new version
 
-Versions have three parts: a new feature or changed behaviour raises the middle number (1.2.0), a pure fix the last one (1.1.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
+Versions have three parts: a new feature or changed behaviour raises the middle number (1.3.0), a pure fix the last one (1.2.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
 
 ```bash
-git tag -a 1.2.0 -m "keepbest 1.2.0"
+git tag -a 1.3.0 -m "keepbest 1.3.0"
 git push && git push --tags
-gh release create 1.2.0 --title "keepbest 1.2.0" --notes-file notes.md   # that version's changelog section
+gh release create 1.3.0 --title "keepbest 1.3.0" --notes-file notes.md   # that version's changelog section
 ```
 
 Without the version bump, `pipx upgrade keepbest` doesn't see the new release. Never move or delete a published tag; release a fix as a new version instead.
