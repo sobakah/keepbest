@@ -92,6 +92,51 @@ def test_edits_in_12_bit_pictures_do_not_match(library, bits):
     assert diff(a, copy) == 0
 
 
+def save_16_bit(path, values, size):
+    img = Image.new("I;16", size)
+    img.putdata([min(65535, round(v)) for v in values])
+    img.save(path)
+    return path
+
+
+def dark_values(seed: int, brightest: int):
+    """A greyscale photo whose brightest pixel is *brightest* (of 65535), and its size."""
+    gray = pictures.photo(seed).convert("L")
+    top = gray.getextrema()[1]
+    return [v * brightest / top for v in gray.tobytes()], gray.size
+
+
+def test_a_dark_16_bit_picture_matches_its_8_bit_copy(library):
+    values, size = dark_values(1, 8000)                          # a low-key photo: 16-bit, but dark
+    a = save_16_bit(library / "a.png", values, size)
+    copy = Image.new("L", size)
+    copy.putdata([round(v / 257) for v in values])               # what any converter makes of it
+    copy.save(library / "copy.png")
+    assert diff(a, library / "copy.png") <= LIMIT
+
+
+def test_a_16_bit_picture_and_a_brighter_copy_do_not_match(library):
+    values, size = dark_values(1, 4000)
+    a = save_16_bit(library / "a.png", values, size)
+    for factor in (1.3, 2, 4):                                    # x4 used to score 0
+        brighter = save_16_bit(library / f"x{factor}.png", [v * factor for v in values], size)
+        assert diff(a, brighter) > LIMIT, factor
+
+
+def test_a_downscaled_16_bit_copy_matches(library):
+    values, size = dark_values(3, 4110)                          # just above 12 bits
+    a = save_16_bit(library / "a.png", values, size)
+    with Image.open(a) as img:
+        img.convert("I").resize((size[0] // 2, size[1] // 2), Image.BOX).convert("I;16").save(library / "b.png")
+    assert diff(a, library / "b.png") <= LIMIT
+
+
+def test_float_pictures_with_infinite_values_are_reported(library):
+    Image.frombytes("F", (4, 4), struct.pack("<16f", *([0.5] * 15 + [float("inf")]))).save(library / "inf.tif")
+    result = analyze_image(library / "inf.tif", 8, {})
+    assert "not finite" in result["error"]
+
+
 def test_float_pictures_are_not_all_black(library):
     def save_float(img, name):
         gray = img.convert("L")

@@ -161,3 +161,10 @@ def test_the_main_folder_is_never_switched_by_numbers(entries):
 ])
 def test_parse_numbers(text, upper, expected):
     assert parse_numbers(text, upper) == expected
+
+
+def test_with_videos_switched_off_the_hint_names_them(library, run_cli):
+    (library / "a.mp4").write_bytes(b"not really a video")
+    (library / "b.mp4").write_bytes(b"not really a video either")
+    result = run_cli(library.path, "--no-videos", keys=["", "q"])          # Enter: nothing to scan
+    assert "Nothing to scan here - include videos (7)" in result.stdout

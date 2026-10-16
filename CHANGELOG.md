@@ -5,9 +5,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`i0`: only the recommended image is different.** On a group of three or more images, `i0` marks #0 as not a duplicate of the others, keeps it, and compares the others with each other afresh, so copies among them can still be removed.
+
 ### Changed
 
 - **media-optimizer gets keepbest's folder choice.** Started with `m` from the end screen, media-optimizer now covers the same folders as the run: without `r` only the main folder, otherwise all subfolders except the ones left out with `f` or `--exclude`. Before, it always included every subfolder and keepbest only warned about it. The choice is passed as `MO_SUBFOLDERS` and `MO_EXCLUDE_FOLDERS` (a JSON list, since folder names may contain `:`); media-optimizer then skips its own subfolder question.
+- **More folders are refused:** besides the home and root folder, also every folder above home (`/home`, `/Users`) and system folders (`/usr`, `/etc`, `/var`, ...).
+- **Every track of a video counts in Stage 2:** further video streams (a second camera angle) and data tracks (timecode, camera telemetry) are compared like audio and subtitle tracks, and the copy with the most of them is recommended.
+- **Track order counts in Stage 2.** Copies with the same tracks in another order start with another language or sound; they are now asked about (`TRACK ORDER`), and `--auto` leaves them alone. Before, `--auto` removed one of them.
+- **"Not duplicates" marks separate two images, not a group.** Images marked against a group's recommended image are still compared with each other, so two copies among them are found as a group of their own.
+- **Camera JPEGs with a second picture (MPO) and multi-page TIFFs take part in Stage 3.** They were skipped as "animated". They are compared by their first picture, rank like JPEG/TIFF, and are only ever kept, never removed for another copy.
+- **Reviewing a dry run again (`e`/`r`)** shows the visual groups as they were found, with the images a chosen keeper had taken out; remuxes skipped in the dry run are asked again, and the ones decided there are logged as decided by you instead of "automatic".
+- **`format_ranks` names are not case-sensitive**, `JPG` means JPEG and `TIF` TIFF; unknown names are reported. The unused `JPG` entry is gone from the defaults.
+
+### Fixed
+
+- **A dark 16-bit greyscale picture was deleted as a duplicate of a brighter version of itself** (4× as bright scored 0), and dark 16-bit pictures didn't match their 8-bit copies. Greyscale with more than 8 bits is now compared pairwise on one brightness scale.
+- **A video with a second video stream could be removed** as an identical remux of a copy with only the first one.
+- **Resumed sessions and saved dry runs use their own folder choice** for the file count on the start screen and for media-optimizer, instead of the command line's.
+- **`--exclude` with `..`** (`Urlaub/../Urlaub`) was silently not applied, so the folder was scanned and cleaned anyway; paths outside the scanned folder are now reported.
+- **Carrying out a dry run** no longer fails on a remux whose file Stage 1 renamed ("No such file or directory"), and a dry run now picks the same keeper as a real run would.
+- When nothing of a group could be removed (e.g. no permission), the kept file keeps its "(1)" and the group stays open for a resumed session.
+- Remux groups skipped with `s` are counted as skipped.
+- The start screen promised renames whose new name was taken, and showed another rename setting than the one a saved dry run is carried out with; a finished Stage 1/2-only dry run was shown as "0 group(s)".
+- Ctrl+C or SIGTERM during Stage 2 waited until every video being read was read to the end, and then started reading it again; ffmpeg is now stopped at once.
+- Tab completion of folder names with spaces completed the wrong folder.
+- `v` crashed the review when no viewer (`xdg-open`) was installed.
+- Durations of possible remuxes are compared alike for both files (1 % of the longer one).
+- Float pictures with infinite values are reported as such instead of with an internal error message.
+- With videos switched off, "Nothing to scan here" now says that videos can be included (`7`).
 
 ## [1.1.0] — 2026-10-10
 

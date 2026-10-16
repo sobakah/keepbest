@@ -41,3 +41,19 @@ def test_path_completion_lists_all_matches_once(tmp_path):
         found.append(match)
         state += 1
     assert found == [str(tmp_path / "a1") + "/", str(tmp_path / "a2") + "/"]
+
+
+def test_path_completion_keeps_spaces_and_an_opening_quote(tmp_path):
+    folder = tmp_path / "My Pictures" / "2024 Urlaub"
+    folder.mkdir(parents=True)
+    assert ui.complete_path(str(tmp_path / "My Pictures" / "20"), 0) == str(folder) + "/"
+    assert ui.complete_path("'" + str(tmp_path / "My Pic"), 0) == "'" + str(tmp_path / "My Pictures") + "/"
+
+
+def test_spaces_do_not_split_the_path_for_completion():
+    readline = __import__("pytest").importorskip("readline")
+    ui.enable_path_completion()
+    try:
+        assert " " not in readline.get_completer_delims()
+    finally:
+        ui.disable_path_completion()

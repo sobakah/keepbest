@@ -58,3 +58,13 @@ def test_without_flatpak_the_default_viewer_is_used(only_fakes, images):
     assert viewer.open_image_viewer(images, "identity") == "the default viewer"
     # the default viewer is started in the background, once per image: wait for both
     assert sorted(only_fakes.xdg.calls(count=2)) == sorted([[str(p)] for p in images])
+
+
+def test_without_any_viewer_nothing_crashes(images, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(viewer, "_flatpak_state", {})
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    for mode in ("auto", "timg", "identity"):
+        assert viewer.open_image_viewer(images, mode) is None
+    assert "No viewer could be started" in capsys.readouterr().out

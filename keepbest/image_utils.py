@@ -2,6 +2,7 @@
 import hashlib
 import importlib
 import io
+import math
 import re
 import signal
 
@@ -92,6 +93,8 @@ def sha256_file(path, chunk_size=1 << 20):
 
 # Bit depths that greyscale pictures with more than 8 bits are usually stored in.
 _DEPTHS = (8, 10, 12, 14, 16)
+# Greyscale with more than 8 bits (integer or float); compared pairwise, see pixel_difference.
+_HIGH_BIT_MODES = ("I", "I;16", "I;16B", "I;16L", "I;16N", "F")
 
 
 def _to_8_bit(img):
@@ -105,6 +108,7 @@ def _to_8_bit(img):
     depth that holds them; float pictures from 0-1 when they stay in that range."""
     if img.mode == "F":
         _, high = img.getextrema()
+        _check_finite(high)
         if high <= 1.0:
             return img.point(lambda v: v * 255).convert("L")
     else:
@@ -115,15 +119,25 @@ def _to_8_bit(img):
     return img.point(lambda v: v * (256 / (1 << bits))).convert("L")
 
 
+def _check_finite(*values):
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError("pixel values are not finite (NaN or infinity), can't be compared")
+
+
+# Formats whose extra frames are an animation. In others they are further pictures
+# of their own: an MPO's second camera or depth map, a TIFF's other pages.
+_ANIMATION_FORMATS = {"GIF", "PNG", "WEBP", "AVIF", "JXL"}
+
+
 def _normalize(img, max_side):
     """Return an RGB image, orientation-corrected, colour-managed, with transparency
     flattened, downscaled so its longest side is at most `max_side`."""
-    if img.format == "JPEG":
+    if img.format in ("JPEG", "MPO"):
         img.draft("RGB", (max_side, max_side))  # fast DCT-domain downscaling
     icc = img.info.get("icc_profile")
     img = ImageOps.exif_transpose(img)
 
-    if img.mode in ("I", "I;16", "I;16B", "I;16L", "I;16N", "F"):
+    if img.mode in _HIGH_BIT_MODES:
         img = _to_8_bit(img)
 
     img.thumbnail((max_side, max_side), Image.LANCZOS, reducing_gap=3.0)
@@ -210,12 +224,18 @@ def analyze_image(path, hash_size, format_ranks, prefer_jxl=False):
     Returns a dict; on failure the dict contains an 'error' key.
 
     *prefer_jxl* (config "prefer_jxl"): rank JPEG XL files like lossless ones, so
-    a JXL copy is kept instead of a lossless original (PNG, TIFF, ...)."""
+    a JXL copy is kept instead of a lossless original (PNG, TIFF, ...).
+
+    Animations are only reported (not hashed). Other files with several frames
+    (MPO photos from cameras and phones, multi-page TIFFs) are compared by their
+    first picture; 'frames' tells find_groups to never remove them."""
     try:
         stat = path.stat()
         with Image.open(path) as img:
             fmt = (img.format or path.suffix[1:]).upper()
-            animated = getattr(img, "n_frames", 1) > 1
+            frames = getattr(img, "n_frames", 1)
+            if frames > 1 and fmt in _ANIMATION_FORMATS:
+                return {'path': path, 'animated': True}
             width, height = img.size
             orientation = img.getexif().get(0x0112, 1)
             compression = img.info.get("compression")
@@ -224,13 +244,15 @@ def analyze_image(path, hash_size, format_ranks, prefer_jxl=False):
             norm = _normalize(img, 256)
         lossless = is_lossless(path, fmt, compression)
         resolution = width * height
+        # An MPO is a JPEG with more pictures appended; ".jpg" without a format is JPEG.
+        rank_as = {"MPO": "JPEG", "JPG": "JPEG", "TIF": "TIFF"}.get(fmt, fmt) if fmt not in format_ranks else fmt
         return {
             'path': path,
             'width': width,
             'height': height,
             'resolution': resolution,
             'format': fmt,
-            'format_rank': format_ranks.get(fmt, -1),
+            'format_rank': format_ranks.get(rank_as, -1),
             'lossless': lossless,
             'lossless_rank': lossless is True or (fmt == "JXL" and prefer_jxl),
             'bpp': (stat.st_size * 8) / resolution if resolution else 0.0,
@@ -238,32 +260,84 @@ def analyze_image(path, hash_size, format_ranks, prefer_jxl=False):
             'size': stat.st_size,
             'mtime_ns': stat.st_mtime_ns,
             'numbered': has_copy_number(path),
-            'animated': animated,
+            'animated': False,
+            'frames': frames,
             'hash': _dhash(norm.convert("L"), hash_size),
         }
     except Exception as e:
         return {'path': path, 'error': f"{type(e).__name__}: {e}"}
 
 
+def _square_side(width, height, max_side):
+    return max(64, min(max_side, width, height)) // _CELL * _CELL
+
+
 def comparison_thumbnail(path, max_side):
-    """Square RGB thumbnail used for pixel verification: (side, raw_bytes).
-    Never upscales beyond the image's own short side."""
+    """Square thumbnail used for pixel verification: (side, RGB bytes, None), or for
+    greyscale with more than 8 bits (side, None, (float bytes, brightest value)),
+    with the values as stored, on a 16-bit scale. Never upscales beyond the image's
+    own short side."""
     with Image.open(path) as img:
+        if img.mode in _HIGH_BIT_MODES:
+            return _high_bit_thumbnail(img, max_side)
         norm = _normalize(img, max_side * 2)
-    side = max(64, min(max_side, norm.width, norm.height)) // _CELL * _CELL
+    side = _square_side(norm.width, norm.height, max_side)
     thumb = norm.resize((side, side), Image.LANCZOS, reducing_gap=3.0)
-    return side, thumb.tobytes()
+    return side, thumb.tobytes(), None
+
+
+def _high_bit_thumbnail(img, max_side):
+    """Keep the stored values: how bright they are meant to be (10, 12 or 16 bits
+    used?) can only be told by comparing with the other picture of a pair."""
+    img = ImageOps.exif_transpose(img)
+    grey = img if img.mode == "F" else img.convert("F")
+    low, high = grey.getextrema()
+    _check_finite(low, high)
+    if img.mode == "F" and high <= 1.0:  # floats from 0 to 1
+        grey, high = grey.point(lambda v: v * 65535), high * 65535
+    grey.thumbnail((max_side * 2, max_side * 2), Image.LANCZOS, reducing_gap=3.0)
+    side = _square_side(grey.width, grey.height, max_side)
+    grey = grey.resize((side, side), Image.LANCZOS)
+    return side, None, (grey.tobytes(), max(high, 1.0))
+
+
+def _peak(thumb):
+    """The brightest value of a thumbnail on a 16-bit scale (8-bit values x 257)."""
+    side, rgb, high = thumb
+    if high is not None:
+        return high[1]
+    return max(band[1] for band in Image.frombytes("RGB", (side, side), rgb).getextrema()) * 257
+
+
+def _as_rgb(thumb, scale):
+    """The thumbnail as an 8-bit RGB image, its 16-bit-scale values times *scale*."""
+    side, rgb, high = thumb
+    if high is not None:
+        grey = Image.frombytes("F", (side, side), high[0]).point(lambda v: v * scale).convert("L")
+        return Image.merge("RGB", (grey, grey, grey))
+    bands = Image.frombytes("RGB", (side, side), rgb).split()
+    return Image.merge("RGB", [b.convert("F").point(lambda v: v * 257 * scale).convert("L") for b in bands])
 
 
 def pixel_difference(thumb_a, thumb_b):
     """Worst 8x8-cell mean difference (0-255) between two comparison thumbnails.
     The images are compared at the smaller of the two resolutions, lightly blurred
     to absorb resampling/compression noise; the per-cell maximum (not a global mean)
-    is what catches small local edits such as added text."""
-    (sa, da), (sb, db) = thumb_a, thumb_b
+    is what catches small local edits such as added text.
+
+    When one of them is greyscale with more than 8 bits, both are brought to one
+    scale first and stretched together so the brighter one's brightest value is
+    white: then a picture and a copy of it twice as bright never look alike, a dark
+    16-bit picture still matches its 8-bit copy, and edits in 10- or 12-bit data
+    stored in 16-bit files are not squeezed into a few dark levels."""
+    (sa, da, ha), (sb, db, hb) = thumb_a, thumb_b
+    if ha is None and hb is None:
+        a = Image.frombytes("RGB", (sa, sa), da)
+        b = Image.frombytes("RGB", (sb, sb), db)
+    else:
+        scale = 255 / max(_peak(thumb_a), _peak(thumb_b), 1.0)
+        a, b = _as_rgb(thumb_a, scale), _as_rgb(thumb_b, scale)
     side = min(sa, sb)
-    a = Image.frombytes("RGB", (sa, sa), da)
-    b = Image.frombytes("RGB", (sb, sb), db)
     if sa != side:
         a = a.resize((side, side), Image.LANCZOS)
     if sb != side:

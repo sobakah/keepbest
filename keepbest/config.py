@@ -32,9 +32,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "log_file": None,             # null = project folder or state dir (see README), false = off, or a path
     "format_ranks": {
         "JXL": 6, "WEBP": 5, "AVIF": 4, "PNG": 3, "TIFF": 3,
-        "JPEG": 2, "JPG": 2, "GIF": 1, "BMP": 0
+        "JPEG": 2, "GIF": 1, "BMP": 0
     },
 }
+
+# Other names for formats in "format_ranks": files are ranked by the format Pillow
+# reports, which is JPEG for .jpg files. MPO (camera JPEGs with a second picture)
+# ranks like JPEG unless it has a rank of its own.
+FORMAT_ALIASES = {"JPG": "JPEG", "TIF": "TIFF"}
+KNOWN_FORMATS = set(DEFAULT_CONFIG["format_ranks"]) | {"MPO"}
 
 VALID_CHOICES = {
     "delete_mode": ("trash", "permanent", "dry_run"),
@@ -112,12 +118,26 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
             warnings.append("'log_file' must be null, false or a path, using the default location.")
         elif isinstance(DEFAULT_CONFIG[key], dict):
             if isinstance(value, dict):
-                config[key].update(value)  # partial format_ranks keep the other defaults
+                config[key].update(_format_ranks(value, path, warnings))  # partial: the other defaults stay
             else:
                 warnings.append(f"'{key}' must be an object, using defaults.")
         else:
             config[key] = value
     return config
+
+
+def _format_ranks(ranks: dict, path: Path, warnings: list[str]) -> dict:
+    """User format ranks with upper-case names ("jpg" -> "JPEG"); unknown formats are reported."""
+    result = {}
+    for name, rank in ranks.items():
+        fmt = str(name).strip().upper()
+        fmt = FORMAT_ALIASES.get(fmt, fmt)
+        if fmt in KNOWN_FORMATS:
+            result[fmt] = rank
+        else:
+            warnings.append(f"Unknown format '{name}' in 'format_ranks' of {path.name} ignored. "
+                            f"Known: {', '.join(sorted(KNOWN_FORMATS))}.")
+    return result
 
 
 def _rank_ok(value) -> bool:

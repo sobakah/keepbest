@@ -1,6 +1,9 @@
 """End to end: the three stages, deleting, the log, renaming and the command line."""
 
 import os
+from pathlib import Path
+
+from PIL import Image
 
 import pytest
 
@@ -126,6 +129,9 @@ def test_marked_pairs_are_left_out(library, run_cli):
     result = run_cli(library.path, "--dry-run", "-i", keys=["", "i", ""])
     assert "Marked as not duplicates" in result.stdout
     assert (library / ".keepbest_ignore.json").exists()
+    # a.jpg and a small.jpg were only marked against a.png: they are still asked about
+    assert summary(run_cli(library.path, "--auto", "--dry-run"))["visual"] == 1
+    run_cli(library.path, "--dry-run", "-i", keys=["", "i", ""])
     assert summary(run_cli(library.path, "--auto", "--dry-run"))["visual"] == 0
     assert summary(run_cli(library.path, "--auto", "--dry-run", "--no-ignore"))["visual"] == 2
 
@@ -160,3 +166,130 @@ def test_prefer_jxl_chooses_between_png_and_jpeg_xl(library, run_cli, config_fil
     result = run_cli(library.path, "--auto")
     assert summary(result)["visual"] == 1
     assert library.files() == [kept]
+
+
+@pytest.fixture
+def locked(library):
+    """A subfolder whose files can't be removed (moving them needs write access)."""
+    folder = library / "locked"
+    folder.mkdir(parents=True)
+    yield folder
+    folder.chmod(0o755)
+
+
+def test_a_failed_removal_keeps_the_copy_number(library, run_cli, locked):
+    library.photo("a (1).png", 1)
+    library.copy_of("a (1).png", "locked/a (2).png")
+    locked.chmod(0o555)
+    counts = summary(run_cli(library.path, "-r", "--auto"))
+    assert (counts["failed"], counts["renamed"]) == (1, 0)
+    assert library.files() == ["a (1).png", "locked/a (2).png"]
+
+
+def test_a_group_nothing_could_be_removed_from_stays_open(library, run_cli, locked):
+    library.photo("photo (1).png", 1, size=(640, 480))
+    library.variant("photo (1).png", "locked/photo.jpg", pictures.downscaled, quality=90)
+    locked.chmod(0o555)
+    # start, keep #0 (fails), keep the session for the open group
+    result = run_cli(library.path, "-r", "-i", keys=["", "", "", "y"])
+    assert "Nothing was removed - the group stays open." in result.stdout
+    assert summary(result)["renamed"] == 0
+    assert "photo (1).png" in library.files()
+    assert "Resume saved session (1 open group(s))" in run_cli(library.path, keys=["q"]).stdout
+
+
+def test_the_folders_above_home_and_system_folders_are_refused(isolated, monkeypatch):
+    from keepbest.app import is_protected
+    home = isolated / "home"
+    real_home = isolated / "var-home" / "max"
+    real_home.mkdir(parents=True)
+    (isolated / "linked-home").symlink_to(real_home)
+    assert is_protected(home) and is_protected(isolated) and is_protected(Path("/"))
+    assert is_protected(Path("/usr")) and is_protected(Path("/etc"))
+    assert not is_protected(home / "Pictures") and not is_protected(Path("/mnt"))
+    monkeypatch.setenv("HOME", str(isolated / "linked-home"))       # $HOME through a symlink
+    assert is_protected(real_home) and is_protected(real_home.parent)
+    assert not is_protected(real_home / "Pictures")
+
+
+def test_a_folder_above_home_is_refused_with_auto(run_cli, isolated):
+    pictures.save(pictures.photo(1), isolated / "home" / "a.png")
+    pictures.save(pictures.photo(1), isolated / "home" / "b.png")
+    result = run_cli(isolated, "-r", "--auto", "--dry-run")
+    assert result.returncode == 2 and "are not scanned" in result.stdout
+
+
+@pytest.mark.parametrize("written", ["Urlaub/../Urlaub", "./Urlaub/", "Urlaub/Strand/.."])
+def test_exclude_understands_dots(library, run_cli, written):
+    library.photo("keep.png", 1)
+    library.copy_of("keep.png", "Urlaub/copy.png")
+    counts = summary(run_cli(library.path, "-r", "--exclude", written, "--auto", "--dry-run"))
+    assert (counts["scanned"], counts["exact"]) == (1, 0)
+
+
+def test_exclude_outside_the_folder_is_reported(library, run_cli):
+    library.photo("keep.png", 1)
+    (library.path.parent / "other").mkdir()
+    result = run_cli(library.path, "-r", "--exclude", "../other", "--auto", "--dry-run")
+    assert "--exclude ../other is not inside" in result.stdout
+
+
+@pytest.fixture
+def edited_on_top(library):
+    """photo.png and photo.jpg are copies; edited.png is close to both but larger,
+    so it would be the recommended keeper of all three."""
+    def bigger_brighter(img):
+        return pictures.brighter(img.resize((640, 480)), 1.05)
+    library.photo("photo.png", 1)
+    library.variant("photo.png", "photo.jpg", quality=85)
+    library.variant("photo.png", "edited.png", bigger_brighter)
+    return library
+
+
+def test_copies_are_still_found_next_to_an_image_marked_against_them(edited_on_top, run_cli):
+    first = run_cli(edited_on_top.path, "--dry-run", "-i", keys=["", "i", ""])   # mark the whole group
+    assert "Marked as not duplicates" in first.stdout
+    again = run_cli(edited_on_top.path, "--auto", "--dry-run")
+    assert summary(again)["visual"] == 1                             # photo.png and photo.jpg
+
+
+def test_i0_takes_only_the_recommended_image_out(edited_on_top, run_cli):
+    # start, "only #0 is different", keep the new #0, finish
+    result = run_cli(edited_on_top.path, "-i", keys=["", "i0", "", ""])
+    assert "Marked #0 edited.png as not a duplicate of the others." in result.stdout
+    assert edited_on_top.files() == [".keepbest_ignore.json", "edited.png", "photo.png"]
+    assert summary(run_cli(edited_on_top.path, "--auto", "--dry-run"))["visual"] == 0   # nothing left
+
+
+def save_with_second_picture(img, path, **options):
+    """An MPO (as cameras write .jpg files with a second picture) or a two-page TIFF."""
+    second = pictures.photo(9, img.size).convert("RGB")
+    fmt = "MPO" if path.suffix == ".jpg" else "TIFF"
+    img.convert("RGB").save(path, format=fmt, save_all=True, append_images=[second], **options)
+    return path
+
+
+def test_an_mpo_photo_is_compared_and_kept(library, run_cli):
+    save_with_second_picture(pictures.photo(1, (320, 240)), library / "camera.jpg", quality=95)
+    library.variant("camera.jpg", "export.jpg", quality=80)
+    result = run_cli(library.path, "--auto", "--dry-run")
+    assert "animated" not in result.stdout
+    assert "Kept         camera.jpg" in result.stdout and "Would delete export.jpg" in result.stdout
+
+
+def test_a_file_with_several_pictures_is_never_removed(library, run_cli):
+    library.photo("big.png", 1, size=(640, 480))                    # a better copy of page 1
+    with Image.open(library / "big.png") as img:
+        save_with_second_picture(img.resize((320, 240)), library / "pages.tif")
+    library.variant("big.png", "small.jpg", pictures.downscaled, quality=85)
+    result = run_cli(library.path, "--auto", "--dry-run")
+    assert "Would delete small.jpg" in result.stdout
+    assert "pages.tif" not in result.stdout
+
+
+def test_keeping_another_image_never_removes_a_file_with_several_pictures(library, run_cli):
+    save_with_second_picture(pictures.photo(1, (640, 480)), library / "pages.tif")
+    library.variant("pages.tif", "small.jpg", pictures.downscaled, quality=85)
+    result = run_cli(library.path, "-i", keys=["", "1", "s", ""])  # keep small.jpg instead, then skip
+    assert "nothing would be removed" in result.stdout
+    assert library.files() == ["pages.tif", "small.jpg"]

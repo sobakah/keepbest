@@ -423,9 +423,10 @@ def complete_path(text: str, state: int):
     and other glob characters in names are taken literally."""
     global _completions
     if state == 0:
-        expanded = os.path.expanduser(text)
+        quote = text[:1] if text[:1] in ("'", '"') else ""  # a pasted or typed opening quote stays
+        expanded = os.path.expanduser(text[len(quote):])
         matches = sorted(glob.glob(glob.escape(expanded) + "*"))
-        _completions = [m + (os.sep if os.path.isdir(m) else " ") for m in matches]
+        _completions = [quote + m + (os.sep if os.path.isdir(m) else " ") for m in matches]
     return _completions[state] if state < len(_completions) else None
 
 
@@ -435,7 +436,7 @@ def enable_path_completion() -> None:
     set_completer = _rl("set_completer")
     if not (set_delims and parse_bind and set_completer):
         return
-    set_delims(" \t\n;")
+    set_delims("\t\n")  # the whole answer is one path, spaces included
     parse_bind("tab: complete")
     set_completer(complete_path)
 

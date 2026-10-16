@@ -87,3 +87,17 @@ def test_prefer_jxl_must_be_true_or_false(tmp_path):
     config, warnings = load_config(path)
     assert config["prefer_jxl"] is False
     assert any("'prefer_jxl' must be true or false" in w for w in warnings)
+
+
+def test_format_names_are_not_case_sensitive(tmp_path):
+    config, warnings = load(tmp_path, {"format_ranks": {"jpg": 9, "Png": 8, "heic": 1}})
+    assert (config["format_ranks"]["JPEG"], config["format_ranks"]["PNG"]) == (9, 8)
+    assert "JPG" not in config["format_ranks"] and "jpg" not in config["format_ranks"]
+    assert any("Unknown format 'heic'" in w for w in warnings)
+
+
+def test_a_jpg_rank_applies_to_jpeg_files(tmp_path, library):
+    from keepbest.image_utils import analyze_image
+    config, _ = load(tmp_path, {"format_ranks": {"JPG": 9}})
+    meta = analyze_image(library.photo("a.jpg", 1), 8, config["format_ranks"])
+    assert meta["format_rank"] == 9

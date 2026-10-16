@@ -30,16 +30,20 @@ def _flatpak_installed(app_id: str) -> bool | None:
     return _flatpak_state[app_id]
 
 
-def _start(argv: list[str]) -> None:
-    # Own session: Ctrl+C in keepbest must not close a comparison window you still look at.
-    subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+def _start(argv: list[str]) -> bool:
+    """Start a viewer in the background; False if it can't be started (not installed)."""
+    try:
+        # Own session: Ctrl+C in keepbest must not close a comparison window you still look at.
+        subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return False
+    return True
 
 
 def _open_compare_app(viewer: str, paths: list[str]) -> str | None:
     """Open *paths* in a comparison app. Returns its name, or None if it is unavailable."""
     name, app_id, native = COMPARE_APPS[viewer]
-    if native and shutil.which(native):  # e.g. Image Compare installed from its RPM/DEB
-        _start([native, *paths])
+    if native and shutil.which(native) and _start([native, *paths]):  # e.g. Image Compare from its RPM/DEB
         return name
     installed = _flatpak_installed(app_id)
     if installed is None:
@@ -51,12 +55,15 @@ def _open_compare_app(viewer: str, paths: list[str]) -> str | None:
         return None
     # The sandbox cannot see your folders; --file-forwarding with @@ ... @@ hands
     # exactly these files to the app through the document portal.
-    _start(["flatpak", "run", "--file-forwarding", app_id, "@@", *paths, "@@"])
+    if not _start(["flatpak", "run", "--file-forwarding", app_id, "@@", *paths, "@@"]):
+        warn(f"{name} could not be started. Falling back to the default viewer.")
+        return None
     return name
 
 
-def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str:
-    """Open the images with the configured viewer. Returns the name of the viewer used."""
+def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str | None:
+    """Open the images with the configured viewer. Returns the name of the viewer
+    used, or None (after a warning) when none could be started."""
     # Absolute paths, so Flatpaks and external tools find the files.
     paths = [str(p.resolve()) for p in filepaths]
 
@@ -68,21 +75,27 @@ def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str:
         try:
             subprocess.run(["timg", *paths])
             return "timg"
-        except FileNotFoundError:
+        except OSError:
             warn("timg not found in PATH. Falling back to the default viewer.")
     elif viewer_mode == "kitty":
         try:
             subprocess.run(["kitty", "+kitten", "icat", *paths])
             return "kitty"
-        except FileNotFoundError:
+        except OSError:
             warn("kitty not found in PATH. Falling back to the default viewer.")
 
     # 'auto', and the fallback: the system's default viewer, one window per image.
+    opener = "open" if sys.platform == "darwin" else "xdg-open"
     for path in paths:
-        if sys.platform.startswith("linux"):
-            _start(["xdg-open", path])
-        elif sys.platform == "win32":
-            os.startfile(path)
-        elif sys.platform == "darwin":
-            _start(["open", path])
+        if sys.platform == "win32":
+            try:
+                os.startfile(path)
+                continue
+            except OSError:
+                pass
+        elif _start([opener, path]):
+            continue
+        warn(f"No viewer could be started ({'no default app' if sys.platform == 'win32' else opener + ' not found'}). "
+             f"Set \"viewer\" in the config to one that is installed.")
+        return None
     return "the default viewer"

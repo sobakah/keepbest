@@ -138,15 +138,29 @@ class FolderIndex:
         self._cache.clear()
 
 
+# System folders: never picture folders, and files there must not be touched.
+SYSTEM_FOLDERS = {"/bin", "/boot", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/opt", "/proc", "/run",
+                  "/sbin", "/srv", "/sys", "/usr", "/var",
+                  "/Applications", "/Library", "/System", "/Volumes", "/private"}   # macOS
+
+
 def is_protected(path: Path) -> bool:
-    """The home or root folder: never scanned, to prevent large-scale accidents."""
-    return path == Path.home() or path == Path(path.anchor)
+    """The home folder, a folder above it (/home, /Users), the root folder or a
+    system folder: never scanned, to prevent large-scale accidents. Compared with
+    symlinks resolved, so a home reached through one (Fedora Atomic's /home ->
+    /var/home) counts too."""
+    path = path.resolve()
+    home = Path.home()
+    homes = {home, home.resolve()}
+    if path in homes or any(path in h.parents for h in homes):
+        return True
+    return path == Path(path.anchor) or path.as_posix() in SYSTEM_FOLDERS
 
 
 def protected_message(path: Path) -> str:
-    """The one message for a refused home or root folder, with and without --auto."""
-    return (f"The home or root folder ({path}) is not scanned, to prevent large-scale deletions "
-            f"by accident. Please choose a specific picture folder.")
+    """The one message for a refused folder, with and without --auto."""
+    return (f"The home folder, the folders above it, the root folder and system folders ({path}) are not "
+            f"scanned, to prevent large-scale deletions by accident. Please choose a specific picture folder.")
 
 
 def resolve_directory(initial: Path | None, index: FolderIndex,
@@ -462,6 +476,26 @@ def matching_settings(config: dict, settings: dict, target: Path, index: FolderI
             "description": f"{preset} ({limit}) · {folders}"}
 
 
+def session_settings(settings: dict, saved: dict | None) -> dict:
+    """*settings* with the folder choice a saved session was scanned with: which
+    folders and file kinds its groups come from, what the start screen counts and
+    what media-optimizer gets afterwards. Older sessions without it keep *settings*."""
+    matching = (saved or {}).get("matching") or {}
+    result = dict(settings)
+    if "recursive" in matching:
+        result["recursive"] = bool(matching["recursive"])
+    if isinstance(matching.get("excluded"), list):
+        result["excluded"] = set(matching["excluded"])
+    if "videos" in matching:
+        result["videos"] = bool(matching["videos"])
+    return result
+
+
+def saved_rename(saved: dict, config: dict) -> bool:
+    """Whether carrying out a saved dry run strips "(1)": as the dry run did."""
+    return bool(saved.get("rename", config["rename_numbered"]))
+
+
 def session_state(saved: dict) -> tuple[bool, bool, int]:
     """(is a dry run, dry run finished, open groups) of a saved session."""
     open_ = sum(g["status"] in ("pending", "skipped") for g in saved["groups"])
@@ -489,7 +523,8 @@ def _session_panel(saved: dict, rename: bool) -> None:
     kind = badge("DRY RUN", StyleUI.CYAN) + " " if dry else ""
     if finished:
         plan = saved_dry_run(saved, rename)
-        text = (f"{kind}{badge('FINISHED', StyleUI.GREEN)} from {when} · {len(groups)} group(s) · "
+        count = len(groups) + len(saved.get("exact_groups", []))
+        text = (f"{kind}{badge('FINISHED', StyleUI.GREEN)} from {when} · {count} group(s) · "
                 f"{plan.to_remove} file(s) to remove, {plan.to_rename} to rename")
     else:
         text = (f"{kind}{badge('RESUMABLE', StyleUI.CYAN)} from {when} · {len(groups)} groups: "
@@ -516,9 +551,14 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
     """
     while True:
         saved = store.load() if store else None
-        counts = index.folder_counts(target, videos=settings["videos"])
+        saved_dry, saved_finished, open_groups = session_state(saved) if saved else (False, False, 0)
+        # With a saved session, the settings that decided its groups are fixed;
+        # "n" discards the session and unlocks everything for a new scan.
+        session = bool(saved and (open_groups or saved_finished))
+        shown = session_settings(settings, saved) if session else settings
+        counts = index.folder_counts(target, videos=shown["videos"])
         direct, total = counts.get(ROOT, 0), sum(counts.values())
-        scope_files = index.in_scope_files(target, settings)
+        scope_files = index.in_scope_files(target, shown)
         in_scope = len(scope_files)
         scope_videos = sum(1 for p in scope_files if is_video(p))
 
@@ -526,20 +566,12 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         print(f"{StyleUI.BOLD}Folder:{StyleUI.RESET}  {StyleUI.GRAY}{target}{StyleUI.RESET}")
         scope = (f"{StyleUI.BOLD}{in_scope}{StyleUI.RESET} file(s) in scope "
                  f"{StyleUI.GRAY}({in_scope - scope_videos} images, {scope_videos} videos){StyleUI.RESET}")
-        if not settings["recursive"] and total > direct:
+        if not shown["recursive"] and total > direct and not session:
             scope += f" {StyleUI.GRAY}({total - direct} more in subfolders - press r){StyleUI.RESET}"
         print(f"{StyleUI.BOLD}Files:{StyleUI.RESET}   {scope}")
 
         if saved:
-            _session_panel(saved, config["rename_numbered"])
-            saved_dry, saved_finished, open_groups = session_state(saved)
-        else:
-            saved_dry = saved_finished = False
-            open_groups = 0
-
-        # With a saved session, the settings that decided its groups are fixed;
-        # "n" discards the session and unlocks everything for a new scan.
-        session = bool(saved and (open_groups or saved_finished))
+            _session_panel(saved, saved_rename(saved, config))
         # --dry-run on the command line always wins: a saved real session or a
         # finished dry run would delete files, so they can't be continued here.
         forced_dry = bool(config.get("_cli_dry_run"))
@@ -585,7 +617,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             _setting("4", "Delete mode", MODE_OPTIONS, mode, danger="permanent")
         _setting("5", "Viewer", VIEWER_OPTIONS, config["viewer"])
         if saved_finished:
-            _setting("6", "Rename (1)", RENAME_OPTIONS, saved.get("rename", config["rename_numbered"]),
+            _setting("6", "Rename (1)", RENAME_OPTIONS, saved_rename(saved, config),
                      locked="carried out as the dry run showed")
         else:
             _setting("6", "Rename (1)", RENAME_OPTIONS, config["rename_numbered"])
@@ -620,7 +652,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             print()
             warn(blocked)
         elif saved and saved_finished:
-            plan = saved_dry_run(saved, config["rename_numbered"])
+            plan = saved_dry_run(saved, saved_rename(saved, config))
             what = _fate(carry_out_mode(config), plan.to_remove)
             if plan.to_rename:
                 what += f", rename {plan.to_rename}"
@@ -658,7 +690,9 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 return "resume", saved
             if in_scope >= 2:
                 return "start", None
-            warn("Nothing to scan here - include subfolders (r) or change directory (c).")
+            hidden_videos = 0 if shown["videos"] else index.in_scope(target, {**shown, "videos": True}) - in_scope
+            hint = "include videos (7), " if hidden_videos else ""
+            warn(f"Nothing to scan here - {hint}include subfolders (r) or change directory (c).")
         elif choice == "q":
             exit_script()
         elif choice == "c":
@@ -906,12 +940,14 @@ def normalize_excluded(target: Path, folders) -> set[str]:
     result = set()
     for folder in folders or ():
         path = Path(folder).expanduser()
-        if path.is_absolute():
-            try:
-                path = path.resolve().relative_to(target)
-            except ValueError:
-                warn(f"--exclude {folder} is not inside {target}, ignored.")
-                continue
+        # "sub/../sub" or "../other" are tidied up first, so they match the folder
+        # they name, or are reported when they lead outside the scanned folder.
+        path = path.resolve() if path.is_absolute() else Path(os.path.normpath(target / path))
+        try:
+            path = path.relative_to(target)
+        except ValueError:
+            warn(f"--exclude {folder} is not inside {target}, ignored.")
+            continue
         rel = path.as_posix().strip("/") or ROOT
         if rel != ROOT and not (target / rel).is_dir():
             warn(f"--exclude {folder}: no such folder in {target}, ignored.")
@@ -957,9 +993,11 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
             continue
 
         choice = None
+        # A saved session continues with the folders it was scanned with.
+        run_settings = session_settings(settings, saved) if action != "start" else settings
         if action in ("apply_saved", "review_saved"):
-            run_config = {**config, "rename_numbered": saved.get("rename", config["rename_numbered"])}
-            stats = carry_out_dry_run(target, run_config, base_config, settings, index, store,
+            run_config = {**config, "rename_numbered": saved_rename(saved, config)}
+            stats = carry_out_dry_run(target, run_config, base_config, run_settings, index, store,
                                       saved_dry_run(saved, run_config["rename_numbered"]),
                                       review=(action == "review_saved"), mode=carry_out_mode(config))
             if stats is None:  # declined the permanent-deletion question
@@ -971,7 +1009,7 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
                 run_config = {**config, "delete_mode": resume_mode(saved, config)}
             if run_config["delete_mode"] == "permanent" and not confirm_permanent():
                 continue
-            stats, quit_requested, dry_result = run_scan(target, run_config, settings, index, store,
+            stats, quit_requested, dry_result = run_scan(target, run_config, run_settings, index, store,
                                                          resume=saved if action == "resume" else None)
             index.clear()  # files were removed or renamed, recount on the next screen
             if quit_requested:
@@ -980,11 +1018,12 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
             # Started with --dry-run, nothing is carried out in this run; the saved
             # dry run can be carried out by starting again without it.
             if dry_result is not None and dry_result.has_changes and not config.get("_cli_dry_run"):
-                choice = continue_after_dry_run(target, config, base_config, settings, index, store, dry_result)
+                choice = continue_after_dry_run(target, config, base_config, run_settings, index, store,
+                                                dry_result)
                 real_run = choice is None  # None: it was carried out
 
         if choice is None:
-            choice = end_menu(target, settings, index, offer_optimizer=real_run)
+            choice = end_menu(target, run_settings, index, offer_optimizer=real_run)
         if choice == "change":
             changed = resolve_directory(None, index, allow_cancel=True)
             if changed is not None:

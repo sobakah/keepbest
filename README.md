@@ -62,15 +62,15 @@ The program opens on a **start screen** with the folder, the number of files in 
 
 **Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. A number switches that subfolder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). `2-5` or `1,3,7` switch several at once, each on its own (`4,1` selects 4 and unselects 1); `a` selects all subfolders, `n` none. The **main folder** is switched only with its own key `m`, so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
 
-Hidden folders such as `.thumbnails` or `.Trash` are never scanned, and the home or root folder is refused.
+Hidden folders such as `.thumbnails` or `.Trash` are never scanned. The home folder, the folders above it (`/home`, `/Users`), the root folder and system folders (`/usr`, `/etc`, `/var`, ...) are refused, also when they are reached through a symlink.
 
 ## How it decides
 
 **Stage 1 – identical files.** Files with identical content (SHA-256) are grouped, images and videos alike; only files of equal size are read, so this is fast.
 
-**Stage 2 – remuxed videos.** ffprobe reads each video's details from its header, and only videos with the same codec, resolution and length are read in full and their video stream compared. Nothing is decoded, and a re-encoded video (other codec, size or quality) is *not* treated as a duplicate. The video stream decides whether files belong together; their audio and subtitle tracks are compared by content as well. If all copies have byte-identical tracks, they are handled like identical files. If the tracks differ, you are asked, and a copy that contains every track of the others is recommended (else the one with the most tracks). Without questions (`--auto`, or *when to ask: never*), such a group is only resolved when one copy contains all tracks of the others, so no sound or subtitle track is lost; otherwise all files are left alone.
+**Stage 2 – remuxed videos.** ffprobe reads each video's details from its header, and only videos with the same codec, resolution and length are read in full and their video stream compared. Nothing is decoded, and a re-encoded video (other codec, size or quality) is *not* treated as a duplicate. The (first) video stream decides whether files belong together; all other tracks are compared by content as well: further video streams (another camera angle), audio, subtitles and data tracks such as timecode or camera telemetry. If all copies have byte-identical tracks in the same order, they are handled like identical files. If the tracks differ, you are asked, and a copy that contains every track of the others, in the same order, is recommended (else the one with the most tracks). The same tracks in another order count as a difference too (`TRACK ORDER`), since a player then starts with another language or sound. Without questions (`--auto`, or *when to ask: never*), such a group is only resolved when one copy contains all tracks of the others in their order, so no track is lost and no copy's default track changes; otherwise all files are left alone.
 
-**Stage 3 – visually identical images** (images only). A quick fingerprint finds pairs that *might* match; then each is compared pixel by pixel with the image that would be kept. Both are shrunk to the same size (at most 512 px) and cut into 8×8-pixel squares; the score is the difference in the *most different* square, from 0 (identical) to 255. One small changed spot, like a date stamp, is therefore enough to keep two images apart. In tests, re-saves and resizes scored up to 15 and real edits 28 or more; the default limit is 20. Images whose shape differs by more than 2% are never compared, and animated images only take part in Stage 1.
+**Stage 3 – visually identical images** (images only). A quick fingerprint finds pairs that *might* match; then each is compared pixel by pixel with the image that would be kept. Both are shrunk to the same size (at most 512 px) and cut into 8×8-pixel squares; the score is the difference in the *most different* square, from 0 (identical) to 255. One small changed spot, like a date stamp, is therefore enough to keep two images apart. In tests, re-saves and resizes scored up to 15 and real edits 28 or more; the default limit is 20. Images whose shape differs by more than 2% are never compared, and animated images only take part in Stage 1. Files that hold several pictures, like camera JPEGs with a second picture (MPO: a stereo image or depth map) and multi-page TIFFs, are compared by their first picture and only ever kept, never removed for another copy. Greyscale pictures with more than 8 bits (16-bit PNG or TIFF) are compared with each other on one brightness scale, so a dark picture still matches its 8-bit copy, but not a brighter version of itself.
 
 **Which copy is kept:**
 
@@ -94,8 +94,9 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `▶`. By defa
 | **Enter** | Keep the recommended file ▶ and remove the others |
 | `1`, `2`, … | Keep that file instead (the numbers shown in the group; `#0` is the recommended one) |
 | `s` | Skip: keep all files; the group is shown again next time |
-| `i` | Not duplicates: keep all files and never show this group again |
+| `i` | Not duplicates of #0: keep all files and never show them together with #0 again |
 | `i2` | Only image #2 is not a duplicate; decide on the rest as usual |
+| `i0` | Only #0 is different: it is marked and kept, and the others are compared with each other afresh |
 | `n` | Remove "(1)" from the kept name: on/off for this group |
 | `v` | Open the images in the viewer |
 | `p` / `t` | Previous open group / overview of all groups |
@@ -104,14 +105,14 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `▶`. By defa
 
 In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing.
 
-**"Not duplicates" marks** (`i`) are saved in a hidden file, `.keepbest_ignore.json`, in the scanned folder, so they stay with your pictures. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
+**"Not duplicates" marks** (`i`) are saved in a hidden file, `.keepbest_ignore.json`, in the scanned folder, so they stay with your pictures. A mark separates two images, not a whole group: images you marked against #0 are still compared with each other, and two of them that are copies are shown as a group of their own. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
 
 ## Dry runs and saved progress
 
 **After a dry run** chosen on the start screen (setting `4`), you can carry it out for real right away, with the delete mode from your config (`trash` if the config says `dry_run`). After `--dry-run`, it is saved instead, to be carried out from the start screen in a later start without `--dry-run` (see below):
 
 - **Enter:** apply exactly what the dry run showed, including your choices, without asking again.
-- **`r`:** go through the groups again for real.
+- **`r`:** go through the groups again for real. Identical copies and remuxes are carried out as decided in the dry run (logged as decided there; remuxes you skipped are asked again), and the visual groups are shown as they were found, as if the dry run's decisions had not been made.
 
 Before anything is deleted, every file is checked against the dry run; files that changed in the meantime are left alone.
 
@@ -121,7 +122,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 **`--dry-run` always wins.** Started with `--dry-run`, nothing is deleted or renamed in that run: the delete mode is locked, a saved real session isn't resumed, a finished dry run isn't carried out, and a new dry run isn't offered for carrying out when it is done. Start without `--dry-run` for that, or press `n` to discard a saved session.
 
-**When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. Press **`n`** to discard the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
+**When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. The file count on the start screen and media-optimizer afterwards (`m`) use the session's folders too, not those of the command line. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. Press **`n`** to discard the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
 
 ## After a run
 
@@ -140,7 +141,7 @@ The end screen offers to scan again with other settings (`b`), change the folder
 | `identity` | [Identity](https://apps.gnome.org/Identity/): tabs or side by side. `flatpak install flathub org.gnome.gitlab.YaLTeR.Identity` |
 | `kitty`, `timg` | Previews inside the terminal (kitty terminal, or `timg`) |
 
-If the chosen app is missing, keepbest says so and uses your default viewer. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
+If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
 ## Command-line options
 
@@ -160,7 +161,7 @@ If the chosen app is missing, keepbest says so and uses your default viewer. Nei
 | `--color {auto,always,never}` | Colours; `auto` respects `NO_COLOR` |
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
 
-Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path or the home/root folder with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C. Without `--auto`, a bad path is asked for again instead.
+Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path or a refused folder (see [First run](#first-run)) with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C. Without `--auto`, a bad path is asked for again instead.
 
 ## Configuration
 
@@ -179,7 +180,7 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 | `save_sessions` | `true` | save progress so it can be resumed |
 | `log_file` | `null` | `null` = default place, `false` = no log, or a file path |
 | `color` | `auto` | `auto`, `always`, `never` |
-| `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep |
+| `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep; names are not case-sensitive, `JPG` means JPEG and `TIF` TIFF, MPO ranks like JPEG unless given its own rank |
 | `uncertain_ratio`, `compare_size`, `max_aspect_diff`, `hash_size`, `hash_max_distance` | `0.8`, `512`, `0.02`, `8`, `28` | fine-tuning, see below |
 
 ### Fine-tuning the visual comparison

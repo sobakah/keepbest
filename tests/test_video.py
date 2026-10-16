@@ -7,6 +7,7 @@ import pytest
 from conftest import make_video, remux, requires_ffmpeg, summary
 
 pytestmark = requires_ffmpeg
+WIDE = {"COLUMNS": "160"}      # room for the optional Streams column
 
 
 def encoders() -> str:
@@ -116,3 +117,88 @@ def test_a_copy_with_extra_tracks_is_kept_automatically(library, run_cli, tmp_pa
     result = run_cli(library.path, "--auto", "--dry-run")
     assert "Kept         clip subs.mkv" in result.stdout      # has everything clip.mp4 has, and more
     assert summary(result)["remux"] == 1
+
+
+def test_a_second_video_stream_is_never_lost(library, run_cli):
+    """Another camera angle in the same file is a track of its own: the copy with
+    both video streams is kept, the one with only the first is removed."""
+    clip = make_video(library / "clip.mp4", codec="mpeg4")
+    angle = make_video(library.path.parent / "angle.mp4", codec="mpeg4", audio=False, size="160x120")
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(clip), "-i", str(angle),
+                    "-map", "0:v", "-map", "1:v", "-map", "0:a", "-c", "copy", str(library / "both.mkv")],
+                   check=True)
+    result = run_cli(library.path, "--auto", "--dry-run", env=WIDE)
+    assert "Kept         both.mkv" in result.stdout and "+1 video" in result.stdout
+    assert "Would delete clip.mp4" in result.stdout
+
+
+def test_a_timecode_track_counts_as_a_track(library, run_cli):
+    clip = make_video(library / "clip.mp4", codec="mpeg4")
+    remux(clip, library / "clip tc.mp4", "-timecode", "01:00:00:00")      # adds an MP4 tmcd data track
+    result = run_cli(library.path, "--auto", "--dry-run", env=WIDE)
+    assert "Kept         clip tc.mp4" in result.stdout and "1 data (tmcd)" in result.stdout
+    assert "Would delete clip.mp4" in result.stdout
+
+
+def with_two_sounds(source, target, swapped=False):
+    """*source*'s video with two sound tracks (440 and 880 Hz), optionally in the other order."""
+    order = ["-map", "2:a", "-map", "1:a"] if swapped else ["-map", "1:a", "-map", "2:a"]
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+                    "-f", "lavfi", "-i", "sine=frequency=880:duration=3", "-map", "0:v", *order,
+                    "-c:v", "copy", "-c:a", "aac", "-shortest", str(target)], check=True)
+    return target
+
+
+@pytest.fixture
+def reordered(library):
+    """The same video and sound tracks; the copies start with another sound."""
+    clip = make_video(library.path.parent / "source.mp4", codec="mpeg4", audio=False)
+    first = with_two_sounds(clip, library / "a.mkv")
+    remux(first, library / "b.mkv", "-map", "-0:a", "-map", "0:a:1", "-map", "0:a:0")
+    return library
+
+
+def test_tracks_in_another_order_are_left_alone_without_questions(reordered, run_cli):
+    before = reordered.files()
+    result = run_cli(reordered.path, "--auto")
+    assert "same tracks in another order" in result.stdout
+    assert summary(result)["skipped"] == 1 and reordered.files() == before
+
+
+def test_tracks_in_another_order_are_asked_about(reordered, run_cli):
+    result = run_cli(reordered.path, "--dry-run", keys=["", "s", ""])   # start, skip, quit
+    assert "TRACK ORDER" in result.stdout and "in another order" in result.stdout
+    assert summary(result)["skipped"] == 1
+
+
+def test_durations_are_compared_alike_for_both_files():
+    from keepbest.core_logic import remux_candidates
+    metas = [{"codec": "h264", "width": 320, "height": 240, "duration": d, "path": n}
+             for d, n in ((100.0, "a"), (101.005, "b"))]          # 1.005 s apart: within 1 % of 101 s
+    assert [m["path"] for m in remux_candidates(metas)] == ["a", "b"]
+
+
+@pytest.mark.parametrize("signal_name", ["SIGTERM", "SIGINT"])
+def test_a_signal_stops_the_hashing_at_once(library, fake_command, config_file, tmp_path, signal_name):
+    """ffmpeg reading a big file must not keep the program waiting, and is not retried."""
+    import signal
+    import sys
+    import time
+    from conftest import REPO
+    clip = make_video(library / "clip.mp4", codec="mpeg4")
+    remux(clip, library / "clip.mkv")
+    started = tmp_path / "ffmpeg.started"
+    fake = fake_command("ffmpeg", script=f"echo x >> '{started}'\nexec sleep 30")   # "a huge file"
+    proc = subprocess.Popen([sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--auto",
+                             "--stages", "2", str(library.path)], cwd=REPO,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.time() + 20
+    while time.time() < deadline and len(started.read_text().split() if started.exists() else []) < 2:
+        time.sleep(0.05)                                            # until both ffmpeg are running
+    sent = time.time()
+    proc.send_signal(getattr(signal, signal_name))                  # to keepbest only, not its group
+    proc.communicate(timeout=20)
+    assert time.time() - sent < 5
+    assert len(started.read_text().split()) == 2                    # no second, track-less pass
+    assert fake.calls(count=0) == []                                # every ffmpeg was ended early

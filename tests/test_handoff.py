@@ -145,3 +145,16 @@ def test_sigterm_while_starting_is_passed_on(fake_command, monkeypatch, tmp_path
     finally:
         signal.signal(signal.SIGTERM, previous)
     assert code == -signal.SIGTERM                                     # the child got it
+
+
+def test_a_resumed_session_passes_on_its_own_folder_choice(library, run_cli, optimizer):
+    library.photo("a.png", 1)
+    library.variant("a.png", "a.jpg", quality=85)
+    library.photo("other/c.png", 3)
+    run_cli(library.path, "-r", "--exclude", "other", "-i", keys=["", "q", ""])   # quit at the group, save
+    command = optimizer()
+    # without -r: resume, keep #0, finish, media-optimizer, quit
+    result = run_cli(library.path, "-i", keys=["", "", "", "m", "q"])
+    assert "Resuming" in result.stdout
+    assert "more in subfolders" not in result.stdout             # the session's folders are counted
+    assert command.folders() == 'include ["other"]'

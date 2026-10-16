@@ -3,7 +3,7 @@
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
 Terminal app (no GUI), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
 Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
-Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/Git-Repos/keepbest`.
+Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
 
 ## Layout – important
 
@@ -27,23 +27,34 @@ Fedora, installed with pipx (Python 3.14). The local checkout is in `~/Software/
   only its own files); keepbest ignores
   SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on; the handlers are
   set before the start, as no-op handlers rather than SIG_IGN so the child gets default handling).
-- `core_logic.py` mixes logic and terminal output (21 of 46 functions print/ask). Known; a GUI
+- `core_logic.py` mixes logic and terminal output (25 of 75 functions and methods print/ask). Known; a GUI
   would need that separated first.
 
 ## Commands
 
 ```bash
-python3 -m pytest                 # 170 tests, ~20 s; video tests skip without ffmpeg
+python3 -m pytest                 # 211 tests, ~25 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
 
+Skips: video tests without ffmpeg (H.264 ones also with Fedora's `ffmpeg-free`), two JXL tests
+without `pillow-jxl-plugin`, and the check of `MO_EXCLUDE_FOLDERS` against media-optimizer's
+parser unless `media_optimizer` is importable. On the owner's machine 3 skip (JXL + parser).
+
 Run the tests with a Python that has Pillow, send2trash and pytest. If those are missing, the CLI
 tests fail with misleading assertions like `(0, 0) == (1, 0)` (the program exits "Missing required
-packages"). With the pipx install: `pipx inject keepbest pytest`, then
-`"$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest`. Without
-pytest in pipx, the system Python works if send2trash's user site-packages are on `PYTHONPATH`
-(the tests use their own HOME, so the user site isn't found otherwise).
+packages"). On the owner's machine (as of 2026-10-16) no single Python has all three: the system
+`python3` (3.15) has pytest and Pillow, the pipx venv (3.15) has send2trash but no pytest, and the
+user site-packages still hold send2trash only for 3.14. What works:
+
+```bash
+PYTHONPATH=~/.local/share/pipx/venvs/keepbest/lib/python3.15/site-packages python3 -m pytest
+```
+
+(The tests use their own HOME, so the user site isn't found on its own anyway.) Alternatively
+`pipx inject keepbest pytest`, then `"$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest`.
+Both paths change when the Python version changes.
 
 ## Tests
 
@@ -63,9 +74,17 @@ pytest in pipx, the system Python works if send2trash's user site-packages are o
 - Files go to the trash by default; nothing is deleted without being compared against the file
   that is **kept** (stage 3 compares each member with the keeper, never via chains).
 - Enter keeps the recommended file; in `permanent` mode deletions in interactive screens ask `[y/N]`
-  (default No). Home and root folder are refused in every mode (`is_protected`, one shared message).
+  (default No). Refused in every mode (`is_protected`, one shared message): the home folder, every
+  folder above it, the root folder and `SYSTEM_FOLDERS`; compared with symlinks resolved (home
+  reached through a symlink, e.g. Fedora Atomic's `/home -> /var/home`).
 - Choosing another keeper than the recommended one (`regroup_around`) compares every other image
   with the chosen one afresh; images above the limit stay on disk and leave the group.
+- Files with several pictures (MPO, multi-page TIFF; `frames` > 1; animations are GIF/PNG/WebP/
+  AVIF/JXL only) are compared by their first picture but never removed: `find_groups` never takes
+  them into another anchor's group, `regroup_around` leaves them out.
+- "Not duplicates" marks separate pairs, not groups: `find_groups` keeps a member marked against
+  the anchor out of its group (it is compared with the rest again); `i0` marks #0 against the
+  others and regroups them around the next one.
 - Dry runs can undo a decided group (`u` on the handled screen, `undo_decision`): `_resolve` stores
   the group before the decision (`Group.undo`, saved in the session) and what it added to the
   totals; undo restores both and the group is always asked again. Real runs store no undo data.
@@ -77,10 +96,20 @@ pytest in pipx, the system Python works if send2trash's user site-packages are o
   a real mode slips through. A dry run chosen with setting 4 may still be carried out right after.
 - `permanent` mode asks once before an interactive run starts (`confirm_permanent`), since
   automatic decisions then delete without further questions. `--auto` asks nothing (open point).
-- Stage 2 hashes audio and subtitle tracks by content too (`stream_hashes`; AAC normalised with
-  `aac_adtstoasc`, so MPEG-TS remuxes match). Automatic only when all tracks are identical; a copy
-  containing every track of the others (`covering_copy`) is recommended; without questions a group
-  is only resolved when such a copy exists, otherwise left alone and counted as skipped.
+- Stage 2 hashes every other track by content too (`stream_hashes`): further real video streams
+  (`extra_videos`), audio, subtitles and data (timecode, telemetry); AAC normalised with
+  `aac_adtstoasc`, so MPEG-TS remuxes match. Automatic only when all tracks are identical and in
+  the same order; a copy containing every track of the others in their order (`covering_copy`) is
+  recommended; the same tracks in another order (`tracks_reordered`) are asked about. Without
+  questions a group is only resolved when a covering copy exists, otherwise left alone and counted
+  as skipped. Skipped remux groups stay in `exact_groups` (`ExactGroup.status`), so reviewing a
+  dry run again asks about them; decided ones carry `decision` for the log.
+- Carrying out a dry run maps Stage 1 renames into the later remux and visual groups; in the dry
+  run itself, `ctx.planned` (renames a real run would make) ranks Stage 2/3 like a real run and
+  counts each rename once. Reviewing a dry run again restores each visual group from `Group.undo`.
+- When nothing of a group could be removed, there is no rename and (real runs) the group stays open.
+- Interrupts during Stage 2 stop ffprobe/ffmpeg at once (`video.stop_all` via `_threaded`); a
+  stopped ffmpeg is never retried.
 - A dry run resumes as a dry run; settings that decided a session's groups (stages, strictness
   looser, videos, subfolders) are locked on the start screen; stricter strictness works without a
   rescan (`tighten_groups`).
@@ -93,8 +122,13 @@ pytest in pipx, the system Python works if send2trash's user site-packages are o
   → oldest. JPEG XL is "unknown" (Pillow can't tell lossy from lossless), so a lossless original
   wins; config `prefer_jxl: true` ranks JXL like lossless (`lossless_rank`). TIFF is lossy only
   when JPEG/WebP/SGILog-compressed.
-- Greyscale with more than 8 bits (I;16, I, F) is scaled by the bit depth the values use
-  (`_to_8_bit`: 8/10/12/14/16 bit; floats 0–1), never by a fixed /256.
+- Greyscale with more than 8 bits (I;16, I, F) is never scaled per file for the pixel comparison:
+  `comparison_thumbnail` keeps the stored values and `pixel_difference` brings both images of a
+  pair to one scale (8-bit x 257) and stretches them together by the brighter one's maximum. So a
+  dark 16-bit picture matches its 8-bit copy, a 2x/4x brighter version doesn't, and edits in
+  10/12-bit data in 16-bit files aren't squeezed into a few levels. `_to_8_bit` (scaling by the
+  bit depth the values use) is only used for the dhash, which ignores brightness. Non-finite float
+  values are reported as an error for that file.
 
 ## Stages and terms
 
@@ -140,8 +174,9 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 
 ## Environment notes
 
-- Fedora's `ffmpeg-free` lacks some encoders (H.264); H.264 video tests skip there. Remux detection
-  itself needs no decoders.
+- Fedora's `ffmpeg-free` lacks some encoders (H.264); H.264 video tests skip there. The owner's
+  machine now has a full ffmpeg (libx264, libx265), so they run. Remux detection itself needs no
+  decoders.
 - Known limitations (README): upscaled copies win on resolution; tiny watermarks can vanish at
   512 px; all candidate thumbnails are held in memory during stage 3 (~768 KB each); MPEG-4 Part 2
   inside MPEG-TS can't be read by ffmpeg (left alone); macOS/Windows untested.
@@ -159,15 +194,19 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
 media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
 in the folder list. New changes go under
-an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
+an `## [Unreleased]` heading at the top of `CHANGELOG.md`. Unreleased so far (`__version__` is
+still 1.1.0): media-optimizer gets the run's folder choice, and the fixes from an outside review
+checked on 2026-10-16 (16-bit greyscale, extra video streams, track order, protected folders,
+marks, MPO/TIFF, dry-run carry-out, `i0`; see CHANGELOG). Behaviour changes, so the next release
+is 1.2.0.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
   Dry-run "not duplicates" marks write `.keepbest_ignore.json` into the picture folder, which
   contradicts "changes nothing" – change the README wording or store marks elsewhere (see E3).
-- **Quick fixes:** Tab completion with spaces (`set_delims` in `ui.py` → `"\t\n"`); unhandled
+- **Quick fixes:** unhandled
   `p.stat()` in `find_exact_duplicates` when a file vanishes; README describes `n`/`x` differently
   though both discard the session; don't group 0-byte files; warn on `--exclude` without `-r`;
-  case-insensitive `format_ranks` keys; friendlier goodbye than "Program terminated."; summary
+  friendlier goodbye than "Program terminated."; summary
   "Visually identical images" (adjust `summary()` regex in `tests/conftest.py`); `kitty` viewer
   fallback outside kitty (check return code); pytest should stop early with a clear message naming
   `sys.executable` when Pillow/send2trash are missing; "Missing required packages" should name the
