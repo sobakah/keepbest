@@ -16,7 +16,7 @@ You need Python 3.9 or newer and [pipx](https://pipx.pypa.io/) (on Fedora: `sudo
 pipx install git+https://github.com/sobakah/keepbest.git
 ```
 
-With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`. To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases (0.1.0 to 0.5.1).
+With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`, or add it to an existing install with `pipx inject keepbest pillow-jxl-plugin` (a plain `pip install` doesn't reach pipx's environment). For a new Python version the plugin may have no ready-made package yet; pip then builds it, which needs a C++ compiler and cmake (on Fedora: `sudo dnf install gcc-c++ cmake`). To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases (0.1.0 to 0.5.1).
 
 **For videos**, also install ffmpeg (a system package): on Fedora `sudo dnf install ffmpeg-free`, or `ffmpeg` from RPM Fusion. Without it, identical video copies are still found, but not remuxes.
 

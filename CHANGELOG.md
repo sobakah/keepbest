@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The JPEG XL hint named the wrong command.** It said `pip install pillow-jxl-plugin`, which installs into another Python than a pipx install of keepbest uses. It now says `pipx inject keepbest pillow-jxl-plugin` for pipx installs and `<this Python> -m pip install pillow-jxl-plugin` otherwise, and that building the plugin (when there is no ready-made package for the Python version yet, as for 3.15) needs a C++ compiler and cmake.
+
 ## [1.2.0] — 2026-10-16
 
 **Upgrading:** `pipx upgrade keepbest`. Passing the folder choice to media-optimizer needs media-optimizer 2.2.

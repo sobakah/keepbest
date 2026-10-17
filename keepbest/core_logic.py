@@ -6,6 +6,7 @@ import concurrent.futures
 import logging
 import os
 import re
+import sys
 from collections import defaultdict
 import time
 from dataclasses import asdict, dataclass, fields
@@ -157,6 +158,20 @@ def mode_badge(delete_mode: str) -> str:
 # --- changing files ----------------------------------------------------------
 def _outcome(symbol: str, label: str, color: str, name: str) -> None:
     print(f"  {color}{symbol} {label:<13}{StyleUI.RESET}{name}")
+
+
+def jxl_install_hint() -> list[str]:
+    """How to add JPEG XL support to the Python keepbest runs on: a pipx install
+    has its own environment, which a plain "pip install" doesn't reach."""
+    parts = Path(sys.prefix).parts
+    if "pipx" in parts and "venvs" in parts:
+        command = f"pipx inject {Path(sys.prefix).name} pillow-jxl-plugin"
+    else:
+        command = f"{sys.executable} -m pip install pillow-jxl-plugin"
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return [f"JPEG XL needs the optional plugin: {command}",
+            f"If there is no ready-made package for Python {version} yet, pip builds it, which needs a "
+            f"C++ compiler and cmake (Fedora: sudo dnf install gcc-c++ cmake)."]
 
 
 def _same_file(a: Path, b: Path) -> bool:
@@ -792,7 +807,8 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
             if len(failed) > 10:
                 dim(f"  • ... and {len(failed) - 10} more")
             if any(r["path"].suffix.lower() == ".jxl" for r in failed) and not JXL_SUPPORTED:
-                warn("  JPEG XL needs the optional plugin: pip install pillow-jxl-plugin")
+                for line in jxl_install_hint():
+                    warn("  " + line)
         if animated:
             dim(f"{len(animated)} animated image(s) skipped (only exact duplicates are handled for those).")
 

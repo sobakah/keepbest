@@ -293,3 +293,21 @@ def test_keeping_another_image_never_removes_a_file_with_several_pictures(librar
     result = run_cli(library.path, "-i", keys=["", "1", "s", ""])  # keep small.jpg instead, then skip
     assert "nothing would be removed" in result.stdout
     assert library.files() == ["pages.tif", "small.jpg"]
+
+
+@pytest.mark.skipif(__import__("keepbest.image_utils").image_utils.JXL_SUPPORTED,
+                    reason="the hint only appears without pillow-jxl-plugin")
+def test_without_the_jxl_plugin_the_hint_names_this_python(library, run_cli):
+    import sys
+    library.photo("a.png", 1)
+    library.photo("b.png", 2)
+    (library / "c.jxl").write_bytes(b"\xff\x0a not really")
+    result = run_cli(library.path, "--auto", "--dry-run")
+    assert f"{sys.executable} -m pip install pillow-jxl-plugin" in " ".join(result.stdout.split())
+
+
+def test_a_pipx_install_is_told_to_inject_the_plugin(monkeypatch):
+    import sys
+    from keepbest.core_logic import jxl_install_hint
+    monkeypatch.setattr(sys, "prefix", "/home/u/.local/share/pipx/venvs/keepbest")
+    assert "pipx inject keepbest pillow-jxl-plugin" in jxl_install_hint()[0]
