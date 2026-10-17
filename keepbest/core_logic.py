@@ -1173,12 +1173,15 @@ def _handled_screen(group: Group, position: str, rel) -> str:
     if can_undo:
         menu.insert(0, ("Change", [("u", "Undo this decision and choose again")]))
     print_menu(menu)
-    choice = safe_input(f"{StyleUI.BOLD}Group {position} action: {StyleUI.RESET}").strip().lower()
-    if choice == "q":
-        raise UserQuit
-    if choice == "u" and can_undo:
-        return "undo"
-    return {"p": "prev", "t": "overview"}.get(choice, "next")
+    while True:
+        choice = safe_input(f"{StyleUI.BOLD}Group {position} action: {StyleUI.RESET}").strip().lower()
+        if choice == "q":
+            raise UserQuit
+        if choice == "u" and can_undo:
+            return "undo"
+        if choice in ("", "p", "t"):
+            return {"p": "prev", "t": "overview"}.get(choice, "next")
+        warn("Unknown option.")
 
 
 def _overview(groups: list[Group], current: int | None, rel) -> int | None:

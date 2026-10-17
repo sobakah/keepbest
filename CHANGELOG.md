@@ -5,11 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.2.1] — 2026-10-17
 
-**Upgrading:** `pipx upgrade keepbest`.
+**Upgrading:** `pipx upgrade keepbest`. The typo fixes were added to 1.2.1 a few hours after it was first published; if `keepbest` still quits after a typo on the end screen, run `pipx reinstall keepbest` once.
 
 ### Fixed
 
 - **The JPEG XL hint named the wrong command.** It said `pip install pillow-jxl-plugin`, which installs into another Python than a pipx install of keepbest uses. It now says `pipx inject keepbest pillow-jxl-plugin` for pipx installs and `<this Python> -m pip install pillow-jxl-plugin` otherwise, and that building the plugin (when there is no ready-made package for the Python version yet, as for 3.15) needs a C++ compiler and cmake.
+- **A typo on the end screen ended the program.** Any answer other than `b` or `c` (`mm`, or `m` after media-optimizer had run) quit keepbest as if `q` had been pressed. Unknown answers are now reported and asked again, also on the screen of an already handled group, which moved on to the next group instead.
+- **A typo in a yes/no question counted as "no".** For questions that default to yes, like "Save progress so you can continue this comparison later?", a typo deleted the saved progress. Answers other than y, n or Enter are now asked again.
 
 ## [1.2.0] — 2026-10-16
 

@@ -57,3 +57,11 @@ def test_spaces_do_not_split_the_path_for_completion():
         assert " " not in readline.get_completer_delims()
     finally:
         ui.disable_path_completion()
+
+
+def test_a_typo_in_a_yes_no_question_asks_again(monkeypatch, capsys):
+    answers = iter(["mm", "", "nope", "n"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+    assert ui.confirm("Save progress?", default=True) is True       # "mm" is asked again, then Enter
+    assert ui.confirm("Delete?", default=True) is False              # "nope" asked again, then n
+    assert capsys.readouterr().out.count("Please answer y or n.") == 2

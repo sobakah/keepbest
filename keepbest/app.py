@@ -1055,7 +1055,9 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
             index.clear()  # media-optimizer converts and renames files
             optimizer = False
             continue
-        return {"b": "back", "c": "change"}.get(answer, "quit")
+        if answer in ("", "q", "b", "c"):
+            return {"b": "back", "c": "change"}.get(answer, "quit")
+        warn("Unknown option.")  # a typo must not end the program
 
 
 def run_optimizer(target: Path, settings: dict) -> None:

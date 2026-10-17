@@ -164,11 +164,18 @@ def safe_input(prompt: str = "", default_text: str = "") -> str:
 
 
 def confirm(prompt: str, default: bool = False) -> bool:
+    """Ask a yes/no question; Enter takes the default, anything else is asked again,
+    so a typo never answers a question like "Save progress?" with no."""
     suffix = "[Y/n]" if default else "[y/N]"
-    answer = safe_input(f"{prompt} {suffix}: ").strip().lower()
-    if not answer:
-        return default
-    return answer in ("y", "yes", "j", "ja")
+    while True:
+        answer = safe_input(f"{prompt} {suffix}: ").strip().lower()
+        if not answer:
+            return default
+        if answer in ("y", "yes", "j", "ja"):
+            return True
+        if answer in ("n", "no", "nein"):
+            return False
+        warn("Please answer y or n.")
 
 
 def exit_script(code: int = 0) -> None:

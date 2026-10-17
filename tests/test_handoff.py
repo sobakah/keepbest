@@ -158,3 +158,19 @@ def test_a_resumed_session_passes_on_its_own_folder_choice(library, run_cli, opt
     assert "Resuming" in result.stdout
     assert "more in subfolders" not in result.stdout             # the session's folders are counted
     assert command.folders() == 'include ["other"]'
+
+
+@pytest.mark.parametrize("typo", ["mm", "x", "m"])
+def test_an_unknown_answer_on_the_end_screen_asks_again(one_copy, run_cli, tmp_path, typo):
+    empty = tmp_path / "empty-path"                               # no media-optimizer: "m" is unknown too
+    empty.mkdir()
+    result = run_cli(one_copy.path, keys=["", typo, "q"], env={"PATH": str(empty)})
+    assert "Unknown option." in result.stdout
+    assert result.stdout.count("Back to settings (scan again)") == 2   # the menu came back
+
+
+def test_m_after_media_optimizer_ran_asks_again(one_copy, run_cli, optimizer):
+    command = optimizer()
+    result = run_cli(one_copy.path, keys=["", "m", "m", "q"])     # the second m is no longer offered
+    assert "Unknown option." in result.stdout
+    assert len(command.calls()) == 1

@@ -166,7 +166,9 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   to the lyrembed layout, and all tags lost their `v`; backup in
   `~/Software/Claude/Projects/keepbest-backup-2026-10-08/`. On 2026-10-10, 1.2.0 was folded into
   1.1.0 that way, an hour after both were published; backup in
-  `~/Software/Claude/Projects/keepbest-backup-2026-10-10/`.)
+  `~/Software/Claude/Projects/keepbest-backup-2026-10-10/`. On 2026-10-17 the typo fixes were added
+  to 1.2.1 hours after its release: the tag `1.2.1` moved from `ae6907a` to the commit with them,
+  the release notes were updated; no version bump, so existing installs need `pipx reinstall`.)
 - Shell: the owner uses **fish** on Fedora. Commands meant for the owner to paste (loops,
   `&&` chains, `$(...)`) must be written for fish (`for x in …; …; end`, `; and`, `(…)`).
   Examples in the README are for all users and stay in bash. Don't rely on tools only some
@@ -196,7 +198,7 @@ media-optimizer hand-off on the end screen, the image/video counts and the subfo
 in the folder list; 1.2.0 (2026-10-16) passes the folder choice to media-optimizer (needs its 2.2)
 and has the fixes from an outside review (16-bit greyscale, extra video streams, track order,
 protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`); 1.2.1 (2026-10-17) names the right
-command for the JPEG XL plugin (`pipx inject`). New changes go under
+command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no). New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?

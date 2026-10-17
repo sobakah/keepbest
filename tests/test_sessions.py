@@ -227,3 +227,10 @@ def test_a_real_decision_offers_no_undo(one_group, run_cli):
     result = run_cli(one_group.path, "-i", keys=["", "1", "1", "u", "", ""])
     assert "Undo this decision" not in result.stdout
     assert one_group.files() == ["a 95.jpg"]
+
+
+def test_a_typo_on_a_handled_group_asks_again(one_group, run_cli):
+    # start, keep #1, open group 1 from the overview, a typo, continue, finish, quit
+    result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "mm", "", "", ""])
+    assert "Unknown option." in result.stdout
+    assert result.returncode == 0
