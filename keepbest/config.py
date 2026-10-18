@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 NAME = "keepbest"
 OLD_NAME = "img_dedupe"           # the name before 1.0.0; its folders are moved over (migrate.py)
 PROJECT_URL = "https://github.com/sobakah/keepbest"
@@ -30,6 +30,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "rename_numbered": True,      # strip "(1)" from a kept copy when the group shows it is a copy number
     "save_sessions": True,        # save review progress so it can be resumed (not for dry runs)
     "log_file": None,             # null = project folder or state dir (see README), false = off, or a path
+    "journal_file": None,         # null = journal.jsonl in the state dir, false = off, or a path
     "format_ranks": {
         "JXL": 6, "WEBP": 5, "AVIF": 4, "PNG": 3, "TIFF": 3,
         "JPEG": 2, "GIF": 1, "BMP": 0
@@ -114,8 +115,8 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
         elif key in ("rename_numbered", "save_sessions", "include_videos", "prefer_jxl") \
                 and not isinstance(value, bool):
             warnings.append(f"'{key}' must be true or false, using {DEFAULT_CONFIG[key]!r}.")
-        elif key == "log_file" and not (value is None or value is False or isinstance(value, str)):
-            warnings.append("'log_file' must be null, false or a path, using the default location.")
+        elif key in ("log_file", "journal_file") and not (value is None or value is False or isinstance(value, str)):
+            warnings.append(f"'{key}' must be null, false or a path, using the default location.")
         elif isinstance(DEFAULT_CONFIG[key], dict):
             if isinstance(value, dict):
                 config[key].update(_format_ranks(value, path, warnings))  # partial: the other defaults stay

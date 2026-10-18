@@ -19,6 +19,7 @@ from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, analyze_image,
                          aspect_ratio_close, comparison_thumbnail,
                          has_copy_number, ignore_sigint, pixel_difference,
                          rename_target, score_image, sha256_file)
+from .journal import Journal
 from .ui import (Column, StyleUI, badge, confirm, dim, error, info, print_banner,
                 print_menu, print_primary_action, print_table, progress,
                 safe_input, success, transient, truncate, warn)
@@ -51,12 +52,13 @@ class Stats:
 
 
 class RunContext:
-    """Services for one run: action log, saved session and the rename default."""
+    """Services for one run: action log, file journal, saved session and the rename default."""
 
     def __init__(self, action_log=None, store=None, matching: dict | None = None,
                  created: str | None = None, rename: bool = True, dry: bool = False,
-                 scanned: int = 0):
+                 scanned: int = 0, journal: Journal | None = None):
         self.log = action_log
+        self.journal = journal or Journal(None)
         self.store = store
         self.matching = matching or {}
         self.created = created or datetime.now().isoformat(timespec="seconds")
@@ -195,6 +197,7 @@ def execute_deletion(keep: Path, others: list[tuple[Path, int]], delete_mode: st
         hard_link = _same_file(keep, path)  # another name for the kept file: frees no space
         if hard_link:
             size = 0
+        before = ctx.journal.file_state(path)  # the real size, also for a hard link
         try:
             if delete_mode == "dry_run":
                 _outcome("○", "Would delete", StyleUI.CYAN, rel(path))
@@ -202,10 +205,12 @@ def execute_deletion(keep: Path, others: list[tuple[Path, int]], delete_mode: st
                 send2trash(path)
                 _outcome("✗", "Trashed", StyleUI.RED, rel(path))
                 ctx.record("TRASHED", path, keep, reason)
+                ctx.journal.removed(path, before, "trash", keep, kind, hard_link)
             elif delete_mode == "permanent":
                 path.unlink()
                 _outcome("✗", "Deleted", StyleUI.RED, rel(path))
                 ctx.record("DELETED", path, keep, reason)
+                ctx.journal.removed(path, before, "permanent", keep, kind, hard_link)
             else:
                 raise ValueError(f"unknown delete_mode {delete_mode!r}")
         except Exception as exc:
@@ -256,6 +261,7 @@ def rename_kept(keep: Path, group_paths: list[Path], delete_mode: str, stats: St
         return keep
     _outcome("✎", "Renamed", StyleUI.GREEN, f"{rel(keep)} → {target.name}")
     ctx.record("RENAMED", keep, detail=f"new name {target}")
+    ctx.journal.renamed(keep, target, "copy_number")
     stats.renamed += 1
     return target
 

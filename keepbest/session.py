@@ -100,7 +100,9 @@ class ActionLog:
             return
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.path, "a", encoding="utf-8") as handle:  # reopened per line: survives crashes
+            # Reopened per line: survives crashes. A file name that isn't valid UTF-8
+            # is written with its original bytes.
+            with open(self.path, "a", encoding="utf-8", errors="surrogateescape") as handle:
                 if not self._started:
                     handle.write(f"\n{_stamp()} | START    | {self.header}\n")
                     self._started = True

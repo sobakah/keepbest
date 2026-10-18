@@ -21,7 +21,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   → `core_logic.py` (the three stages, review loop, deletion, resume) → `image_utils.py`
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
-  `ui.py` (terminal styling, menus, tables), `viewer.py`, `handoff.py` (runs media-optimizer
+  `journal.py` (the file journal, see below), `ui.py` (terminal styling, menus, tables), `viewer.py`, `handoff.py` (runs media-optimizer
   from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0` and the run's
   folder choice as `MO_SUBFOLDERS`/`MO_EXCLUDE_FOLDERS` (JSON; same model: an excluded folder loses
   only its own files); keepbest ignores
@@ -33,7 +33,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 211 tests, ~25 s (see below for which Python)
+python3 -m pytest                 # 250 tests, ~30 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -130,6 +130,24 @@ Both paths change when the Python version changes.
   bit depth the values use) is only used for the dhash, which ignores brightness. Non-finite float
   values are reported as an error for that file.
 
+## The file journal – a contract with picktag
+
+`journal.py` appends one JSON line per change to `journal.jsonl` in the state folder (always
+`state_dir()`, also from a checkout; config `journal_file`). The owner's tagger **picktag** reads it
+(and media-optimizer's) to move tags from removed copies to the kept file and to follow renames, so
+**picktag depends on this format**. The contract is `~/Software/Claude/Projects/picktag/JOURNAL_SPEC.md`
+(format version 1; outside this repo, the README has the user-facing summary): changing the meaning
+of a field or event needs `"v": 2` and a matching picktag change; adding fields is fine. Rules: an
+event only after the action succeeded, none for failures or dry runs (not even `run_start`), stat
+before removing (`Journal.file_state`), `ensure_ascii=True` (non-UTF-8 names as `\udcXX`), append
+with `flock`, never truncate, a journal error only warns once. Events: `run_start`/`run_end` around
+each `run_scan` of a real run (one `run` id per `run_scan`, since one process can do several runs;
+`code` is what the program would exit with: 0/1, 130 when interrupted), `removed` in
+`execute_deletion` (`match` exact/remux/visual, `hard_link`), `renamed` in `rename_kept`
+(`copy_number`). Those two functions are the only places that change media files; a new one needs
+an event too. Events are in order: a `kept` file may be renamed or removed by a later event of the
+same run (Stage 1 keeper loses to a larger picture in Stage 3), so consumers replay them in order.
+
 ## Stages and terms
 
 1 identical files (SHA-256, same-size files only) · 2 remuxed videos (ffprobe preselects, then a
@@ -191,20 +209,23 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Open tasks (target: release 1.3.0)
+## Open tasks (target: release 1.4.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
 media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
 in the folder list; 1.2.0 (2026-10-16) passes the folder choice to media-optimizer (needs its 2.2)
 and has the fixes from an outside review (16-bit greyscale, extra video streams, track order,
 protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`); 1.2.1 (2026-10-17) names the right
-command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no). New changes go under
+command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no);
+1.3.0 (2026-10-18) adds the file journal for picktag and fixes the log crash on non-UTF-8 names. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
   Dry-run "not duplicates" marks write `.keepbest_ignore.json` into the picture folder, which
   contradicts "changes nothing" – change the README wording or store marks elsewhere (see E3).
-- **Quick fixes:** unhandled
+- **Quick fixes:** printing a file name that isn't valid UTF-8 crashes on Python before 3.15
+  (no UTF-8 mode: stdout is `strict`; checked with `PYTHONUTF8=0 LC_ALL=en_US.UTF-8`), so
+  `test_a_name_that_is_not_utf_8_round_trips` sets `PYTHONIOENCODING`; unhandled
   `p.stat()` in `find_exact_duplicates` when a file vanishes; README describes `n`/`x` differently
   though both discard the session; don't group 0-byte files; warn on `--exclude` without `-r`;
   friendlier goodbye than "Program terminated."; summary
@@ -223,6 +244,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
   instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.3.0 for behaviour changes, else 1.2.2) before
+- **Next release:** raise `__version__` (1.4.0 for behaviour changes, else 1.3.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

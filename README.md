@@ -179,6 +179,7 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 | `rename_numbered` | `true` | remove "(1)" from kept copies |
 | `save_sessions` | `true` | save progress so it can be resumed |
 | `log_file` | `null` | `null` = default place, `false` = no log, or a file path |
+| `journal_file` | `null` | `null` = default place, `false` = no [journal](#the-file-journal), or a file path |
 | `color` | `auto` | `auto`, `always`, `never` |
 | `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep; names are not case-sensitive, `JPG` means JPEG and `TIF` TIFF, MPO ranks like JPEG unless given its own rank |
 | `uncertain_ratio`, `compare_size`, `max_aspect_diff`, `hash_size`, `hash_max_distance` | `0.8`, `512`, `0.02`, `8`, `28` | fine-tuning, see below |
@@ -202,6 +203,7 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 | Config `config.json` | `~/.config/keepbest/` | the project folder, else `~/.config/keepbest/` |
 | Log `keepbest.log` | `~/.local/state/keepbest/` | the project folder |
 | Saved sessions | `~/.local/state/keepbest/sessions/` | `sessions/` in the project folder |
+| Journal `journal.jsonl` | `~/.local/state/keepbest/` | the same |
 | "Not duplicates" marks | `.keepbest_ignore.json` in the scanned folder | the same |
 
 `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\keepbest`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
@@ -212,6 +214,26 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 2026-09-23 20:39:37 | TRASHED  | /pics/a (1).png | kept /pics/a.png | exact copy (identical bytes), automatic
 2026-09-23 20:39:37 | TRASHED  | /pics/photo.jpg | kept /pics/photo (1).jpg | visual match (worst diff 5/20), automatic
 2026-09-23 20:39:37 | RENAMED  | /pics/photo (1).jpg | new name /pics/photo.jpg
+```
+
+### The file journal
+
+Besides the log, keepbest keeps a journal for other programs: `journal.jsonl`, one JSON object per line, about every file it removed or renamed. A program that stores data about pictures by path, like a tagger, can move a removed copy's data to the kept file and follow renames. media-optimizer writes the same format. The journal is always in the state folder, also when running from the project folder; set `journal_file` to `false` to turn it off, or to a path (relative paths count from the state folder). Dry runs write nothing, and if the journal can't be written, keepbest warns once and carries on. The file is only ever appended to; delete it when no program needs it any more.
+
+Every line has `v` (format version, 1), `tool` (`keepbest`), `tool_version`, `run` (one id per run), `ts` (local time) and `event`:
+
+| Event | Fields |
+|---|---|
+| `run_start` | `source` (the folder), `target` (always `null`), `pid` |
+| `removed` | `path`, `size`, `mtime_ns` (as before the removal), `how` (`trash` or `permanent`), `reason` (`duplicate`), `kept` (the file kept instead), `match` (`exact`, `remux` or `visual`), `hard_link` (`true` when the removed name was a hard link to the kept file) |
+| `renamed` | `src`, `dest`, `size`, `mtime_ns`, `reason` (`copy_number`: "(1)" removed) |
+| `run_end` | `code` (the exit code), `interrupted` |
+
+Paths are absolute. File names that aren't valid UTF-8 appear as `\udcXX` escapes, and `os.fsencode` in Python gives back the exact bytes. Events are in the order things happened: a kept file may be renamed or, in a later stage, removed in favour of a larger copy by a later event of the same run. Failed actions are not journalled.
+
+```
+{"v":1,"tool":"keepbest","tool_version":"1.3.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"removed","path":"/pics/photo (2).png","size":5320,"mtime_ns":1792327502000000000,"how":"trash","reason":"duplicate","kept":"/pics/photo (1).png","match":"exact"}
+{"v":1,"tool":"keepbest","tool_version":"1.3.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"renamed","src":"/pics/photo (1).png","dest":"/pics/photo.png","size":5320,"mtime_ns":1792327502000000000,"reason":"copy_number"}
 ```
 
 ## Other ways to run it

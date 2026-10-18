@@ -42,6 +42,27 @@ def test_invalid_choice_warns_and_keeps_the_default(tmp_path):
     assert any("viewer" in w for w in warnings)
 
 
+@pytest.mark.parametrize("key", ["log_file", "journal_file"])
+@pytest.mark.parametrize("value, valid", [(None, True), (False, True), ("some/file", True),
+                                          (True, False), (5, False), (["a"], False)])
+def test_file_settings_take_null_false_or_a_path(tmp_path, key, value, valid):
+    config, warnings = load(tmp_path, {key: value})
+    assert config[key] == (value if valid else None)
+    assert any(key in w for w in warnings) != valid
+
+
+def test_the_journal_lives_in_the_state_folder(tmp_path, monkeypatch):
+    from keepbest.journal import resolve_journal_path
+    monkeypatch.setenv("KEEPBEST_STATE_DIR", str(tmp_path / "state"))
+    assert resolve_journal_path(None) == tmp_path / "state" / "journal.jsonl"
+    assert resolve_journal_path("j.jsonl") == tmp_path / "state" / "j.jsonl"
+    assert resolve_journal_path(str(tmp_path / "x.jsonl")) == tmp_path / "x.jsonl"
+    assert resolve_journal_path(False) is None
+    monkeypatch.delenv("KEEPBEST_STATE_DIR")
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    assert resolve_journal_path(None) == tmp_path / "xdg" / "keepbest" / "journal.jsonl"
+
+
 def test_unknown_and_old_keys_are_reported(tmp_path):
     _, warnings = load(tmp_path, {"delete_mod": "trash", "threshold": 90})
     assert any("delete_mod" in w for w in warnings)

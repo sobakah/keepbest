@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] — 2026-10-18
+
+**Upgrading:** `pipx upgrade keepbest`. The journal is on by default; set `"journal_file": false` in `config.json` if no program reads it.
+
+### Added
+
+- **A file journal for other programs.** Every real run now also appends to `journal.jsonl` in the state folder (`~/.local/state/keepbest/`), one JSON object per line: when the run started and ended, which file was removed as a duplicate of which kept file (exact copy, remux or visual match), and which kept file lost its copy number. A program that keeps data about pictures by path, like a tagger, can then move a removed copy's data to the kept file and follow renames; media-optimizer writes the same format. New setting `journal_file`: `null` (default place), `false` (off) or a path. Dry runs write nothing, and a journal that can't be written only gives a warning.
+
+### Fixed
+
+- **A file name that isn't valid UTF-8 crashed keepbest** when the log recorded it (`UnicodeEncodeError`), for example right after the file was moved to the trash. The log now keeps such names with their original bytes.
+
 ## [1.2.1] — 2026-10-17
 
 **Upgrading:** `pipx upgrade keepbest`. The typo fixes were added to 1.2.1 a few hours after it was first published; if `keepbest` still quits after a typo on the end screen, run `pipx reinstall keepbest` once.
@@ -313,6 +325,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
+[1.3.0]: https://github.com/sobakah/keepbest/releases/tag/1.3.0
 [1.2.1]: https://github.com/sobakah/keepbest/releases/tag/1.2.1
 [1.2.0]: https://github.com/sobakah/keepbest/releases/tag/1.2.0
 [1.1.0]: https://github.com/sobakah/keepbest/releases/tag/1.1.0

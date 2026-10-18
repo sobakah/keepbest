@@ -17,6 +17,7 @@ from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_f
 from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
 from .video import tools_available as video_tools_available
+from .journal import Journal, resolve_journal_path
 from .session import ActionLog, IgnoreList, SessionStore, resolve_log_path
 from .ui import (StyleUI, badge, confirm, dim, disable_path_completion, display_width,
                 enable_path_completion, error, exit_script, info, pad,
@@ -832,11 +833,12 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         f"{NAME} {__version__} · folder {target} · mode {config['delete_mode']} · "
         f"limit {limit} ({preset}) · {kind}",
     )
+    journal = Journal(None if dry else resolve_journal_path(config.get("journal_file")))
     ctx = RunContext(
         action_log, ctx_store,
         matching=resume.get("matching") if resume else matching_settings(config, settings, target, index),
         created=resume.get("created") if resume else None,
-        rename=config["rename_numbered"], dry=dry, scanned=scanned,
+        rename=config["rename_numbered"], dry=dry, scanned=scanned, journal=journal,
     )
     ctx.ignores = IgnoreList(target, enabled=not settings.get("no_ignore", False))
     ctx.stats = stats
@@ -854,6 +856,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         except ValueError:
             return str(path)
 
+    journal.start(target)
     try:
         keep_session = False
         if resume:
@@ -887,6 +890,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
                     warn("\nNot enough images left for a visual comparison.")
     except UserQuit:
         ctx.flush()
+        journal.end(1 if stats.failed else 0, interrupted=False)
         warn("\nStopped by user.")
         note = None
         if ctx.has_saved_session:
@@ -900,6 +904,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         return stats, True, None
     except KeyboardInterrupt:
         ctx.flush()
+        journal.end(130, interrupted=True)
         action_log.end(f"interrupted · {_summary_text(stats)}")
         note = None
         if ctx.has_saved_session:
@@ -911,6 +916,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         print_summary(stats, config["delete_mode"], action_log, note, totals_note)
         raise
 
+    journal.end(1 if stats.failed else 0, interrupted=False)
     note = None
     result = None
     if dry and from_dry is None:
