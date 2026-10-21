@@ -209,6 +209,25 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
+## Web page (agreed with the owner 2026-10-22, not started)
+
+Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
+next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
+- The page becomes the default in **2.0.0**, once it can do everything the terminal can; until
+  then it sits behind `--web`. `--terminal` keeps today's screens. `--auto` and sessions without a
+  display stay in the terminal.
+- Order: separate logic from the terminal (cdimport's `ui.Front`; terminal output stays
+  byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
+  desktop entry (copied from lyrembed) and the lock (E5) → group review → overview, resume, remux
+  groups → media-optimizer hand-off.
+- **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
+  `signal.signal()` and interrupt handling need the main thread.
+- media-optimizer keeps the terminal as its default. It gets a thin page behind `--web` (brief:
+  `~/Software/Claude/Projects/media-optimizer/WEB_PAGE_BRIEF.md`). keepbest hands the tab over
+  like cdimport → lyrembed (`--no-browser --return-url --return-name`), and runs an older
+  media-optimizer with `-y` and an output box. Closing its tab stops a run unless the user chose
+  the background; then a desktop notification reports the end (`notify-send`, else `gdbus`).
+
 ## Open tasks (target: release 1.4.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
