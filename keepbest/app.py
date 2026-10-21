@@ -12,17 +12,16 @@ from . import handoff
 from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
-                        dry_run_from_session, format_size, mode_badge, planned_changes,
+                        dry_run_from_session, planned_changes,
                         resolve_limit, resume_review, review_dry_run_again)
+from .front import (AfterDryRunScreen, EndScreen, FolderEntry, FolderHeader, FolderRow, FolderScreen, Note,
+                    SessionPanel, SettingRow, StartScreen, ask, ask_path, blank, confirm, error, exit_script,
+                    info, show, success, transient, warn)
 from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
 from .video import tools_available as video_tools_available
 from .journal import Journal, resolve_journal_path
 from .session import ActionLog, IgnoreList, SessionStore, resolve_log_path
-from .ui import (StyleUI, badge, confirm, dim, disable_path_completion, display_width,
-                enable_path_completion, error, exit_script, info, pad,
-                print_banner, print_menu, print_primary_action, safe_input,
-                success, terminal_width, transient, truncate, warn)
 
 _NATURAL_RE = re.compile(r"(\d+)")
 ROOT = "."
@@ -186,9 +185,7 @@ def resolve_directory(initial: Path | None, index: FolderIndex,
                 error(f"\nPath is not a directory: {resolved}")
 
         hint = "empty to cancel" if allow_cancel else "or 'q' to quit"
-        enable_path_completion()
-        raw = safe_input(f"{StyleUI.BOLD}Enter picture folder path ({hint}): {StyleUI.RESET}")
-        disable_path_completion()
+        raw = ask_path(f"Enter picture folder path ({hint}): ")
 
         cleaned = raw.strip().strip("'\" ")
         if not cleaned or cleaned.lower() == "q":
@@ -282,56 +279,38 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
     excluded: set[str] = settings["excluded"]
     while True:
         entries = folder_entries(base_dir, index)
-        print_banner(f"Choose folders to scan ({len(entries)} subfolders)")
         kinds = index.folder_kinds(base_dir)
         videos_on = settings.get("videos", True)
         main_on = ROOT not in excluded
         files_text = f"{media_text(*kinds.get(ROOT, (0, 0)), videos_on) or 'no files'} directly in it"
-        if main_on:
-            print(f"  [{StyleUI.GREEN}  m{StyleUI.RESET}] {StyleUI.GREEN}[✓]{StyleUI.RESET} {StyleUI.BOLD}Main folder{StyleUI.RESET}"
-                  f"  {StyleUI.GRAY}{files_text}{StyleUI.RESET}\n")
-        else:
-            print(f"  [{StyleUI.GREEN}  m{StyleUI.RESET}] {StyleUI.GRAY}[ ]{StyleUI.RESET} {StyleUI.YELLOW}Main folder - excluded"
-                  f"{StyleUI.RESET}  {StyleUI.GRAY}{files_text}{StyleUI.RESET}\n")
+        header = FolderHeader(count=len(entries), main_on=main_on, files_text=files_text)
         if not entries:
+            show("folder_header", header=header)
             info("This folder has no subfolders with images or videos.")
             if ROOT in excluded:
                 excluded.discard(ROOT)
                 info("The main folder was switched back on, since it is the only folder.")
             return
 
-        names = []
+        listed = []
         for rel, _ in entries:
             parts = PurePosixPath(rel).parts
-            names.append("  " * (len(parts) - 1) + parts[-1] + "/")
-        name_width = min(max(display_width(n) for n in names), max(20, terminal_width() - 30))
-
-        for number, ((rel, _), name) in enumerate(zip(entries, names), 1):
-            on = rel not in excluded
-            box = f"{StyleUI.GREEN}[✓]{StyleUI.RESET}" if on else f"{StyleUI.GRAY}[ ]{StyleUI.RESET}"
-            shown = pad(truncate(name, name_width), name_width)
-            shown = shown if on else f"{StyleUI.GRAY}{shown}{StyleUI.RESET}"
-            amount = media_text(*kinds.get(rel, (0, 0)), videos_on) or "—"
-            print(f"  [{StyleUI.GREEN}{number:3d}{StyleUI.RESET}] {box} {shown}  {StyleUI.GRAY}{amount}{StyleUI.RESET}")
-
+            listed.append(FolderEntry(rel=rel, name="  " * (len(parts) - 1) + parts[-1] + "/",
+                                      on=rel not in excluded,
+                                      amount=media_text(*kinds.get(rel, (0, 0)), videos_on) or "—"))
         chosen = sum(1 for rel, _ in entries if rel not in excluded)
-        main_text = "main folder" if main_on else f"{StyleUI.YELLOW}main folder excluded{StyleUI.RESET}"
         scope = index.in_scope_files(base_dir, settings)
         scope_videos = sum(1 for path in scope if is_video(path))
-        print(f"\n{StyleUI.BOLD}Selected:{StyleUI.RESET} {main_text} + {chosen} of {len(entries)} subfolders · "
-              f"{media_text(len(scope) - scope_videos, scope_videos) or 'no files'}")
-        print_primary_action("Enter", "Done")
-        print_menu([
-            ("Select", [
+        choice = ask(FolderScreen(
+            prompt="Folders: ", primary="Done",
+            menu=[("Select", [
                 (f"1-{len(entries)}", "Switch a folder on/off (asks about its subfolders)"),
                 ("a", "Select all subfolders"),
                 ("n", "Select no subfolders"),
                 ("m", "Switch the main folder on/off"),
-            ]),
-        ])
-        dim("  Several at once: 2-5 or 1,3,7 - each listed folder is switched.")
-
-        choice = safe_input(f"{StyleUI.BOLD}Folders: {StyleUI.RESET}").strip().lower()
+            ])],
+            header=header, entries=listed, chosen=chosen,
+            scope_text=media_text(len(scope) - scope_videos, scope_videos) or "no files"))
         if choice == "":
             if chosen == 0 and not main_on:
                 warn("Nothing selected - no files would be scanned.")
@@ -365,54 +344,6 @@ def choose_folders(base_dir: Path, index: FolderIndex, settings: dict) -> None:
 def _cycle(value, options):
     options = list(options)
     return options[(options.index(value) + 1) % len(options)] if value in options else options[0]
-
-
-_LABEL_WIDTH = 12
-
-
-def _setting(key: str, label: str, options: dict, current, danger=None,
-             unavailable=(), locked: str | None = None) -> None:
-    """One settings row: every choice listed, the current one in normal bold
-    text and the others greyed out. Choices in *unavailable* are also struck
-    through. A *locked* row is greyed out entirely and shows only its current
-    value, followed by the reason. Without colours, the current choice is
-    wrapped in ‹ ›, unavailable ones are marked ✗ and locked rows are labelled.
-    Wraps to the terminal width."""
-    colored = bool(StyleUI.GRAY)
-    if locked is not None:
-        value = options.get(current, str(current))
-        shown = value if colored else f"‹{value}› (locked)"
-        print(f"  {StyleUI.GRAY}[{key}] {label:<{_LABEL_WIDTH}} {shown}   - {locked}{StyleUI.RESET}")
-        return
-
-    prefix = f"  {StyleUI.GRAY}[{key}]{StyleUI.RESET} {StyleUI.BOLD}{label:<{_LABEL_WIDTH}}{StyleUI.RESET} "
-    indent = display_width(prefix)
-    gap = "   "
-
-    cells = []
-    for value, text in options.items():
-        if value == current:
-            color = StyleUI.RED if value == danger else ""
-            shown = text if colored else f"‹{text}›"
-            cells.append((display_width(shown), f"{color}{StyleUI.BOLD}{shown}{StyleUI.RESET}"))
-        elif value in unavailable:
-            shown = text if colored else f"✗{text}"
-            cells.append((display_width(shown), f"{StyleUI.GRAY}{StyleUI.STRIKE}{shown}{StyleUI.RESET}"))
-        else:
-            cells.append((display_width(text), f"{StyleUI.GRAY}{text}{StyleUI.RESET}"))
-
-    width = terminal_width()
-    lines, line, used = [], [], indent
-    for cell_width, cell in cells:
-        extra = cell_width + (len(gap) if line else 0)
-        if line and used + extra > width:
-            lines.append(gap.join(line))
-            line, used = [], indent
-            extra = cell_width
-        line.append(cell)
-        used += extra
-    lines.append(gap.join(line))
-    print(prefix + ("\n" + " " * indent).join(lines))
 
 
 def _cycle_available(value, options, unavailable=()):
@@ -455,10 +386,6 @@ def carry_out_mode(config: dict) -> str:
     """Delete mode for carrying out a dry run: the start screen's choice, unless
     that is a dry run itself, then the configured real mode."""
     return config["delete_mode"] if config["delete_mode"] != "dry_run" else real_delete_mode(config)
-
-
-def _info_row(key: str, label: str, text: str) -> None:
-    print(f"  {StyleUI.GRAY}[{key}]{StyleUI.RESET} {StyleUI.BOLD}{label:<{_LABEL_WIDTH}}{StyleUI.RESET} {text}")
 
 
 def matching_settings(config: dict, settings: dict, target: Path, index: FolderIndex) -> dict:
@@ -511,31 +438,23 @@ def saved_dry_run(saved: dict, rename: bool) -> "DryRun":
     return result
 
 
-def _session_panel(saved: dict, rename: bool) -> None:
+def session_panel(saved: dict, rename: bool) -> SessionPanel:
     groups = saved["groups"]
-    done = sum(g["status"] == "done" for g in groups)
-    skipped = sum(g["status"] == "skipped" for g in groups)
-    ignored = sum(g["status"] == "ignored" for g in groups)
     dry, finished, open_ = session_state(saved)
     try:
         when = datetime.fromisoformat(saved.get("updated", "")).strftime("%d %b %Y %H:%M")
     except ValueError:
         when = "earlier"
-    kind = badge("DRY RUN", StyleUI.CYAN) + " " if dry else ""
+    panel = SessionPanel(dry=dry, finished=finished, when=when, groups=len(groups),
+                         done=sum(g["status"] == "done" for g in groups),
+                         skipped=sum(g["status"] == "skipped" for g in groups),
+                         ignored=sum(g["status"] == "ignored" for g in groups), open=open_,
+                         description=saved.get("matching", {}).get("description"))
     if finished:
         plan = saved_dry_run(saved, rename)
-        count = len(groups) + len(saved.get("exact_groups", []))
-        text = (f"{kind}{badge('FINISHED', StyleUI.GREEN)} from {when} · {count} group(s) · "
-                f"{plan.to_remove} file(s) to remove, {plan.to_rename} to rename")
-    else:
-        text = (f"{kind}{badge('RESUMABLE', StyleUI.CYAN)} from {when} · {len(groups)} groups: "
-                f"{StyleUI.GREEN}{done} done{StyleUI.RESET} · {StyleUI.YELLOW}{skipped} skipped{StyleUI.RESET} · "
-                + (f"{StyleUI.MAGENTA}{ignored} not duplicates{StyleUI.RESET} · " if ignored else "")
-                + f"{open_ - skipped} open")
-    print(f"\n{StyleUI.BOLD}Saved session:{StyleUI.RESET} {text}")
-    description = saved.get("matching", {}).get("description")
-    if description:
-        dim(f"               Matched with: {description}.")
+        panel.groups = len(groups) + len(saved.get("exact_groups", []))
+        panel.to_remove, panel.to_rename = plan.to_remove, plan.to_rename
+    return panel
 
 
 def _fate(mode: str, count: int) -> str:
@@ -563,16 +482,6 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         in_scope = len(scope_files)
         scope_videos = sum(1 for p in scope_files if is_video(p))
 
-        print_banner(f"{NAME} · Duplicate image finder")
-        print(f"{StyleUI.BOLD}Folder:{StyleUI.RESET}  {StyleUI.GRAY}{target}{StyleUI.RESET}")
-        scope = (f"{StyleUI.BOLD}{in_scope}{StyleUI.RESET} file(s) in scope "
-                 f"{StyleUI.GRAY}({in_scope - scope_videos} images, {scope_videos} videos){StyleUI.RESET}")
-        if not shown["recursive"] and total > direct and not session:
-            scope += f" {StyleUI.GRAY}({total - direct} more in subfolders - press r){StyleUI.RESET}"
-        print(f"{StyleUI.BOLD}Files:{StyleUI.RESET}   {scope}")
-
-        if saved:
-            _session_panel(saved, saved_rename(saved, config))
         # --dry-run on the command line always wins: a saved real session or a
         # finished dry run would delete files, so they can't be continued here.
         forced_dry = bool(config.get("_cli_dry_run"))
@@ -594,77 +503,74 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         else:
             mode = config["delete_mode"]
 
-        print(f"\n{StyleUI.BOLD}Settings:{StyleUI.RESET} {mode_badge(mode)}")
+        rows = []
         if session:
             stages = session_stages(matching, settings["stages"])
-            _setting("1", "Stages", stage_options(stages), stages, locked=fixed)
+            rows.append(SettingRow("1", "Stages", stage_options(stages), stages, locked=fixed))
         else:
-            _setting("1", "Stages", stage_options(settings["stages"]), settings["stages"])
+            rows.append(SettingRow("1", "Stages", stage_options(settings["stages"]), settings["stages"]))
         if saved_finished:
             locked_limit = session_limit(saved)
-            _setting("2", "Strictness", {"s": f"limit {locked_limit}"}, "s", locked="carried out as the dry run showed")
+            rows.append(SettingRow("2", "Strictness", {"s": f"limit {locked_limit}"}, "s",
+                                   locked="carried out as the dry run showed"))
         else:
-            _setting("2", "Strictness", strictness, strict_current, unavailable=strict_unavailable)
+            rows.append(SettingRow("2", "Strictness", strictness, strict_current, unavailable=strict_unavailable))
             if cap is not None:
-                dim(f"  {' ' * (_LABEL_WIDTH + 5)}Stricter than the session's limit ({cap}) works without a new scan; looser needs one.")
-        _setting("3", "Confirm", CONFIRM_OPTIONS, settings["confirm"])
+                rows.append(Note(f"Stricter than the session's limit ({cap}) works without a new scan; looser needs one."))
+        rows.append(SettingRow("3", "Confirm", CONFIRM_OPTIONS, settings["confirm"]))
         if forced_dry:
-            _setting("4", "Delete mode", MODE_OPTIONS, "dry_run", locked="--dry-run on the command line")
+            rows.append(SettingRow("4", "Delete mode", MODE_OPTIONS, "dry_run", locked="--dry-run on the command line"))
         elif session and saved_dry and not saved_finished:
-            _setting("4", "Delete mode", MODE_OPTIONS, "dry_run", locked="a dry run resumes as a dry run")
+            rows.append(SettingRow("4", "Delete mode", MODE_OPTIONS, "dry_run", locked="a dry run resumes as a dry run"))
         elif session:
-            _setting("4", "Delete mode", MODE_OPTIONS, mode, danger="permanent", unavailable={"dry_run"})
+            rows.append(SettingRow("4", "Delete mode", MODE_OPTIONS, mode, danger="permanent", unavailable={"dry_run"}))
         else:
-            _setting("4", "Delete mode", MODE_OPTIONS, mode, danger="permanent")
-        _setting("5", "Viewer", VIEWER_OPTIONS, config["viewer"])
+            rows.append(SettingRow("4", "Delete mode", MODE_OPTIONS, mode, danger="permanent"))
+        rows.append(SettingRow("5", "Viewer", VIEWER_OPTIONS, config["viewer"]))
         if saved_finished:
-            _setting("6", "Rename (1)", RENAME_OPTIONS, saved_rename(saved, config),
-                     locked="carried out as the dry run showed")
+            rows.append(SettingRow("6", "Rename (1)", RENAME_OPTIONS, saved_rename(saved, config),
+                                   locked="carried out as the dry run showed"))
         else:
-            _setting("6", "Rename (1)", RENAME_OPTIONS, config["rename_numbered"])
+            rows.append(SettingRow("6", "Rename (1)", RENAME_OPTIONS, config["rename_numbered"]))
         if session:
-            _setting("7", "Videos", VIDEO_OPTIONS, matching.get("videos", settings["videos"]), locked=fixed)
-            _setting("r", "Subfolders", SUBFOLDER_OPTIONS, matching.get("recursive", settings["recursive"]), locked=fixed)
+            rows.append(SettingRow("7", "Videos", VIDEO_OPTIONS, matching.get("videos", settings["videos"]), locked=fixed))
+            rows.append(SettingRow("r", "Subfolders", SUBFOLDER_OPTIONS, matching.get("recursive", settings["recursive"]),
+                                   locked=fixed))
         else:
-            _setting("7", "Videos", VIDEO_OPTIONS, settings["videos"])
+            rows.append(SettingRow("7", "Videos", VIDEO_OPTIONS, settings["videos"]))
             if settings["videos"] and not video_tools_available():
-                dim(f"  {' ' * (_LABEL_WIDTH + 5)}ffmpeg not found: identical video copies are found, remuxes are not.")
-            _setting("r", "Subfolders", SUBFOLDER_OPTIONS, settings["recursive"])
+                rows.append(Note("ffmpeg not found: identical video copies are found, remuxes are not."))
+            rows.append(SettingRow("r", "Subfolders", SUBFOLDER_OPTIONS, settings["recursive"]))
         if session and matching.get("recursive"):
             description = matching.get("description", "").split(" · ", 1)[-1]
-            _setting("f", "Folders", {"d": description}, "d", locked=fixed)
+            rows.append(SettingRow("f", "Folders", {"d": description}, "d", locked=fixed))
         elif not session and settings["recursive"]:
             entries = folder_entries(target, index)
-            chosen = sum(1 for rel, _ in entries if rel not in settings["excluded"])
-            main_text = ("main folder" if ROOT not in settings["excluded"]
-                         else f"{StyleUI.YELLOW}main folder excluded{StyleUI.RESET}{StyleUI.BOLD}")
-            subs = f"all {len(entries)} subfolders" if chosen == len(entries) else f"{chosen} of {len(entries)} subfolders"
-            text = f"{StyleUI.BOLD}{main_text} + {subs}{StyleUI.RESET}"
-            _info_row("f", "Folders", f"{text} {StyleUI.GRAY}- press f to choose{StyleUI.RESET}")
+            rows.append(FolderRow("f", "Folders", main_on=ROOT not in settings["excluded"],
+                                  chosen=sum(1 for rel, _ in entries if rel not in settings["excluded"]),
+                                  total=len(entries)))
         if session:
-            print(f"  {StyleUI.GRAY}{' ' * (_LABEL_WIDTH + 5)}Greyed-out settings belong to the saved session. "
-                  f"Press n to start over with all settings.{StyleUI.RESET}")
+            rows.append(Note("Greyed-out settings belong to the saved session. "
+                             "Press n to start over with all settings.", style="hint"))
         else:
-            print(f"  {StyleUI.GRAY}{' ' * (_LABEL_WIDTH + 5)}Press a setting's key to switch to the next choice.{StyleUI.RESET}")
+            rows.append(Note("Press a setting's key to switch to the next choice.", style="hint"))
         if mode == "dry_run":
-            dim(f"  {' ' * (_LABEL_WIDTH + 5)}Dry runs change nothing and are not logged; their progress is saved.")
+            rows.append(Note("Dry runs change nothing and are not logged; their progress is saved."))
 
+        primary = None
         if blocked:
-            print()
-            warn(blocked)
+            pass
         elif saved and saved_finished:
             plan = saved_dry_run(saved, saved_rename(saved, config))
             what = _fate(carry_out_mode(config), plan.to_remove)
             if plan.to_rename:
                 what += f", rename {plan.to_rename}"
-            print_primary_action("Enter", f"Carry out the saved dry run: {what}")
+            primary = f"Carry out the saved dry run: {what}"
         elif saved and open_groups:
             label = "dry run" if saved_dry else "session"
-            print_primary_action("Enter", f"Resume saved {label} ({open_groups} open group(s))")
-        elif in_scope < 2:
-            warn("\nFewer than two files in scope - nothing to compare.")
-        else:
-            print_primary_action("Enter", f"Start scan ({in_scope} files)")
+            primary = f"Resume saved {label} ({open_groups} open group(s))"
+        elif in_scope >= 2:
+            primary = f"Start scan ({in_scope} files)"
 
         if session:
             settings_menu = [("1-7", "Next choice (not greyed-out ones)")]
@@ -679,9 +585,13 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 session_menu.insert(0, ("e", "Review its groups again for real"))
             groups_menu.append(("Session", session_menu))
         groups_menu.append(("Navigate", [("c", "Change directory"), ("q", "Quit")]))
-        print_menu(groups_menu)
 
-        choice = safe_input(f"{StyleUI.BOLD}Action: {StyleUI.RESET}").strip().lower()
+        choice = ask(StartScreen(
+            prompt="Action: ", primary=primary, menu=groups_menu, target=target, in_scope=in_scope,
+            scope_videos=scope_videos,
+            more_in_subfolders=total - direct if not shown["recursive"] and total > direct and not session else 0,
+            panel=session_panel(saved, saved_rename(saved, config)) if saved else None,
+            mode=mode, rows=rows, blocked=blocked, nothing_to_scan=in_scope < 2))
         if choice == "" and blocked:
             warn(blocked)
         elif choice == "":
@@ -701,7 +611,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         elif choice == "e" and saved and saved_finished and not forced_dry:
             return "review_saved", saved
         elif choice in ("x", "n") and saved:
-            if confirm(f"{StyleUI.YELLOW}Discard the saved session for this folder?{StyleUI.RESET}"):
+            if confirm("Discard the saved session for this folder?", tone="warn"):
                 store.delete()
                 info("Saved session discarded - all settings can be changed now; Enter starts a new scan.")
         elif session and choice in ("1", "7", "r", "f"):
@@ -748,30 +658,11 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
 
 
 # --- running -----------------------------------------------------------------
-def print_summary(stats: Stats, delete_mode: str, action_log: ActionLog | None = None,
+def show_summary(stats: Stats, delete_mode: str, action_log: ActionLog | None = None,
                   note: str | None = None, totals_note: str | None = None) -> None:
-    dry = delete_mode == "dry_run"
-    verb = "to remove" if dry else "removed"
-    print_banner("Summary" + (" - dry run" if dry else ""))
-    print(f"  Scanned: {stats.scanned}   "
-          f"{StyleUI.GREEN}Exact copies {verb}: {stats.exact_deleted}{StyleUI.RESET}   "
-          + (f"{StyleUI.GREEN}Remuxed videos {verb}: {stats.remux_deleted}{StyleUI.RESET}   " if stats.remux_deleted else "")
-          + 
-          f"{StyleUI.GREEN}Identical images {verb}: {stats.similar_deleted}{StyleUI.RESET}")
-    print(f"  {StyleUI.GREEN}{'To rename' if dry else 'Renamed'}: {stats.renamed}{StyleUI.RESET}   "
-          f"{StyleUI.YELLOW}Groups skipped: {stats.groups_skipped}{StyleUI.RESET}   "
-          + (f"{StyleUI.MAGENTA}Not duplicates: {stats.groups_ignored}{StyleUI.RESET}   " if stats.groups_ignored else "")
-          + 
-          f"{StyleUI.RED}Failed: {stats.failed}{StyleUI.RESET}   "
-          f"{StyleUI.BOLD}Space {'that would be freed' if dry else 'freed'}: {format_size(stats.space_saved)}{StyleUI.RESET}")
-    if totals_note:
-        print(f"  {StyleUI.GRAY}{totals_note}{StyleUI.RESET}")
-    if dry:
-        print(f"  {StyleUI.GRAY}Nothing was deleted or renamed.{StyleUI.RESET}")
-    if action_log is not None and action_log.entries:
-        print(f"  {StyleUI.GRAY}Log ({action_log.entries} entries): {action_log.path}{StyleUI.RESET}")
-    if note:
-        print(f"  {StyleUI.CYAN}{note}{StyleUI.RESET}")
+    show("summary", stats=stats, delete_mode=delete_mode,
+         log_entries=action_log.entries if action_log is not None else 0,
+         log_path=action_log.path if action_log is not None else None, note=note, totals_note=totals_note)
 
 
 @dataclass
@@ -900,7 +791,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
                 store.delete()
                 note = "Saved progress deleted."
         action_log.end(f"quit by user · {_summary_text(stats)}")
-        print_summary(stats, config["delete_mode"], action_log, note, totals_note)
+        show_summary(stats, config["delete_mode"], action_log, note, totals_note)
         return stats, True, None
     except KeyboardInterrupt:
         ctx.flush()
@@ -912,8 +803,8 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         elif applying and store is not None and store.load() is not None:
             note = ("The saved dry run is still there - carry it out again to finish; "
                     "files already handled are skipped.")
-        print()
-        print_summary(stats, config["delete_mode"], action_log, note, totals_note)
+        blank()
+        show_summary(stats, config["delete_mode"], action_log, note, totals_note)
         raise
 
     journal.end(1 if stats.failed else 0, interrupted=False)
@@ -938,7 +829,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         else:
             store.delete()
     action_log.end(f"finished · {_summary_text(stats)}")
-    print_summary(stats, config["delete_mode"], action_log, note, totals_note)
+    show_summary(stats, config["delete_mode"], action_log, note, totals_note)
     return stats, False, result
 
 
@@ -1048,14 +939,12 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
     """
     optimizer = offer_optimizer and handoff.available() is not None
     while True:
-        print_primary_action("Enter", "Quit")
         groups = []
         if optimizer:
             groups.append(("Next", [("m", "Optimize this folder with media-optimizer")]))
         groups.append(("Navigate", [("b", "Back to settings (scan again)"),
                                     ("c", "Change directory"), ("q", "Quit")]))
-        print_menu(groups)
-        answer = safe_input(f"{StyleUI.BOLD}Action: {StyleUI.RESET}").strip().lower()
+        answer = ask(EndScreen(prompt="Action: ", primary="Quit", menu=groups))
         if answer == "m" and optimizer:
             run_optimizer(target, settings)
             index.clear()  # media-optimizer converts and renames files
@@ -1073,7 +962,7 @@ def run_optimizer(target: Path, settings: dict) -> None:
     elif settings["excluded"]:
         info(f"It gets the same folder choice: {len(settings['excluded'])} folder(s) left out.")
     code = handoff.run(target, settings["recursive"], settings["excluded"])
-    print()
+    blank()
     if code == 127:
         error("media-optimizer could not be started.")
     success(f"Back in {NAME}. Scan again, change the directory or quit.")
@@ -1084,7 +973,7 @@ def confirm_permanent() -> bool:
     you decide on are asked about one by one, everything else is not."""
     warn("\nPermanent mode: files are deleted for good, not moved to the trash. Identical copies, "
          "remuxes and clear matches are removed without asking; only the groups you decide on ask again.")
-    if confirm(f"{StyleUI.RED}Delete permanently?{StyleUI.RESET}"):
+    if confirm("Delete permanently?", tone="danger"):
         return True
     info("Nothing started.")
     return False
@@ -1113,8 +1002,7 @@ def carry_out_dry_run(target: Path, config: dict, base_config: dict, settings: d
         if review:
             if not confirm_permanent():
                 return None
-        elif not confirm(f"{StyleUI.RED}Permanently delete {dry.to_remove} file(s)? "
-                         f"This cannot be undone.{StyleUI.RESET}"):
+        elif not confirm(f"Permanently delete {dry.to_remove} file(s)? This cannot be undone.", tone="danger"):
             return None
     real_config = {**config, "delete_mode": real_mode}
     stats, quit_requested, _ = run_scan(target, real_config, settings, index, store,
@@ -1154,12 +1042,9 @@ def after_dry_run_menu(dry: DryRun, real_mode: str) -> str:
     what = _fate(real_mode, dry.to_remove)
     if dry.to_rename:
         what += f", rename {dry.to_rename}"
-    print(f"\n{StyleUI.BOLD}Dry run finished.{StyleUI.RESET} The groups found are kept, so continuing needs no rescan. "
-          f"Real runs use the delete mode {mode_badge(real_mode)} from your config.")
-    print_primary_action("Enter", f"Apply exactly what the dry run showed: {what}")
-    print_menu([
-        ("Continue for real", [("r", "Review the groups again (asks as configured)")]),
-        ("Navigate", [("b", "Back to settings"), ("c", "Change directory"), ("q", "Quit")]),
-    ])
-    answer = safe_input(f"{StyleUI.BOLD}Action: {StyleUI.RESET}").strip().lower()
+    answer = ask(AfterDryRunScreen(
+        prompt="Action: ", primary=f"Apply exactly what the dry run showed: {what}",
+        menu=[("Continue for real", [("r", "Review the groups again (asks as configured)")]),
+              ("Navigate", [("b", "Back to settings"), ("c", "Change directory"), ("q", "Quit")])],
+        real_mode=real_mode))
     return {"": "apply", "r": "review", "b": "back", "c": "change", "q": "quit"}.get(answer, "unknown")

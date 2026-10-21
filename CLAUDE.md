@@ -21,19 +21,27 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   → `core_logic.py` (the three stages, review loop, deletion, resume) → `image_utils.py`
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
-  `journal.py` (the file journal, see below), `ui.py` (terminal styling, menus, tables), `viewer.py`, `handoff.py` (runs media-optimizer
+  `journal.py` (the file journal, see below), `front.py` / `terminal.py` / `ui.py` (see below),
+  `viewer.py`, `handoff.py` (runs media-optimizer
   from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0` and the run's
   folder choice as `MO_SUBFOLDERS`/`MO_EXCLUDE_FOLDERS` (JSON; same model: an excluded folder loses
   only its own files); keepbest ignores
   SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on; the handlers are
   set before the start, as no-op handlers rather than SIG_IGN so the child gets default handling).
-- `core_logic.py` mixes logic and terminal output (25 of 75 functions and methods print/ask). Known; a GUI
-  would need that separated first.
+- **Output and questions go through `front.py`**, never `print`/`input`. `app.py` and `core_logic.py`
+  call `front.info/warn/…`, `front.show(kind, …)` for structured output (group tables, outcomes,
+  summary) and `front.ask(screen)` with a `Screen` dataclass. The screen carries its data, `primary`
+  (what Enter does) and `menu` (the other keys). The answer is the key a user would type, so a page
+  can send the same keys from buttons. `terminal.py` is the default front end and draws everything;
+  `ui.py` holds its primitives. A new screen needs a dataclass in `front.py` and a renderer in
+  `terminal.py`; a new message kind needs an entry in `terminal._MESSAGES`. `tests/test_front.py`
+  runs the flow with a scripted front end and fails if anything reaches stdout directly. `cli.py`
+  still prints its startup errors with `ui` directly.
 
 ## Commands
 
 ```bash
-python3 -m pytest                 # 250 tests, ~30 s (see below for which Python)
+python3 -m pytest                 # 254 tests, ~35 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -68,6 +76,14 @@ Both paths change when the Python version changes.
 - `KEEPBEST_STATE_DIR` (old: `IMG_DEDUPE_STATE_DIR`) redirects log and sessions (otherwise a
   checkout writes them into the project folder). Never let tests touch the real project folder, config or trash.
 - Every fix gets a test that fails without the fix. Prefer reproducing a reported bug first.
+- **Checking that the terminal output didn't change** (refactoring):
+  - `KEEPBEST_RECORD=DIR` makes `run_cli` save every run's output there (paths and saved-session
+    times normalised); add `KEEPBEST_RECORD_COLOR=always` for a pass with colours.
+  - Record the suite on the old code (a `git worktree` of the last commit, with the current
+    `conftest.py` copied in) and on the new one, then `diff -r` the folders.
+  - The colour pass fails about 10 tests that read plain text; that's expected, and both sides
+    fail the same ones.
+  - Runs are deterministic. Paths the suite doesn't reach need extra throwaway scenarios.
 
 ## Behaviour that must not regress (safety rules)
 
@@ -209,15 +225,15 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed with the owner 2026-10-22, not started)
+## Web page (agreed with the owner 2026-10-22, step 1 done)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 - The page becomes the default in **2.0.0**, once it can do everything the terminal can; until
   then it sits behind `--web`. `--terminal` keeps today's screens. `--auto` and sessions without a
   display stay in the terminal.
-- Order: separate logic from the terminal (cdimport's `ui.Front`; terminal output stays
-  byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
+- Order: separate logic from the terminal (**done 2026-10-22**, `front.py`; the terminal output
+  stayed byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
   desktop entry (copied from lyrembed) and the lock (E5) → group review → overview, resume, remux
   groups → media-optimizer hand-off.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s

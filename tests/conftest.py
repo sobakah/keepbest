@@ -104,17 +104,34 @@ def config_file(tmp_path):
 
 
 @pytest.fixture
-def run_cli(config_file):
+def run_cli(config_file, request):
     """Run keepbest as a user would: run_cli(folder, "--auto", keys=["", "q"]).
 
     *keys* are typed answers, one per prompt (use "" for Enter). The program
     always gets the test's own config file, so no real config is read.
+
+    KEEPBEST_RECORD=DIR saves every run's output there (KEEPBEST_RECORD_COLOR=always
+    with colours), so two versions of the code can be compared byte for byte:
+    run the suite with each and diff the folders.
     """
+    record = os.environ.get("KEEPBEST_RECORD")
+    color = os.environ.get("KEEPBEST_RECORD_COLOR", "never") if record else "never"
+    calls = []
+
     def run(*args, keys=(), env=None, timeout=180):
-        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", *map(str, args)]
+        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", color, *map(str, args)]
         stdin = "".join(f"{key}\n" for key in keys)
-        return subprocess.run(argv, input=stdin, capture_output=True, text=True, cwd=REPO,
-                              env={**os.environ, **(env or {})}, timeout=timeout)
+        result = subprocess.run(argv, input=stdin, capture_output=True, text=True, cwd=REPO,
+                                env={**os.environ, **(env or {})}, timeout=timeout)
+        if record:
+            calls.append(result)
+            name = re.sub(r"[^\w.-]+", "_", request.node.nodeid) + f"-{len(calls)}.txt"
+            text = f"exit {result.returncode}\n--- stdout\n{result.stdout}--- stderr\n{result.stderr}"
+            text = text.replace(str(config_file.path.parent), "<tmp>")
+            text = re.sub(r"\d\d [A-Z][a-z]{2} \d{4} \d\d:\d\d", "<date>", text)  # saved-session times
+            Path(record).mkdir(parents=True, exist_ok=True)
+            (Path(record) / name).write_text(text, encoding="utf-8", errors="surrogateescape")
+        return result
     return run
 
 
