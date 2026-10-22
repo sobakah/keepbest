@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 NAME = "keepbest"
 OLD_NAME = "img_dedupe"           # the name before 1.0.0; its folders are moved over (migrate.py)
 PROJECT_URL = "https://github.com/sobakah/keepbest"
