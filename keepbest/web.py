@@ -25,6 +25,7 @@ import threading
 import time
 import traceback
 import webbrowser
+from collections import OrderedDict
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -35,7 +36,7 @@ from .config import NAME
 from .core_logic import format_size
 from .front import (AfterDryRunScreen, DecisionScreen, EndScreen, FolderRow, FolderScreen, Front, HandledScreen,
                     Note, OverviewScreen, RemuxScreen, SettingRow, StartScreen)
-from .image_utils import IMAGE_EXTENSIONS
+from .image_utils import IMAGE_EXTENSIONS, preview_jpeg
 from .video import VIDEO_EXTENSIONS
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,9 @@ MAX_BODY = 64 * 1024
 MAX_FOLDER_ENTRIES = 500
 # How often a progress counter is sent on to the page at most.
 PROGRESS_INTERVAL = 0.2
+# Longest side of a preview: for the group view, and for zooming in.
+PREVIEW_SIZES = {"screen": 1200, "zoom": 3000}
+PREVIEW_CACHE = 40
 
 
 def cookie_name(port: int) -> str:
@@ -111,12 +115,17 @@ def _lossless(meta: dict) -> str:
     return {True: "lossless", None: "unknown"}.get(meta.get("lossless"), "lossy")
 
 
-def visual_group(group, rel) -> dict:
+def visual_group(group, rel, preview=None) -> dict:
+    """A visual group for the page; *preview* gives a picture's preview id."""
+    worst = max(range(len(group.diffs)), key=lambda i: -1 if group.diffs[i] is None else group.diffs[i])
     return {
         "images": [{"name": rel(meta["path"]), "format": meta.get("format"), "type": _lossless(meta),
                     "width": meta.get("width"), "height": meta.get("height"), "size": format_size(meta["size"]),
-                    "bpp": round(meta["bpp"], 2) if meta.get("bpp") is not None else None, "diff": diff}
+                    "bpp": round(meta["bpp"], 2) if meta.get("bpp") is not None else None, "diff": diff,
+                    "spot": meta.get("spot"), "preview": preview(meta["path"]) if preview else None}
                    for meta, diff in zip(group.images, group.diffs)],
+        # where the group differs most: the spot of its least similar image
+        "spot": group.images[worst].get("spot"),
         "worst": group.worst, "limit": group.limit, "borderline": group.borderline,
         "borderlineAbove": group.borderline_above, "status": group.status, "kept": group.kept,
         "removed": group.removed, "rename": group.rename,
@@ -147,8 +156,9 @@ def _row(row) -> dict:
     return {"type": "note", "text": row.text, "style": row.style}
 
 
-def screen_data(screen) -> dict:
-    """A Screen as the page gets it: plain data, no paths outside its texts."""
+def screen_data(screen, preview=None) -> dict:
+    """A Screen as the page gets it: plain data, no paths outside its texts.
+    *preview* gives a picture's preview id (WebFront.preview_id)."""
     data = {"screen": type(screen).__name__, "prompt": screen.prompt.strip().rstrip(":"),
             "primary": screen.primary, "menu": _menu(screen), "keys": screen_keys(screen)}
     if isinstance(screen, StartScreen):
@@ -163,7 +173,7 @@ def screen_data(screen) -> dict:
                               "depth": (len(e.name) - len(e.name.lstrip(" "))) // 2, "on": e.on, "amount": e.amount}
                              for n, e in enumerate(screen.entries, 1)])
     elif isinstance(screen, (DecisionScreen, HandledScreen)):
-        data.update(position=screen.position, group=visual_group(screen.group, screen.rel))
+        data.update(position=screen.position, group=visual_group(screen.group, screen.rel, preview))
         if isinstance(screen, HandledScreen):
             data["note"] = screen.note.strip()
     elif isinstance(screen, OverviewScreen):
@@ -275,6 +285,11 @@ class WebFront(Front):
         # the row's key until it shows (the flow only knows "next choice").
         self._target: tuple[str, int] | None = None
         self._presses = 0
+        # Pictures the page may show, by random id: the only files /api/preview
+        # reads, so the page can never make keepbest open anything else.
+        self._previews: dict[str, Path] = {}
+        self._preview_ids: dict[Path, str] = {}
+        self._preview_cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
 
     # recording
     def _bump(self, event: dict | None = None) -> None:
@@ -328,10 +343,41 @@ class WebFront(Front):
         key = self._press_toward_target(screen)
         if key is not None:
             return key
-        answer = self._ask("screen", screen_data(screen), screen)
+        data = screen_data(screen, self.preview_id)
+        answer = self._ask("screen", data, screen)
         if not isinstance(screen, (StartScreen, FolderScreen)):  # forms: the screen itself shows the change
-            self._add({"kind": "answer", "prompt": screen_data(screen)["prompt"], "text": _key_text(screen, answer)})
+            self._add({"kind": "answer", "prompt": data["prompt"], "text": _key_text(screen, answer)})
         return answer
+
+    def preview_id(self, path: Path) -> str:
+        with self._cond:
+            if path not in self._preview_ids:
+                image_id = secrets.token_urlsafe(9)
+                self._preview_ids[path], self._previews[image_id] = image_id, path
+            return self._preview_ids[path]
+
+    def preview(self, image_id: str, size: str) -> bytes:
+        """The preview behind *image_id* as JPEG, rendered when first asked for."""
+        if size not in PREVIEW_SIZES:
+            raise ApiError(400, "Unknown preview size.")
+        with self._cond:
+            path = self._previews.get(image_id)
+            cached = self._preview_cache.get((image_id, size))
+        if path is None:
+            raise ApiError(404, "No such picture.")
+        if cached is not None:
+            return cached
+        if not path.is_file():
+            raise ApiError(404, "The file is no longer there.")
+        try:
+            data = preview_jpeg(path, PREVIEW_SIZES[size])
+        except Exception as exc:  # whatever Pillow raises for a file it can't read
+            raise ApiError(415, f"No preview: {exc}") from exc
+        with self._cond:
+            self._preview_cache[(image_id, size)] = data
+            while len(self._preview_cache) > PREVIEW_CACHE:
+                self._preview_cache.popitem(last=False)
+        return data
 
     def _press_toward_target(self, screen) -> str | None:
         target = self._target
@@ -567,12 +613,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _send(self, status: int, body: bytes, content_type: str, headers: dict | None = None) -> None:
         self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        for name, value in (headers or {}).items():
+        for name, value in {"Content-Type": content_type, "Content-Length": str(len(body)),
+                            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                            "Referrer-Policy": "no-referrer", **(headers or {})}.items():
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
@@ -596,6 +639,11 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if not url.path.startswith("/api/"):
                 raise ApiError(404, "Not found.")
+            if method == "GET" and url.path.startswith("/api/preview/"):
+                size = (parse_qs(url.query).get("size") or ["screen"])[0]
+                data = self.server.web.preview(url.path[len("/api/preview/"):], size)
+                self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=600"})
+                return
             body = self._body(json_required=url.path != "/api/closing") if method == "POST" else {}
             self.server.contact()
             result = self._api(method, url.path, parse_qs(url.query), body)
@@ -700,6 +748,8 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say) -> int:
         while not server.stop.wait(1.0):
             if server.page_gone() and not web.gone:
                 web.page_gone()
+        if web.finished is None:  # closed while the flow still runs: nobody answers any more
+            web.page_gone()
 
     threading.Thread(target=watch, name=f"{NAME}-watch", daemon=True).start()
     code = 130

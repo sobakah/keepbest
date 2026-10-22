@@ -321,6 +321,24 @@ def _as_rgb(thumb, scale):
 
 def pixel_difference(thumb_a, thumb_b):
     """Worst 8x8-cell mean difference (0-255) between two comparison thumbnails.
+    See _cells for how they are compared."""
+    return _cells(thumb_a, thumb_b).getextrema()[1]
+
+
+def difference_spot(thumb_a, thumb_b):
+    """pixel_difference and where it is: (score, (left, top, size)), the worst
+    cell as fractions of the picture. Comparison thumbnails are the whole upright
+    picture squeezed into a square, so the fractions hold for the picture itself."""
+    cells = _cells(thumb_a, thumb_b)
+    data = cells.tobytes()
+    worst = max(data)
+    index = data.index(worst)
+    grid = cells.width
+    return worst, (round(index % grid / grid, 5), round(index // grid / grid, 5), round(1 / grid, 5))
+
+
+def _cells(thumb_a, thumb_b):
+    """The mean difference of each 8x8 cell (an "L" image, one pixel per cell).
     The images are compared at the smaller of the two resolutions, lightly blurred
     to absorb resampling/compression noise; the per-cell maximum (not a global mean)
     is what catches small local edits such as added text.
@@ -346,8 +364,18 @@ def pixel_difference(thumb_a, thumb_b):
     diff = ImageChops.difference(a.filter(blur), b.filter(blur))
     r, g, bl = diff.split()
     worst_channel = ImageChops.lighter(ImageChops.lighter(r, g), bl)
-    cells = worst_channel.resize((side // _CELL, side // _CELL), Image.BOX)
-    return cells.getextrema()[1]
+    return worst_channel.resize((side // _CELL, side // _CELL), Image.BOX)
+
+
+def preview_jpeg(path, max_side, quality=85):
+    """The picture as the comparison sees it (upright, colour-managed, transparency
+    on white, greyscale with more than 8 bits scaled), as a JPEG for a browser:
+    browsers can't show every format keepbest reads (JPEG XL, TIFF, 16 bit, CMYK)."""
+    with Image.open(path) as img:
+        norm = _normalize(img, max_side)
+    out = io.BytesIO()
+    norm.save(out, "JPEG", quality=quality, optimize=True)
+    return out.getvalue()
 
 
 def aspect_ratio_close(a, b, tolerance):

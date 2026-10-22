@@ -149,7 +149,9 @@ If the chosen app is missing, keepbest says so and uses your default viewer; if 
 
 Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first.
 
-This is a preview. Groups are shown as tables, without the pictures yet, and media-optimizer can't be started from the page yet; use the terminal for that.
+**Reviewing a group** shows its pictures side by side, or flips between the kept one and another one in one place (click the picture or press Space). Zoom (`+`, `-`) and dragging move all pictures together, so a difference stands out. *Go to the most different square* zooms in on the part where the pictures differ most, the one the score comes from, and a strip below shows that square from every picture. The pictures are shown as keepbest reads them (also JPEG XL, TIFF, 16-bit and CMYK), upright, as previews it renders itself.
+
+This is a preview: remuxed videos are shown as tables only, and media-optimizer can't be started from the page yet; use the terminal for that.
 
 **App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere.
 

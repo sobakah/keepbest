@@ -3,6 +3,7 @@ the folder picker, the lock against two keepbests on one folder and the
 app-menu entry. No browser: the tests talk to the API as the page does."""
 
 import http.cookiejar
+import io
 import json
 import os
 import re
@@ -233,6 +234,83 @@ def test_folder_list_on_the_page(library, serve):
     page.answer(folders, "")
     page.answer(page.question(folders["id"]), "q")
     assert finish(page, result) == 0
+
+
+# --- pictures in the group view ---------------------------------------------------------
+def test_the_group_view_has_previews_and_the_square(library, serve):
+    from PIL import Image
+    library.photo("a.png", 1, size=(800, 600))
+    library.variant("a.png", "a stamped.png", change=lambda img: pictures.with_patch(pictures.downscaled(img, 0.9)))
+    library.variant("a.png", "a small.jpg", change=pictures.downscaled)
+    page, result = serve(library.path, confirm="always", strictness="loose", max_pixel_diff=255)
+    start, decision = page.walk("", "s")
+    group = decision["group"]
+    assert [i["name"] for i in group["images"]][0] == "a.png"
+    assert group["images"][0]["spot"] is None and all(len(i["spot"]) == 3 for i in group["images"][1:])
+    worst = max(group["images"][1:], key=lambda i: i["diff"])
+    assert worst["name"] == "a stamped.png" and group["spot"] == worst["spot"]
+    left, top, size = group["spot"]
+    assert 0.1 <= left + size / 2 <= 0.22 and 0.1 <= top + size / 2 <= 0.2
+    for image in group["images"]:
+        data = page.opener.open(f"{page.base}/api/preview/{image['preview']}").read()
+        with Image.open(io.BytesIO(data)) as shown:
+            assert shown.format == "JPEG" and max(shown.size) <= 1200
+    zoom = page.opener.open(f"{page.base}/api/preview/{group['images'][0]['preview']}?size=zoom").read()
+    assert Image.open(io.BytesIO(zoom)).size == (800, 600)    # never larger than the picture
+    assert status(page.opener, f"{page.base}/api/preview/nosuchid") == 404
+    assert status(page.opener, f"{page.base}/api/preview/{group['images'][0]['preview']}?size=huge") == 400
+    assert status(None, f"{page.base}/api/preview/{group['images'][0]['preview']}") == 403
+    overview = page.question(decision["id"])
+    page.answer(overview, "q")
+    save = page.question(overview["id"])
+    assert save["kind"] == "confirm" and save["prompt"].startswith("Save progress")
+    page.answer(save, False)
+    assert finish(page, result) == 0
+
+
+def test_a_preview_of_a_removed_file_says_so(library, serve):
+    visual_pair(library)
+    page, result = serve(library.path, confirm="always")
+    start, decision = page.walk("", "")                       # keep a.png: "a small.jpg" goes to the trash
+    gone = decision["group"]["images"][1]["preview"]
+    assert status(page.opener, f"{page.base}/api/preview/{gone}") == 404
+    page.walk("", "q")
+    assert finish(page, result) == 0
+
+
+@pytest.mark.parametrize("make", ["16-bit", "cmyk", "rotated", "mpo"])
+def test_previews_of_pictures_a_browser_cant_show(tmp_path, make):
+    """Previews are JPEGs rendered like the comparison sees the picture."""
+    from PIL import Image
+    from keepbest.image_utils import preview_jpeg
+    path = tmp_path / "picture"
+    if make == "16-bit":
+        Image.linear_gradient("L").resize((300, 200)).convert("I").point(lambda v: v * 257).convert("I;16").save(path.with_suffix(".png"))
+        expected = (300, 200)
+    elif make == "cmyk":
+        pictures.photo(1, (300, 200)).convert("CMYK").save(path.with_suffix(".jpg"))
+        expected = (300, 200)
+    elif make == "rotated":
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        pictures.photo(1, (300, 200)).save(path.with_suffix(".jpg"), exif=exif)
+        expected = (200, 300)                                 # shown upright
+    else:
+        first, second = pictures.photo(1, (300, 200)), pictures.photo(2, (300, 200))
+        first.save(path.with_suffix(".mpo"), format="MPO", save_all=True, append_images=[second])
+        expected = (300, 200)
+    source = next(tmp_path.glob("picture.*"))
+    with Image.open(io.BytesIO(preview_jpeg(source, 1200))) as shown:
+        assert shown.format == "JPEG" and shown.mode == "RGB" and shown.size == expected
+
+
+def test_closing_while_a_question_is_open_stops_keepbest(library, serve):
+    visual_pair(library)
+    page, result = serve(library.path)
+    page.question()
+    page.post("/api/close")
+    result["thread"].join(timeout=10)
+    assert result["code"] == 130
 
 
 # --- starting without a folder (the app menu) and the folder picker ---------------------

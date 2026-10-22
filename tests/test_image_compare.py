@@ -245,3 +245,46 @@ def test_undo_brings_back_the_images_a_chosen_keeper_took_out(library):
     assert [m["path"].name for m in group.images] == ["a.png", "a edited.jpg", "a.jpg"]
     assert (group.status, group.undo, group.diffs) == ("pending", None, [None, 15, 2])
     assert (stats.similar_deleted, stats.space_saved, stats.scanned) == (0, 0, 3)
+
+
+# --- where a group differs most (for the page) ------------------------------------------
+@pytest.mark.parametrize("edit, area", [
+    (pictures.with_patch, (0.1, 0.1, 0.22, 0.2)),              # the dark rectangle
+    (pictures.with_text, (0.0, 0.8, 1.0, 1.0)),                # text along the bottom
+])
+def test_the_most_different_square_is_where_the_edit_is(library, edit, area):
+    from keepbest.image_utils import difference_spot
+    library.photo("a.png", 1, size=(800, 600))
+    library.variant("a.png", "b.png", edit)
+    score, (left, top, size) = difference_spot(comparison_thumbnail(library / "a.png", 512),
+                                               comparison_thumbnail(library / "b.png", 512))
+    assert score == diff(library / "a.png", library / "b.png")
+    x0, y0, x1, y1 = area
+    assert x0 <= left + size / 2 <= x1 and y0 <= top + size / 2 <= y1, (left, top)
+
+
+def test_a_rotated_picture_has_its_square_where_it_is_seen(library):
+    """The comparison works on the upright picture, and so does the square: a portrait
+    stored sideways with an EXIF orientation still gets the square on the patch."""
+    from keepbest.image_utils import difference_spot
+    upright = pictures.photo(1, (600, 800))
+    pictures.save(upright, library / "a.png")
+    edited = pictures.with_patch(upright)
+    exif = Image.Exif()
+    exif[0x0112] = 6                                           # stored turned left, shown turned right
+    edited.rotate(90, expand=True).save(library / "b.jpg", exif=exif, quality=95)
+    _, (left, top, size) = difference_spot(comparison_thumbnail(library / "a.png", 512),
+                                           comparison_thumbnail(library / "b.jpg", 512))
+    assert 0.1 <= left + size / 2 <= 0.22 and 0.1 <= top + size / 2 <= 0.2
+
+
+def test_a_chosen_keeper_moves_the_squares_too(library):
+    from keepbest.core_logic import regroup_around
+    library.photo("a.png", 1)
+    library.variant("a.png", "a.jpg", quality=90)
+    library.variant("a.png", "b.jpg", quality=60)
+    group = found_group(library, ["a.png", "a.jpg", "b.jpg"], [2, 3])
+    group.images[1]["spot"] = (0.5, 0.5, 0.1)                  # relative to a.png
+    regroup_around(group, 1, COMPARE)
+    assert group.images[0]["path"].name == "a.jpg" and group.images[0]["spot"] is None
+    assert all(len(m["spot"]) == 3 for m in group.images[1:])

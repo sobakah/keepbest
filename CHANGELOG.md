@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **keepbest in the browser (preview).** `keepbest --web [FOLDER]` shows the same steps and questions as a page with buttons on a local address only this computer can open; the keys still work there. Started without a folder, the page lets you choose one. Closing the page stops keepbest at its next question, as Ctrl+C would, with progress saved. Groups are shown as tables without pictures for now, and media-optimizer is only offered in the terminal. `--no-browser` only prints the address.
+- **keepbest in the browser (preview).** `keepbest --web [FOLDER]` shows the same steps and questions as a page with buttons on a local address only this computer can open; the keys still work there. Started without a folder, the page lets you choose one. Closing the page stops keepbest at its next question, as Ctrl+C would, with progress saved. Groups show their pictures side by side or flipping between two, with one zoom and position for all of them and the most different square outlined and enlarged; keepbest renders the previews itself, so JPEG XL, TIFF, 16-bit and CMYK pictures show too. Remuxed videos are shown as tables, and media-optimizer is only offered in the terminal. `--no-browser` only prints the address.
 - **App-menu entry.** `--install-desktop-entry` adds keepbest to the desktop's app menu (Linux); it opens the page, and file managers offer "Open with keepbest" for folders. `--remove-desktop-entry` removes it.
 - **One keepbest per folder.** A folder that another running keepbest works on, or a folder inside or above it, is refused, naming the other keepbest's process and page. With `--auto` this ends with exit code 2.
 

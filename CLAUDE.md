@@ -46,6 +46,12 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   - Answers are screen keys, checked against `screen_keys()` (ranges written out). Choosing a
     start-screen option directly (`{"set": [key, index]}`) presses the row's key until it shows.
   - Screens without their own view on the page get a generic one (table plus key buttons).
+  - Group view: previews come from `image_utils.preview_jpeg` (the comparison's `_normalize`,
+    so upright and 16-bit/CMYK/JXL safe), only by the random ids `WebFront.preview_id` hands out.
+    Each grouped image carries `spot` (`difference_spot`: the worst 8×8 cell relative to #0, as
+    fractions of the upright picture; saved in sessions, None in older ones). `regroup_around`
+    and `_check_decided` move it along with the scores. View buttons blur after a click, so
+    Enter always reaches the flow.
   - `desktop.py` is the app-menu entry (from lyrembed; `Exec=… --web %f`). `running.py` is the
     lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
     in `resolve_directory` and with `--auto`. It does nothing on Windows.
@@ -53,7 +59,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 275 tests, ~40 s (see below for which Python)
+python3 -m pytest                 # 287 tests, ~45 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -242,7 +248,7 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed with the owner 2026-10-22, steps 1–2 done)
+## Web page (agreed with the owner 2026-10-22, steps 1–3 done)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
@@ -251,7 +257,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
   display stay in the terminal.
 - Order: separate logic from the terminal (**done 2026-10-22**, `front.py`; the terminal output
   stayed byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
-  desktop entry (copied from lyrembed) and the lock (E5) (**done 2026-10-22**) → group review → overview, resume, remux
+  desktop entry (copied from lyrembed) and the lock (E5) (**done 2026-10-22**) → group review (**done**) → overview, resume, remux
   groups → media-optimizer hand-off.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
   `signal.signal()` and interrupt handling need the main thread.

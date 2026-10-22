@@ -314,19 +314,176 @@ function FolderPicker({ question, answer, sending }) {
   </div>`;
 }
 
+// --- a group of pictures ----------------------------------------------------------
+// One zoom level and centre for every picture of a group, so dragging or zooming
+// one moves all of them and a change stands out. Kept while the same group is
+// asked again (after "n", a mark, a declined deletion); the layout for every group.
+const ZOOMS = [1, 2, 4, 8];
+const prefs = { layout: 'side', outline: true };
+let remembered = { key: '', view: null };
+
+const clampView = ({ z, cx, cy }) => {
+  const half = 0.5 / z;
+  return { z, cx: Math.min(Math.max(cx, half), 1 - half), cy: Math.min(Math.max(cy, half), 1 - half) };
+};
+const previewSrc = (id, zoomed) => `/api/preview/${encodeURIComponent(id)}?size=${zoomed ? 'zoom' : 'screen'}`;
+
+// A picture in a box of the group's shape, showing the part the shared view says.
+function Viewport({ image, view, aspect, spot, outline, onPan, onToggle, label }) {
+  const box = useRef(null);
+  const drag = useRef(null);
+  const [failed, setFailed] = useState(false);
+  const stage = {
+    width: `${view.z * 100}%`, height: `${view.z * 100}%`,
+    left: `${(0.5 - view.cx * view.z) * 100}%`, top: `${(0.5 - view.cy * view.z) * 100}%`,
+  };
+  const down = (e) => {
+    if (!onPan || e.button !== 0) return;
+    drag.current = { x: e.clientX, y: e.clientY, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const move = (e) => {
+    const d = drag.current;
+    if (!d || !box.current) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    if (!d.moved) return;
+    d.x = e.clientX; d.y = e.clientY;
+    const rect = box.current.getBoundingClientRect();
+    onPan(-dx / (rect.width * view.z), -dy / (rect.height * view.z));
+  };
+  const up = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (d && !d.moved && onToggle) onToggle();
+  };
+  return html`<div class=${'viewport' + (onPan ? ' pannable' : '')} ref=${box} style=${{ aspectRatio: aspect }}
+      onPointerDown=${down} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${() => { drag.current = null; }}>
+    ${!image.preview || failed
+      ? html`<span class="no-picture">${image.preview ? 'No preview: the file is gone or unreadable' : 'No preview'}</span>`
+      : html`<div class="stage" style=${stage}>
+          <img src=${previewSrc(image.preview, view.z > 1.5)} alt=${label} draggable="false" onError=${() => setFailed(true)} />
+          ${outline && spot && html`<span class="spot" style=${{ left: `${spot[0] * 100}%`, top: `${spot[1] * 100}%`,
+            width: `${spot[2] * 100}%`, height: `${spot[2] * 100}%` }}></span>
+            <span class="ring" style=${{ left: `${(spot[0] + spot[2] / 2) * 100}%`, top: `${(spot[1] + spot[2] / 2) * 100}%` }}></span>`}
+        </div>`}
+  </div>`;
+}
+
 function GroupScreen({ question, answer, sending }) {
   const q = question;
   const g = q.group;
   const decision = q.screen === 'DecisionScreen';
-  const actions = decision ? (i) => (i === 0 ? null : html`<div class="row">
-    <button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>
-    ${q.keys.includes('i' + i) && html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer('i' + i)}>Not a duplicate <kbd>i${i}</kbd></button>`}
-  </div>`) : null;
+  const keepIndex = decision ? 0 : g.kept || 0;
+  const key = g.images.map((i) => i.name).join('\n');
+  const [view, setView] = useState(remembered.key === key && remembered.view ? remembered.view : { z: 1, cx: 0.5, cy: 0.5 });
+  const [layout, setLayout] = useState(prefs.layout);
+  const [outline, setOutline] = useState(prefs.outline);
+  const others = g.images.map((_, i) => i).filter((i) => i !== keepIndex);
+  const [flipOther, setFlipOther] = useState(others.reduce((a, i) => ((g.images[i].diff ?? -1) > (g.images[a].diff ?? -1) ? i : a), others[0]));
+  const [flipShowOther, setFlipShowOther] = useState(false);
+  useEffect(() => { remembered = { key, view }; }, [view]);
+
+  const first = g.images[0];
+  const aspect = first.width && first.height ? `${first.width} / ${first.height}` : '4 / 3';
+  const zoomTo = (z) => setView((v) => clampView({ ...v, z }));
+  const pan = (dx, dy) => setView((v) => clampView({ ...v, cx: v.cx + dx, cy: v.cy + dy }));
+  const toSpot = () => g.spot && setView(clampView({ z: 4, cx: g.spot[0] + g.spot[2] / 2, cy: g.spot[1] + g.spot[2] / 2 }));
+  const chooseLayout = (l) => { prefs.layout = l; setLayout(l); };
+  const toggleOutline = () => { prefs.outline = !outline; setOutline(!outline); };
+  const flip = () => setFlipShowOther((v) => !v);
+  // View buttons give the focus back, so Enter keeps answering the flow as in the terminal.
+  const view_ = (fn) => (e) => { fn(); e.currentTarget.blur(); };
+
+  // Keys of the view, besides the flow's own: Space flips, + and - zoom.
+  const keys = useRef(null);
+  keys.current = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+    if (e.key === ' ' && layout === 'flip') { e.preventDefault(); flip(); }
+    else if (e.key === '+') zoomTo(ZOOMS[Math.min(ZOOMS.indexOf(view.z) + 1, ZOOMS.length - 1)] || 2);
+    else if (e.key === '-') zoomTo(ZOOMS[Math.max(ZOOMS.indexOf(view.z) - 1, 0)] || 1);
+  };
+  useEffect(() => {
+    const handler = (e) => keys.current(e);
+    addEventListener('keydown', handler);
+    return () => removeEventListener('keydown', handler);
+  }, []);
+
+  const badgeOf = (i) => (decision ? (i === keepIndex ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove'])
+    : g.status === 'done' ? (i === keepIndex ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : ['KEPT', 'b-keep']);
+  const diffText = (image) => (image.diff === null ? 'kept' : `diff ${image.diff}`);
+  const hot = (image) => image.diff !== null && image.diff > g.borderlineAbove;
+
+  const card = (image, i) => {
+    const [text, cls] = badgeOf(i);
+    return html`<article class=${'card' + (i === keepIndex ? ' keep' : '')} key=${image.name}>
+      <div class="card-head"><span class="mono"><b>#${i}</b></span><span class=${'badge ' + cls}>${text}</span>
+        ${decision && i === 0 && html`<span class="small muted">recommended</span>`}
+        <span class=${'mono small push' + (hot(image) ? ' diff-hot' : '')}>${diffText(image)}</span></div>
+      <${Viewport} image=${image} view=${view} aspect=${aspect} spot=${g.spot} outline=${outline} onPan=${pan} label=${image.name} />
+      <div class="card-body">
+        <div class="file">${image.name}</div>
+        <div class="small muted">${image.format} · ${image.type} · ${image.width}×${image.height} · ${image.size}</div>
+      </div>
+      ${decision && i > 0 && html`<div class="row card-actions">
+        <button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>
+        ${q.keys.includes('i' + i) && html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer('i' + i)}>Not a duplicate <kbd>i${i}</kbd></button>`}
+      </div>`}
+    </article>`;
+  };
+
+  const shown = flipShowOther ? flipOther : keepIndex;
   return html`<div class="stack">
     <div class="row"><span class="mono">[${q.position}]</span><${Verdict} borderline=${g.borderline} />
-      <span class="muted">worst difference ${g.worst} of ${g.limit} allowed</span>
+      <span class="muted">worst difference <b class="mono">${g.worst}</b> of ${g.limit} allowed (0 = pixel-identical)</span>
       ${g.status === 'skipped' && decision && html`<span class="badge b-borderline">SKIPPED EARLIER</span>`}</div>
-    <${VisualTable} group=${g} keepIndex=${decision ? 0 : g.kept || 0} done=${!decision && g.status === 'done'} actions=${actions} />
+
+    <div class="toolbar">
+      <div class="segmented" role="group" aria-label="Layout">
+        <button aria-pressed=${layout === 'side'} class=${layout === 'side' ? 'on' : ''} onClick=${view_(() => chooseLayout('side'))}>Side by side</button>
+        <button aria-pressed=${layout === 'flip'} class=${layout === 'flip' ? 'on' : ''} onClick=${view_(() => chooseLayout('flip'))}>Flip between two</button>
+      </div>
+      <div class="row" role="group" aria-label="Zoom, all pictures together">
+        <span class="small muted">Zoom</span>
+        ${ZOOMS.map((z) => html`<button key=${z} class=${'zoom' + (view.z === z ? ' on' : '')} aria-pressed=${view.z === z}
+          onClick=${view_(() => zoomTo(z))}>${z === 1 ? 'Fit' : `${z}×`}</button>`)}
+      </div>
+      ${g.spot && html`<button class="btn btn-small spot-button" onClick=${view_(toSpot)}>Go to the most different square</button>`}
+      ${g.spot && html`<label class="row small"><input type="checkbox" checked=${outline} onChange=${view_(toggleOutline)} /> Outline it</label>`}
+      <span class="small muted push">Drag to move · + and - zoom${layout === 'flip' ? ' · Space flips' : ''}</span>
+    </div>
+
+    ${layout === 'side'
+      ? html`<div class="cards">${g.images.map(card)}</div>`
+      : html`<div class="flip">
+          <div class="flip-main">
+            <${Viewport} image=${g.images[shown]} view=${view} aspect=${aspect} spot=${g.spot} outline=${outline}
+              onPan=${pan} onToggle=${flip} label=${g.images[shown].name} />
+          </div>
+          <div class="flip-side stack-tight">
+            <span class="small muted">Showing</span>
+            <div class="row"><b class="mono">#${shown}</b><span class=${'badge ' + badgeOf(shown)[1]}>${badgeOf(shown)[0]}</span>
+              <span class=${'mono small' + (hot(g.images[shown]) ? ' diff-hot' : '')}>${diffText(g.images[shown])}</span></div>
+            <div class="file">${g.images[shown].name}</div>
+            <p class="small muted">Click the picture (or press Space) to switch between #${keepIndex} and the one chosen here.</p>
+            <div class="row">${others.map((i) => html`<button key=${i} class=${'zoom' + (i === flipOther ? ' on' : '')}
+              onClick=${view_(() => { setFlipOther(i); setFlipShowOther(true); })}>#${i}</button>`)}</div>
+            ${decision && shown > 0 && html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(shown))}>
+              Keep #${shown} instead <kbd>${shown}</kbd></button>`}
+          </div>
+        </div>`}
+
+    ${g.spot && html`<section class="strip" aria-label="Where they differ most">
+      <div class="row"><h3>Where they differ most</h3>
+        <span class="small muted">The square with the largest difference, enlarged, from each picture</span></div>
+      <div class="row strip-row">${g.images.map((image, i) => html`<figure key=${image.name}>
+        <${Viewport} image=${image} aspect=${aspect} spot=${g.spot} outline=${true} label=${'Detail of ' + image.name}
+          view=${clampView({ z: Math.min(16, 1 / (g.spot[2] * 5)), cx: g.spot[0] + g.spot[2] / 2, cy: g.spot[1] + g.spot[2] / 2 })} />
+        <figcaption class="mono small">#${i} · ${diffText(image)}</figcaption></figure>`)}</div>
+    </section>`}
+
+    <details class="details" open><summary>Details</summary>
+      <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} /></details>
     ${q.note && html`<p class="line">${q.note}</p>`}
     <${Primary} question=${q} answer=${answer} sending=${sending} />
     <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k)} />

@@ -17,7 +17,7 @@ from send2trash import send2trash
 
 from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, analyze_image,
                          aspect_ratio_close, comparison_thumbnail,
-                         has_copy_number, ignore_sigint, pixel_difference,
+                         difference_spot, has_copy_number, ignore_sigint,
                          rename_target, score_image, sha256_file)
 from .front import (DecisionScreen, HandledScreen, OverviewScreen, RemuxScreen, ask, banner, blank, confirm,
                     dim, error, info, outcome, progress, show, success, transient, warn)
@@ -527,8 +527,10 @@ def _decide_remux(group: ExactGroup, number: int, total: int, config: dict, conf
 
 
 # --- Stage 3: finding groups -------------------------------------------------
+# "spot": where the image differs most from the group's #0 (left, top, size as
+# fractions; image_utils.difference_spot), for the page. Older sessions have none.
 _SAVED_FIELDS = ("width", "height", "resolution", "format", "format_rank", "lossless",
-                 "bpp", "age", "size", "mtime_ns", "numbered", "frames")
+                 "bpp", "age", "size", "mtime_ns", "numbered", "frames", "spot")
 
 
 @dataclass
@@ -778,14 +780,16 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
                 # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
                 distance = _popcount(metas[anchor]["hash"] ^ metas[i]["hash"])
                 if distance <= max_hash and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"]):
-                    diff = pixel_difference(thumbs[anchor], thumbs[i])
+                    diff, spot = difference_spot(thumbs[anchor], thumbs[i])
                     log.debug("%s vs %s: hash distance %d, pixel diff %d",
                               metas[anchor]["path"].name, metas[i]["path"].name, distance, diff)
                     if diff <= limit:
                         members.append((i, diff))
+                        metas[i]["spot"] = spot  # where it differs most from the anchor
                         continue
                 leftover.append(i)
             if members:
+                metas[anchor]["spot"] = None
                 groups.append(Group(
                     images=[metas[anchor]] + [metas[i] for i, _ in members],
                     diffs=[None] + [d for _, d in members],
@@ -862,17 +866,20 @@ def regroup_around(group: Group, keep_index: int, config: dict) -> list[tuple[di
         if (meta.get("frames") or 1) > 1:
             far.append((meta, "frames"))
             continue
-        score = None
+        score = spot = None
         if anchor is not None and aspect_ratio_close(keeper, meta, config["max_aspect_diff"]):
             thumb = _safe_thumbnail(meta["path"], size)
             if thumb is not None:
-                score = pixel_difference(anchor, thumb)
-        (close if score is not None and score <= group.limit else far).append((meta, score))
+                score, spot = difference_spot(anchor, thumb)
+        (close if score is not None and score <= group.limit else far).append((meta, score, spot))
     if not close:
         return None
-    group.images = [keeper] + [m for m, _ in close]
-    group.diffs = [None] + [d for _, d in close]
-    return far
+    for meta, _, spot in close:
+        meta["spot"] = spot
+    keeper["spot"] = None
+    group.images = [keeper] + [m for m, _, _ in close]
+    group.diffs = [None] + [d for _, d, _ in close]
+    return [(m, score) for m, score, _ in far]
 
 
 def _far_text(score, limit: int) -> str:
@@ -1300,7 +1307,12 @@ def _check_decided(groups: list[Group]) -> tuple[list[Group], int]:
         # #0; that image itself gets its diff to the kept one (stored on the keeper).
         diffs = [None]
         for i in others:
-            diffs.append(group.diffs[i] if group.diffs[i] is not None else group.diffs[keep_index])
+            if group.diffs[i] is None:  # the original #0: its score and spot are stored on the keeper
+                diffs.append(group.diffs[keep_index])
+                group.images[i]["spot"] = keeper.get("spot")
+            else:
+                diffs.append(group.diffs[i])
+        keeper["spot"] = None
         group.images = [keeper] + [group.images[i] for i in others]
         group.diffs = diffs
         group.kept = 0
