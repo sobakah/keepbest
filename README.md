@@ -143,6 +143,18 @@ The end screen offers to scan again with other settings (`b`), change the folder
 
 If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
+## In the browser (preview)
+
+`keepbest --web [FOLDER]` shows keepbest in your browser instead of the terminal: the same steps and questions as a page with buttons, and the keys still work there. keepbest prints a local address and opens it; only this computer can open the page, and only through that address. Without a folder, the page lets you choose one.
+
+Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first.
+
+This is a preview. Groups are shown as tables, without the pictures yet, and media-optimizer can't be started from the page yet; use the terminal for that.
+
+**App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere.
+
+**One keepbest per folder:** keepbest refuses a folder that another running keepbest works on, or a folder inside or above it, and names that keepbest's process and page.
+
 ## Command-line options
 
 | Option | Meaning |
@@ -158,10 +170,13 @@ If the chosen app is missing, keepbest says so and uses your default viewer; if 
 | `--no-videos` | Leave videos out |
 | `--no-ignore` | Show pairs marked "not duplicates" again |
 | `-c FILE`, `--config FILE` | Use this config file |
+| `--web` | Show keepbest in the browser (see [In the browser](#in-the-browser-preview)); not with `--auto` |
+| `--no-browser` | With `--web`: only print the page's address |
+| `--install-desktop-entry`, `--remove-desktop-entry` | Add keepbest to the app menu, or remove it, and exit |
 | `--color {auto,always,never}` | Colours; `auto` respects `NO_COLOR` |
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
 
-Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path or a refused folder (see [First run](#first-run)) with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C. Without `--auto`, a bad path is asked for again instead.
+Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path, a refused folder (see [First run](#first-run)) or a folder another keepbest works on with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C or by closing the page. Without `--auto`, a bad path is asked for again instead.
 
 ## Configuration
 
@@ -205,6 +220,7 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 | Saved sessions | `~/.local/state/keepbest/sessions/` | `sessions/` in the project folder |
 | Journal `journal.jsonl` | `~/.local/state/keepbest/` | the same |
 | "Not duplicates" marks | `.keepbest_ignore.json` in the scanned folder | the same |
+| Running keepbest processes and their folders | `~/.local/state/keepbest/running/` | `running/` in the project folder |
 
 `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\keepbest`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
 

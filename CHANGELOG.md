@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **keepbest in the browser (preview).** `keepbest --web [FOLDER]` shows the same steps and questions as a page with buttons on a local address only this computer can open; the keys still work there. Started without a folder, the page lets you choose one. Closing the page stops keepbest at its next question, as Ctrl+C would, with progress saved. Groups are shown as tables without pictures for now, and media-optimizer is only offered in the terminal. `--no-browser` only prints the address.
+- **App-menu entry.** `--install-desktop-entry` adds keepbest to the desktop's app menu (Linux); it opens the page, and file managers offer "Open with keepbest" for folders. `--remove-desktop-entry` removes it.
+- **One keepbest per folder.** A folder that another running keepbest works on, or a folder inside or above it, is refused, naming the other keepbest's process and page. With `--auto` this ends with exit code 2.
+
 ## [1.3.0] — 2026-10-18
 
 **Upgrading:** `pipx upgrade keepbest`. The journal is on by default; set `"journal_file": false` in `config.json` if no program reads it.
@@ -325,6 +333,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
+[Unreleased]: https://github.com/sobakah/keepbest/compare/1.3.0...HEAD
 [1.3.0]: https://github.com/sobakah/keepbest/releases/tag/1.3.0
 [1.2.1]: https://github.com/sobakah/keepbest/releases/tag/1.2.1
 [1.2.0]: https://github.com/sobakah/keepbest/releases/tag/1.2.0

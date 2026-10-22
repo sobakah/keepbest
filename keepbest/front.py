@@ -54,6 +54,11 @@ def use(front: Front | None) -> None:
     _front = front
 
 
+def in_terminal() -> bool:
+    """True when no other front end is set: output and questions use the terminal."""
+    return _front is None
+
+
 def current() -> Front:
     if _front is None:
         from .terminal import TERMINAL

@@ -37,11 +37,23 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   `terminal.py`; a new message kind needs an entry in `terminal._MESSAGES`. `tests/test_front.py`
   runs the flow with a scripted front end and fails if anything reaches stdout directly. `cli.py`
   still prints its startup errors with `ui` directly.
+- **The page (`--web`, preview)**:
+  - `web.py` is the second front end, `WebFront`, with the HTTP server; `static/` holds the page
+    (`app.js` with Preact+htm from `static/vendor/`, unchanged, licences in `LICENSES.txt`).
+  - `serve(flow)` runs the flow in the **main thread**; the server and a watcher run in threads.
+  - A closed page stops the flow at its next question with `web.Cancelled` (a
+    `KeyboardInterrupt`), so the Ctrl+C handling saves progress. Work in progress is never cut off.
+  - Answers are screen keys, checked against `screen_keys()` (ranges written out). Choosing a
+    start-screen option directly (`{"set": [key, index]}`) presses the row's key until it shows.
+  - Screens without their own view on the page get a generic one (table plus key buttons).
+  - `desktop.py` is the app-menu entry (from lyrembed; `Exec=… --web %f`). `running.py` is the
+    lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
+    in `resolve_directory` and with `--auto`. It does nothing on Windows.
 
 ## Commands
 
 ```bash
-python3 -m pytest                 # 254 tests, ~35 s (see below for which Python)
+python3 -m pytest                 # 275 tests, ~40 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -84,6 +96,11 @@ Both paths change when the Python version changes.
   - The colour pass fails about 10 tests that read plain text; that's expected, and both sides
     fail the same ones.
   - Runs are deterministic. Paths the suite doesn't reach need extra throwaway scenarios.
+- **The page** is covered by API tests (`tests/test_web.py`, server in the test process, no
+  browser). Clicking through it is a manual check: Playwright in a venv outside the repo,
+  `chromium.launch(channel="chrome")` (Chrome is installed), keepbest started with the system
+  `python3` and `--web --no-browser`, generated pictures only. The page's CSP blocks
+  `wait_for_function`; wait with locators.
 
 ## Behaviour that must not regress (safety rules)
 
@@ -225,7 +242,7 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed with the owner 2026-10-22, step 1 done)
+## Web page (agreed with the owner 2026-10-22, steps 1–2 done)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
@@ -234,7 +251,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
   display stay in the terminal.
 - Order: separate logic from the terminal (**done 2026-10-22**, `front.py`; the terminal output
   stayed byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
-  desktop entry (copied from lyrembed) and the lock (E5) → group review → overview, resume, remux
+  desktop entry (copied from lyrembed) and the lock (E5) (**done 2026-10-22**) → group review → overview, resume, remux
   groups → media-optimizer hand-off.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
   `signal.signal()` and interrupt handling need the main thread.
@@ -276,8 +293,8 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 - **Possible features (owner decides):** E1 folder priority (`--prefer DIR` / reference folders
   never deleted from – rated most valuable); E2 HEIC/HEIF and RAW (extensions for stage 1,
   optional `pillow-heif` for stage 3); E3 marks tied to content instead of relative paths; E4 list
-  files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 lock against two
-  instances, log rotation, cleanup of old sessions; E6 README `curl` command to fetch
+  files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
+  old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
 - **Next release:** raise `__version__` (1.4.0 for behaviour changes, else 1.3.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,

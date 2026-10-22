@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from . import handoff
+from . import handoff, running
 from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
@@ -16,7 +16,7 @@ from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_f
                         resolve_limit, resume_review, review_dry_run_again)
 from .front import (AfterDryRunScreen, EndScreen, FolderEntry, FolderHeader, FolderRow, FolderScreen, Note,
                     SessionPanel, SettingRow, StartScreen, ask, ask_path, blank, confirm, error, exit_script,
-                    info, show, success, transient, warn)
+                    in_terminal, info, show, success, transient, warn)
 from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
 from .video import tools_available as video_tools_available
@@ -177,8 +177,12 @@ def resolve_directory(initial: Path | None, index: FolderIndex,
                 error("\n" + protected_message(resolved))
             elif resolved.is_dir():
                 if index.images(resolved):
-                    return resolved
-                warn(f"\nNo supported images or videos found in '{resolved}' (including subfolders).")
+                    other = running.claim(resolved)
+                    if other is None:
+                        return resolved
+                    error("\n" + running.busy_message(other))
+                else:
+                    warn(f"\nNo supported images or videos found in '{resolved}' (including subfolders).")
             elif not resolved.exists():
                 error(f"\nPath does not exist: {resolved}")
             else:
@@ -857,7 +861,9 @@ def normalize_excluded(target: Path, folders) -> set[str]:
     return result
 
 
-def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclude=()) -> int:
+def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool, exclude=()) -> int:
+    """The whole program after the command line. *initial* None (a page started
+    from the app menu) asks for the folder first."""
     index = FolderIndex()
     use_sessions = bool(base_config.get("save_sessions", True)) and not auto
 
@@ -868,6 +874,10 @@ def run(initial: Path, base_config: dict, base_settings: dict, auto: bool, exclu
             return 2
         if is_protected(target):
             error(protected_message(target))
+            return 2
+        other = running.claim(target)
+        if other is not None:
+            error(running.busy_message(other))
             return 2
         settings = {**base_settings, "excluded": normalize_excluded(target, exclude)}
         stats, _, _ = run_scan(target, dict(base_config), settings, index, store=None)
@@ -937,7 +947,8 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
     After a real run, media-optimizer is offered for the same folder if it is
     installed; when it exits, this menu comes back for a new run.
     """
-    optimizer = offer_optimizer and handoff.available() is not None
+    # media-optimizer asks its questions in a terminal: not offered on the page yet.
+    optimizer = offer_optimizer and in_terminal() and handoff.available() is not None
     while True:
         groups = []
         if optimizer:

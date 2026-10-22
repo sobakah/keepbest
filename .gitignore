@@ -13,3 +13,4 @@ dist/
 /keepbest.log
 /img_dedupe.log
 /sessions/
+/running/

@@ -36,6 +36,9 @@ Homepage = "https://github.com/sobakah/keepbest"
 [tool.setuptools]
 packages = ["keepbest"]
 
+[tool.setuptools.package-data]
+keepbest = ["static/*.html", "static/*.js", "static/*.css", "static/*.svg", "static/vendor/*"]
+
 [tool.setuptools.dynamic]
 # Single source of truth; read statically, the package is not imported.
 version = { attr = "keepbest.config.__version__" }

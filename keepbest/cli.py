@@ -33,7 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Find exact and visually identical duplicate images and remove the "
                     "redundant copies, keeping the best one.",
     )
-    parser.add_argument("path", nargs="?", default=".", help="picture directory (default: current directory)")
+    parser.add_argument("path", nargs="?", help="picture directory (default: the current directory; "
+                                                "with --web, the page asks)")
     parser.add_argument("--version", action="version", version=f"{NAME} {__version__}")
     parser.add_argument("-c", "--config", type=Path, metavar="FILE", help="use this config file instead of the search paths")
 
@@ -57,6 +58,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help='keep "(1)" in the names of kept copies')
     review.add_argument("--no-ignore", action="store_true",
                         help='show pairs marked "not duplicates" again, for this run')
+
+    page = parser.add_argument_group("browser page (preview)")
+    page.add_argument("--web", action="store_true", help="show keepbest in the browser instead of the terminal")
+    page.add_argument("--no-browser", action="store_true", help="with --web: only print the page's address")
+    entry = page.add_mutually_exclusive_group()
+    entry.add_argument("--install-desktop-entry", action="store_true",
+                       help="add keepbest to the app menu (it opens the page) and exit")
+    entry.add_argument("--remove-desktop-entry", action="store_true", help="remove that entry and exit")
 
     output = parser.add_argument_group("output")
     output.add_argument("--color", choices=("auto", "always", "never"), help="override colour handling")
@@ -87,8 +96,29 @@ def missing_packages() -> list[str]:
     return [pip for module, pip in REQUIRED_PACKAGES.items() if importlib.util.find_spec(module) is None]
 
 
+def _desktop_entry(install: bool) -> int:
+    from . import desktop
+
+    try:
+        if install:
+            entry, icon, command = desktop.install()
+            ui.success(f"Added {NAME} to the app menu: {entry}")
+            ui.info(f"It starts: {' '.join(command + desktop.PAGE_ARGUMENTS)}")
+            ui.info(f"Run this again after installing {NAME} elsewhere (pipx, another checkout).")
+        else:
+            removed = desktop.remove()
+            ui.success("Removed: " + ", ".join(str(p) for p in removed) if removed else "There was no app-menu entry.")
+    except desktop.DesktopError as exc:
+        ui.error(str(exc))
+        return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.web and args.auto:
+        parser.error("--web and --auto don't go together: --auto asks nothing, so there is no page to show")
     configure_logging(args.verbose)
 
     moved, migration_warnings = migrate_old_locations()  # before the config is looked for
@@ -105,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.strictness:
         config["strictness"], config["max_pixel_diff"] = args.strictness, None
     ui.apply_color_settings(config["color"])
+
+    if args.install_desktop_entry or args.remove_desktop_entry:
+        return _desktop_entry(install=args.install_desktop_entry)
 
     for message in moved:
         ui.info(message)
@@ -123,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         print("  .venv/bin/python run.py /path/to/pictures")
         print(f"Or install {NAME} with pipx, which takes care of this (see the README).")
         return 2
-    if not ui.HAS_READLINE and not args.auto:
+    if not ui.HAS_READLINE and not args.auto and not args.web:
         ui.warn("readline is unavailable - Tab completion and prefilled prompts are disabled. "
                 "On Windows: pip install pyreadline3")
 
@@ -138,8 +171,13 @@ def main(argv: list[str] | None = None) -> int:
     from . import app  # imports Pillow/send2trash, so only after the dependency check
     stop_on_signals()
 
+    if args.web:
+        from . import web
+        initial = Path(args.path) if args.path else None  # from the app menu: the page asks
+        return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude),
+                         open_browser=not args.no_browser)
     try:
-        return app.run(Path(args.path), config, settings, auto=args.auto, exclude=args.exclude)
+        return app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude)
     except KeyboardInterrupt:
         print("\n\nProgram aborted by user.")
         return 130
