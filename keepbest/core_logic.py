@@ -300,7 +300,7 @@ def _apply_exact(group: ExactGroup, number: int, total: int, config: dict, stats
     keep = group.paths[0]
     if shown:
         show("exact_heading", group=group, number=number, total=total)
-        show("exact_table", group=group, rel=rel)
+        show("exact_table", group=group, rel=rel, dry=config["delete_mode"] == "dry_run")
     removed = execute_deletion(keep, [(f["path"], f["size"]) for f in group.files[1:]], config["delete_mode"],
                                stats, group.kind, rel, ctx, reason or _reason(group, "automatic"))
     if ctx.rename and removed:  # with every copy still there, "(1)" still tells them apart
@@ -375,7 +375,7 @@ def _remux_decision(group: ExactGroup, number: int, total: int, config: dict, re
             continue
         if keep_index != 0:
             blank()
-            show("exact_table", group=group, rel=rel, keep_index=keep_index)
+            show("exact_table", group=group, rel=rel, keep_index=keep_index, dry=config["delete_mode"] == "dry_run")
         if config["delete_mode"] == "permanent" and not confirm(
                 f"Permanently delete {count - 1} file(s)? This cannot be undone.", tone="danger"):
             info("Nothing deleted.")
@@ -503,7 +503,7 @@ def _decide_remux(group: ExactGroup, number: int, total: int, config: dict, conf
         # Nobody is asked, and any choice would lose a track or change the default
         # one: leave the files alone.
         show("exact_heading", group=group, number=number, total=total, tracks=True)
-        show("exact_table", group=group, rel=rel, keep_index=None)
+        show("exact_table", group=group, rel=rel, keep_index=None, dry=config["delete_mode"] == "dry_run")
         if group.tracks == "reordered":
             warn("  Left alone: the files have the same tracks in another order (another default "
                  "language or sound). Run without --auto to choose.")
@@ -1022,7 +1022,7 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
             others = "1" if count == 2 else f"1-{count - 1}"
             renamable = any(rename_target(p, group.paths) for p in group.paths)
             blank()
-            show("group_table", group=group, rel=rel)  # the new selection, numbered afresh, before acting on it
+            show("group_table", group=group, rel=rel, dry=config["delete_mode"] == "dry_run")  # the new selection, numbered afresh, before acting on it
             for meta, score in far:
                 shown = _far_text(score, group.limit)
                 warn(f"  Kept, not a duplicate of #{chosen}: {rel(meta['path'])} ({shown})")
@@ -1134,7 +1134,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
             navigation = _handled_screen(group, position, rel)
         elif group.status == "pending" and not needs_prompt:
             show("group_line", group=group, position=position)
-            show("group_table", group=group, rel=rel)
+            show("group_table", group=group, rel=rel, dry=config["delete_mode"] == "dry_run")
             _resolve(group, 0, config, stats, rel, ctx, automatic=True)
             index += 1
             ctx.save(groups, min(index, total - 1), throttle=True)
@@ -1380,7 +1380,7 @@ def apply_dry_run(exact_groups: list[ExactGroup], groups: list[Group], config: d
         how = "automatic" if group.decision == "automatic" else "chosen by user"
         reason = f"visual match (worst diff {group.worst}/{group.limit}), {how} in the dry run"
         show("group_line", group=group, position=f"{number}/{len(decided)}")
-        show("group_table", group=group, rel=rel)
+        show("group_table", group=group, rel=rel, dry=config["delete_mode"] == "dry_run")
         automatic = group.decision == "automatic"
         _resolve(group, 0, config, stats, rel, ctx, automatic=automatic, reason=reason)
     if skipped:

@@ -394,3 +394,20 @@ def score_image(meta):
     return (meta['resolution'], meta.get('lossless_rank', meta['lossless'] is True), meta['format_rank'],
             not meta['numbered'],
             meta['bpp'], -meta['age'])
+
+
+# The parts of score_image in its order, named: the page says why a file is kept.
+RANK_CRITERIA = ("resolution", "lossless", "format", "name", "bpp", "age")
+
+
+def deciding_criterion(keeper: dict, other: dict) -> str | None:
+    """The first part of score_image in which *keeper* ranks above *other*, or
+    None when it doesn't (a file chosen by hand, the same score, or a saved
+    session without the fields)."""
+    try:
+        for name, a, b in zip(RANK_CRITERIA, score_image(keeper), score_image(other)):
+            if a != b:
+                return name if a > b else None
+    except (KeyError, TypeError):
+        return None
+    return None

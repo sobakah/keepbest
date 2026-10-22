@@ -3,6 +3,33 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+**Upgrading:** keepbest asks its questions only on its page now: the terminal screens are gone, and `--terminal` says so. The terminal keeps a log of the run; `--auto` is unchanged. Remove `"browser_page"` from `config.json` (it is ignored, with a warning), and set `"viewer"` to `auto`, `identity` or `imagecompare` if it was `kitty` or `timg` (they fall back to `auto`). An app-menu entry written by 2.0.0 keeps working.
+
+### Added
+
+- **media-optimizer on its own page:** media-optimizer 2.4 and newer takes over keepbest's tab from the end screen, with the run's folder choice preselected, and its last button leads back to keepbest. Older versions still run without questions in a box on keepbest's page.
+- **Why a file is kept:** a group says which of the ranking's criteria made its file the recommended one ("for its larger resolution (than #2) and lossless format (than #1)"), and the details table shows those values in bold.
+- **Open** and **Show in folder** for every file of a group, in the review, the overview and the log's tables: a new tab with the picture at full size (rendered by keepbest where the browser can't show the format), or the file manager with the file selected. After a real run only the kept file has them, after a dry run every file.
+- Without a graphical session, keepbest prints the page's address (and over SSH, how to forward its port) instead of switching to the terminal.
+
+### Changed
+
+- **The pictures of a group are off until you ask for them** (*Show pictures*; the remux player: *Show the player*). The choice holds for the rest of the run.
+- **Fewer key badges:** only Enter and the numbers that keep another file show their key. Every other shortcut still works; the letter it comes from is bold in the label, and hovering a button shows its key.
+- **The folder tree** opens with the top folders only; ▸ shows the ones below, and a closed folder says how many below it are switched off. Switching a folder no longer makes the tree vanish and come back while the files are counted again.
+- The end screen shows *Quit* once (it was there as the Enter button and again in the menu).
+- The app-menu entry no longer passes `--web`.
+
+### Removed
+
+- The terminal screens (`--terminal`, `"browser_page"`) and the terminal viewers `kitty` and `timg`.
+
+### Fixed
+
+- Ctrl+C or a SIGTERM in the terminal while the page waited for an answer left keepbest running until the tab was closed (up to 90 seconds without one); it now ends after giving the page two seconds to show it.
+
 ## [2.0.0] — 2026-10-22
 
 **Upgrading:** `pipx upgrade keepbest`. keepbest now opens a page in the browser. For its terminal screens, start it with `--terminal`, or set `"browser_page": false` in `config.json`; without a graphical session (over SSH, on a console) it uses the terminal by itself, and `--auto` is unchanged. Programs that start keepbest in a terminal, like picktag, get the page too unless they add `--terminal`. Sessions saved by 1.3.0 can be resumed.

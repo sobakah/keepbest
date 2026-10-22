@@ -1,7 +1,7 @@
 // keepbest's page: what the flow in app.py and core_logic.py shows, and its
 // open question. Everything comes from /api/state (keepbest/web.py); answers
-// go back to /api/answer as the keys a user types in the terminal, so the
-// flow is the terminal's, step for step. File names are only ever text.
+// go back to /api/answer as the keys of the screen's choices, which are also
+// its keyboard shortcuts. File names are only ever text.
 import { html, render, useState, useEffect, useRef } from '/static/vendor/preact-htm.js';
 
 async function api(path, body) {
@@ -58,39 +58,103 @@ const Verdict = ({ borderline }) => (borderline
   ? html`<span class="badge b-borderline">BORDERLINE</span>` : html`<span class="badge b-ok">CONFIDENT</span>`);
 const Key = ({ k }) => (k === '' ? html`<kbd>Enter</kbd>` : html`<kbd>${k}</kbd>`);
 
+// Key badges are only shown for Enter and the numbers that keep another file.
+// The other keys still work: the letter a key comes from is bold in its label
+// ("Skip" for s), and every button names its key on hover.
+function Label({ text, k }) {
+  const value = String(text);
+  if (!k || !/^[a-z]$/.test(k)) return value;
+  const found = new RegExp(`(^|[^\\p{L}])(${k})`, 'iu').exec(value);
+  if (!found) return value;
+  const at = found.index + found[1].length;
+  // One span: buttons lay out their children with gaps, a word must stay whole.
+  return html`<span>${value.slice(0, at)}<b class="hotkey">${value[at]}</b>${value.slice(at + 1)}</span>`;
+}
+const keyTitle = (k) => (k === '' ? 'Key: Enter' : k ? `Key: ${k}` : undefined);
+
+// Buttons for a file that is still on disk: open it in a new tab (pictures the
+// browser can't show are rendered), or show it in its folder.
+function FileActions({ id, video = false }) {
+  const [note, setNote] = useState('');
+  if (!id) return null;
+  const reveal = async (e) => {
+    e.currentTarget.blur();
+    try { await api('/reveal', { id }); setNote(''); } catch (err) { setNote(err.message); }
+  };
+  return html`<span class="file-actions">
+    <a class="btn btn-small" href=${`/api/file/${encodeURIComponent(id)}`} target="_blank" rel="noopener"
+      title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}>Open</a>
+    <button class="btn btn-small" onClick=${reveal} title="Open its folder in the file manager">Show in folder</button>
+    ${note && html`<span class="small k-error">${note}</span>`}
+  </span>`;
+}
+
+// Why a file is kept: score_image's criteria in which it ranks above the others.
+const CRITERIA = {
+  resolution: 'larger resolution', lossless: 'lossless format', format: 'preferred format',
+  name: 'name without a copy number', bpp: 'less compressed (more bits per pixel)', age: 'older file',
+};
+// The table cell each criterion is shown in.
+const CRITERION_CELLS = { resolution: 'resolution', lossless: 'type', format: 'format', name: 'file', bpp: 'bpp' };
+
+function reasons(group, keepIndex) {
+  const by = {};
+  group.images.forEach((image, i) => {
+    if (i !== keepIndex && image.beaten) (by[image.beaten] = by[image.beaten] || []).push(i);
+  });
+  return Object.keys(CRITERIA).filter((c) => by[c]).map((c) => {
+    const text = c === 'lossless' && group.images[keepIndex].jxlPreferred ? 'JPEG XL (prefer_jxl)' : CRITERIA[c];
+    return { criterion: c, text, against: by[c] };
+  });
+}
+
+function Why({ group, keepIndex, decided }) {
+  const list = reasons(group, keepIndex);
+  if (!list.length) return null;
+  const all = group.images.length - 1;
+  return html`<p class="why"><span class="muted">${decided ? 'Kept' : 'Recommended'} #${keepIndex} for its</span>
+    ${list.map((r, i) => html`<span key=${r.criterion}>${i ? (i === list.length - 1 ? ' and ' : ', ') : ' '}<b>${r.text}</b>${
+      r.against.length < all ? html` <span class="muted">(than ${r.against.map((n) => `#${n}`).join(', ')})</span>` : ''}</span>`)}<span class="muted">.</span></p>`;
+}
+
 // --- the log ----------------------------------------------------------------------
 function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
+  // The kept file's cells that decided against another file are bold.
+  const won = new Set(reasons(group, keepIndex).map((r) => CRITERION_CELLS[r.criterion]));
+  const cell = (i, name, cls = '') => (i === keepIndex && won.has(name) ? `${cls} win`.trim() : cls);
+  const actionsOf = actions || ((i) => html`<${FileActions} id=${group.images[i].file} />`);
   return html`<div class="table-box"><table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Format</th><th>Type</th><th class="num">Resolution</th>
-      <th class="num">Size</th><th class="num">BPP</th><th class="num">Diff</th>${actions && html`<th></th>`}</tr></thead>
+      <th class="num">Size</th><th class="num">BPP</th><th class="num">Diff</th><th></th></tr></thead>
     <tbody>${group.images.map((image, i) => {
       const kept = i === keepIndex;
       const badge = done ? (kept ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : (kept ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove']);
       const hot = image.diff !== null && image.diff > group.borderlineAbove;
       return html`<tr class=${kept ? 'kept' : ''} key=${i}>
         <td class="mono">${i}</td><td><span class=${'badge ' + badge[1]}>${badge[0]}</span></td>
-        <td class="file">${image.name}</td><td>${image.format}</td><td>${image.type}</td>
-        <td class="num">${image.width}×${image.height}</td><td class="num">${image.size}</td>
-        <td class="num">${image.bpp ?? ''}</td>
+        <td class=${cell(i, 'file', 'file')}>${image.name}</td><td class=${cell(i, 'format')}>${image.format}</td>
+        <td class=${cell(i, 'type')}>${image.type}</td>
+        <td class=${cell(i, 'resolution', 'num')}>${image.width}×${image.height}</td><td class="num">${image.size}</td>
+        <td class=${cell(i, 'bpp', 'num')}>${image.bpp ?? ''}</td>
         <td class=${'num' + (hot ? ' diff-hot' : '')}>${image.diff === null ? '—' : image.diff}</td>
-        ${actions && html`<td>${actions(i)}</td>`}
+        <td class="actions"><div class="cell-actions">${actionsOf(i)}</div></td>
       </tr>`;
     })}</tbody>
   </table></div>`;
 }
 
-function ExactTable({ group, keepIndex = 0, actions = null }) {
+function ExactTable({ group, keepIndex = 0 }) {
   const remux = group.kind === 'remux';
   return html`<div class="table-box"><table>
     <thead><tr><th>#</th><th>Action</th><th>File</th>${remux && html`<th class="num">Size</th><th>Streams</th>`}
-      ${actions && html`<th></th>`}</tr></thead>
+      <th></th></tr></thead>
     <tbody>${group.files.map((file, i) => {
       const kept = keepIndex === null || i === keepIndex;
       return html`<tr class=${i === keepIndex ? 'kept' : ''} key=${i}>
         <td class="mono">${i}</td><td><span class=${'badge ' + (kept ? 'b-keep' : 'b-remove')}>${kept ? 'KEEP' : 'REMOVE'}</span></td>
         <td class="file">${file.name}</td>
         ${remux && html`<td class="num">${file.size}</td><td class="small muted">${file.streams}</td>`}
-        ${actions && html`<td>${actions(i)}</td>`}
+        <td class="actions"><div class="cell-actions"><${FileActions} id=${file.file} video=${remux} /></div></td>
       </tr>`;
     })}</tbody>
   </table></div>`;
@@ -116,7 +180,9 @@ function Summary({ event }) {
 }
 
 // Another program's output (media-optimizer), as in cdimport: it follows new
-// lines only while scrolled to its end; Stop is Ctrl+C for that program.
+// lines only while scrolled to its end; Stop is Ctrl+C for that program. One
+// with a page of its own (handoff) gets this tab while it runs: its page leads
+// back here, and until it has ended this box links to it.
 function Tool({ event }) {
   const body = useRef(null);
   const stick = useRef(true);
@@ -131,14 +197,19 @@ function Tool({ event }) {
     await api('/stop-tool', {}).catch(() => {});
   };
   const status = event.running
-    ? html`<span class="row small"><span class="spinner" aria-hidden="true"></span> running</span>`
+    ? html`<span class="row small"><span class="spinner" aria-hidden="true"></span> ${event.handoff ? 'running on its own page' : 'running'}</span>`
     : event.code === 0 ? html`<span class="small k-success">done</span>`
       : html`<span class="small k-error">${event.code === 127 ? 'could not be started' : `exit code ${event.code}`}</span>`;
   return html`<div class="tool">
     <div class="row tool-head"><b>${event.name}</b><span class="mono small muted">${event.command}</span>${status}
       ${event.running && html`<button class="btn btn-small push" disabled=${stopping} onClick=${stop}>
         ${stopping ? 'Stopping…' : `Stop ${event.name}`}</button>`}</div>
-    ${event.lines.length > 0 && html`<pre class="tool-body" ref=${body} onScroll=${scrolled}>${event.lines.join('\n')}</pre>`}
+    ${event.handoff && event.running && html`<p class="line">${event.url
+      ? html`It asks for its settings and shows the run on its page. <a href=${event.url}>Go to ${event.name}'s page</a>; it leads back here when done.`
+      : 'Starting its page…'}</p>`}
+    ${event.lines.length > 0 && (event.handoff
+      ? html`<details><summary class="small muted">Its output</summary><pre class="tool-body">${event.lines.join('\n')}</pre></details>`
+      : html`<pre class="tool-body" ref=${body} onScroll=${scrolled}>${event.lines.join('\n')}</pre>`)}
   </div>`;
 }
 
@@ -192,7 +263,8 @@ function Item({ event }) {
 }
 
 // --- answering --------------------------------------------------------------------
-// The key buttons of a screen's menu; keys handled elsewhere on the screen are left out.
+// The key buttons of a screen's menu; keys handled elsewhere on the screen are
+// left out, and so is a choice that only repeats the Enter button (Quit at the end).
 function Menu({ question, answer, sending, skip = () => false }) {
   const expand = (key) => {
     const m = /^([a-z]*)(\d+)-\1(\d+)$/.exec(key);
@@ -203,11 +275,12 @@ function Menu({ question, answer, sending, skip = () => false }) {
   };
   return html`<div class="row" style=${{ alignItems: 'flex-start', gap: '14px 28px' }}>
     ${question.menu.map(([title, items]) => {
-      const buttons = items.filter(([key]) => !skip(key)).flatMap(([key, label]) => expand(key).map((k) => [k, label]));
+      const buttons = items.filter(([key, label]) => !skip(key) && label !== question.primary)
+        .flatMap(([key, label]) => expand(key).map((k) => [k, label]));
       if (!buttons.length) return null;
       return html`<div class="menu-group" key=${title}><span class="title">${title}</span><div class="row">
-        ${buttons.map(([k, label]) => html`<button class="btn" key=${k} disabled=${sending}
-          onClick=${() => answer(k)}>${label}${k !== label ? html` <${Key} k=${k} />` : ''}</button>`)}
+        ${buttons.map(([k, label]) => html`<button class="btn" key=${k} disabled=${sending} title=${keyTitle(k)}
+          onClick=${() => answer(k)}><${Label} text=${label} k=${k} />${/^\d+$/.test(k) ? html` <${Key} k=${k} />` : ''}</button>`)}
       </div></div>`;
     })}
   </div>`;
@@ -223,13 +296,14 @@ function SettingRow({ row, set, sending }) {
   if (row.type === 'note') return html`<p class=${'note' + (row.style === 'hint' ? ' hint' : '')}>${row.text}</p>`;
   if (row.type === 'folders') {
     const subs = row.chosen === row.total ? `all ${row.total} subfolders` : `${row.chosen} of ${row.total} subfolders`;
-    return html`<div class="setting"><div class="label"><kbd>${row.key}</kbd>${row.label}</div>
+    return html`<div class="setting"><div class="label">${row.label}</div>
       <div class="value"><span>${row.mainOn ? 'main folder' : html`<span class="k-warn">main folder excluded</span>`} + ${subs}</span>
-        <button class="btn btn-small" disabled=${sending} onClick=${() => set(row.key)}>Choose folders <kbd>${row.key}</kbd></button></div></div>`;
+        <button class="btn btn-small" disabled=${sending} title=${keyTitle(row.key)} onClick=${() => set(row.key)}>
+          <${Label} text="Choose folders" k=${row.key} /></button></div></div>`;
   }
   const locked = row.locked !== null && row.locked !== undefined;
   return html`<div class=${'setting' + (locked ? ' locked' : '')}>
-    <div class="label"><kbd>${row.key}</kbd>${row.label}</div>
+    <div class="label" title=${keyTitle(row.key)}>${row.label}</div>
     <div class="value">
       <div class="choices" role="group" aria-label=${row.label}>
         ${row.options.filter((o) => !locked || o.current).map((o, i) => html`<button key=${o.label}
@@ -259,7 +333,8 @@ function StartForm({ question, answer, sending }) {
   return html`<div class="stack">
     <dl class="facts">
       <dt>Folder</dt><dd class="row"><span class="mono" title=${q.target}>${q.targetShort}</span>
-        <button class="btn btn-small" disabled=${sending} onClick=${() => answer('c')}>Change directory <kbd>c</kbd></button></dd>
+        <button class="btn btn-small" disabled=${sending} title=${keyTitle('c')} onClick=${() => answer('c')}>
+          <${Label} text="Change directory" k="c" /></button></dd>
       <dt>Files</dt><dd><b>${q.inScope}</b> in scope <span class="muted">(${q.inScope - q.scopeVideos} images, ${q.scopeVideos} videos)</span>
         ${q.moreInSubfolders > 0 && html` <span class="muted">· ${q.moreInSubfolders} more in subfolders</span>`}</dd>
     </dl>
@@ -272,27 +347,59 @@ function StartForm({ question, answer, sending }) {
     ${!q.blocked && !q.primary && q.nothingToScan && html`<p class="alert">Fewer than two files in scope - nothing to compare.</p>`}
     <div class="row">
       <${Primary} question=${q} answer=${answer} sending=${sending} />
-      ${q.keys.includes('e') && html`<button class="btn" disabled=${sending} onClick=${() => answer('e')}>Review its groups again for real <kbd>e</kbd></button>`}
-      ${q.keys.includes('n') && html`<button class="btn" disabled=${sending} onClick=${() => answer('n')}>Start over: discard the session <kbd>n</kbd></button>`}
+      ${q.keys.includes('e') && html`<button class="btn" disabled=${sending} title=${keyTitle('e')} onClick=${() => answer('e')}>
+        Review its groups again for real</button>`}
+      ${q.keys.includes('n') && html`<button class="btn" disabled=${sending} title=${keyTitle('n')} onClick=${() => answer('n')}>
+        Start over: discard the session</button>`}
     </div>
   </div>`;
 }
 
+// Folders opened in the tree; kept while the same tree is asked again after each change.
+const opened = new Set();
+
 function FolderTree({ question, answer, sending }) {
   const q = question;
+  const [, redraw] = useState(0);
+  const entries = q.entries;
+  // A folder's place in the tree: its parent is the closest one above it with less depth.
+  const parent = entries.map((e, i) => {
+    for (let j = i - 1; j >= 0; j--) if (entries[j].depth < e.depth) return j;
+    return -1;
+  });
+  const hasChildren = entries.map((e, i) => i + 1 < entries.length && entries[i + 1].depth > e.depth);
+  const visible = (i) => parent[i] === -1 || (opened.has(entries[parent[i]].rel) && visible(parent[i]));
+  // Deeper folders switched off are counted on a closed folder, so nothing is hidden unnoticed.
+  const offBelow = (i) => {
+    let off = 0;
+    for (let j = i + 1; j < entries.length && entries[j].depth > entries[i].depth; j++) if (!entries[j].on) off++;
+    return off;
+  };
+  const toggle = (rel) => { if (opened.has(rel)) opened.delete(rel); else opened.add(rel); redraw((n) => n + 1); };
   return html`<div class="stack">
     <p class="muted">A folder you switch off loses only its own files; you are asked whether the folders below it change too.</p>
-    <label class="switch"><input type="checkbox" checked=${q.header.main_on} disabled=${sending} onChange=${() => answer('m')} />
-      <span style=${{ flex: '1 1 auto' }}><b>Main folder</b> <span class="muted">· ${q.header.files_text}</span></span><kbd>m</kbd></label>
+    <label class="switch" title=${keyTitle('m')}><input type="checkbox" checked=${q.header.main_on} disabled=${sending} onChange=${() => answer('m')} />
+      <span style=${{ flex: '1 1 auto' }}><b><${Label} text="Main folder" k="m" /></b> <span class="muted">· ${q.header.files_text}</span></span></label>
     <div class="row"><span class="small muted">Subfolders</span>
-      <button class="btn btn-small" disabled=${sending} onClick=${() => answer('a')}>All <kbd>a</kbd></button>
-      <button class="btn btn-small" disabled=${sending} onClick=${() => answer('n')}>None <kbd>n</kbd></button></div>
-    <ul class="tree">${q.entries.map((e) => html`<li key=${e.rel} class=${e.on ? '' : 'off'}>
-      <label style=${{ paddingLeft: `${14 + e.depth * 26}px` }}>
-        <input type="checkbox" checked=${e.on} disabled=${sending} onChange=${() => answer(e.key)} />
-        <span class="name">${e.name}/</span><span class="amount">${e.amount}</span></label></li>`)}</ul>
-    <p class="small"><b>Selected:</b> ${q.header.main_on ? 'main folder' : html`<span class="k-warn">main folder excluded</span>`}
-      + ${q.chosen} of ${q.entries.length} subfolders · ${q.scopeText}</p>
+      <button class="btn btn-small" disabled=${sending} title=${keyTitle('a')} onClick=${() => answer('a')}><${Label} text="All" k="a" /></button>
+      <button class="btn btn-small" disabled=${sending} title=${keyTitle('n')} onClick=${() => answer('n')}><${Label} text="None" k="n" /></button></div>
+    <ul class="tree">${entries.map((e, i) => {
+      if (!visible(i)) return null;
+      const open = opened.has(e.rel);
+      const hidden = hasChildren[i] && !open ? offBelow(i) : 0;
+      return html`<li key=${e.rel} class=${e.on ? '' : 'off'}>
+        <div class="tree-row" style=${{ paddingLeft: `${4 + e.depth * 26}px` }}>
+          ${hasChildren[i]
+            ? html`<button class="twisty" aria-expanded=${open} aria-label=${(open ? 'Close ' : 'Open ') + e.name}
+                onClick=${(ev) => { toggle(e.rel); ev.currentTarget.blur(); }}>${open ? '▾' : '▸'}</button>`
+            : html`<span class="twisty"></span>`}
+          <label><input type="checkbox" checked=${e.on} disabled=${sending} onChange=${() => answer(e.key)} />
+            <span class="name">${e.name}/</span>
+            ${hidden > 0 && html`<span class="small k-warn">${hidden} below off</span>`}
+            <span class="amount">${e.amount}</span></label></div></li>`;
+    })}</ul>
+    <p class="small"><b>Selected:</b> ${q.header.main_on ? 'main folder' : html`<span class="k-warn">main folder excluded</span>`}${
+      ` + ${q.chosen} of ${q.entries.length} subfolders · ${q.scopeText}`}</p>
     <${Primary} question=${q} answer=${answer} sending=${sending} />
   </div>`;
 }
@@ -348,7 +455,8 @@ function FolderPicker({ question, answer, sending }) {
 // one moves all of them and a change stands out. Kept while the same group is
 // asked again (after "n", a mark, a declined deletion); the layout for every group.
 const ZOOMS = [1, 2, 4, 8];
-const prefs = { layout: 'side', outline: true };
+// Pictures (and the remux player) are off until asked for, then stay on for this page.
+const prefs = { layout: 'side', outline: true, pictures: false };
 let remembered = { key: '', view: null };
 
 const clampView = ({ z, cx, cy }) => {
@@ -408,6 +516,7 @@ function GroupScreen({ question, answer, sending }) {
   const [view, setView] = useState(remembered.key === key && remembered.view ? remembered.view : { z: 1, cx: 0.5, cy: 0.5 });
   const [layout, setLayout] = useState(prefs.layout);
   const [outline, setOutline] = useState(prefs.outline);
+  const [pictures, setPictures] = useState(prefs.pictures);
   const others = g.images.map((_, i) => i).filter((i) => i !== keepIndex);
   const [flipOther, setFlipOther] = useState(others.reduce((a, i) => ((g.images[i].diff ?? -1) > (g.images[a].diff ?? -1) ? i : a), others[0]));
   const [flipShowOther, setFlipShowOther] = useState(false);
@@ -420,6 +529,7 @@ function GroupScreen({ question, answer, sending }) {
   const toSpot = () => g.spot && setView(clampView({ z: 4, cx: g.spot[0] + g.spot[2] / 2, cy: g.spot[1] + g.spot[2] / 2 }));
   const chooseLayout = (l) => { prefs.layout = l; setLayout(l); };
   const toggleOutline = () => { prefs.outline = !outline; setOutline(!outline); };
+  const togglePictures = () => { prefs.pictures = !pictures; setPictures(!pictures); };
   const flip = () => setFlipShowOther((v) => !v);
   // View buttons give the focus back, so Enter keeps answering the flow as in the terminal.
   const view_ = (fn) => (e) => { fn(); e.currentTarget.blur(); };
@@ -428,6 +538,7 @@ function GroupScreen({ question, answer, sending }) {
   const keys = useRef(null);
   keys.current = (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'TEXTAREA', 'BUTTON'].includes(e.target.tagName)) return;
+    if (!pictures) return;
     if (e.key === ' ' && layout === 'flip') { e.preventDefault(); flip(); }
     else if (e.key === '+') zoomTo(ZOOMS[Math.min(ZOOMS.indexOf(view.z) + 1, ZOOMS.length - 1)] || 2);
     else if (e.key === '-') zoomTo(ZOOMS[Math.max(ZOOMS.indexOf(view.z) - 1, 0)] || 1);
@@ -454,12 +565,14 @@ function GroupScreen({ question, answer, sending }) {
         <div class="file">${image.name}</div>
         <div class="small muted">${image.format} · ${image.type} · ${image.width}×${image.height} · ${image.size}</div>
       </div>
-      ${decision && i > 0 && html`<div class="row card-actions">
-        <button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>
-        ${q.keys.includes('i' + i) && html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer('i' + i)}>Not a duplicate <kbd>i${i}</kbd></button>`}
-      </div>`}
+      <div class="row card-actions">${choices(i)}<${FileActions} id=${image.file} /></div>
     </article>`;
   };
+  // Keeping another file and marking one as no duplicate: on its card, or in its table row.
+  const choices = (i) => decision && i > 0 && html`
+    <button class="btn btn-small" disabled=${sending} title=${keyTitle(String(i))} onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>
+    ${q.keys.includes('i' + i) && html`<button class="btn btn-small" disabled=${sending} title=${keyTitle('i' + i)}
+      onClick=${() => answer('i' + i)}>Not a duplicate</button>`}`;
 
   const shown = flipShowOther ? flipOther : keepIndex;
   return html`<div class="stack">
@@ -467,8 +580,12 @@ function GroupScreen({ question, answer, sending }) {
       <span class="muted">worst difference <b class="mono">${g.worst}</b> of ${g.limit} allowed (0 = pixel-identical)</span>
       ${g.status === 'skipped' && decision && html`<span class="badge b-borderline">SKIPPED EARLIER</span>`}</div>
 
+    <${Why} group=${g} keepIndex=${keepIndex} decided=${!decision && g.status === 'done'} />
+
     <div class="toolbar">
-      <div class="segmented" role="group" aria-label="Layout">
+      <label class="row small switch-inline"><input type="checkbox" checked=${pictures} onChange=${view_(togglePictures)} />
+        Show pictures</label>
+      ${pictures && html`<div class="segmented" role="group" aria-label="Layout">
         <button aria-pressed=${layout === 'side'} class=${layout === 'side' ? 'on' : ''} onClick=${view_(() => chooseLayout('side'))}>Side by side</button>
         <button aria-pressed=${layout === 'flip'} class=${layout === 'flip' ? 'on' : ''} onClick=${view_(() => chooseLayout('flip'))}>Flip between two</button>
       </div>
@@ -479,10 +596,12 @@ function GroupScreen({ question, answer, sending }) {
       </div>
       ${g.spot && html`<button class="btn btn-small spot-button" onClick=${view_(toSpot)}>Go to the most different square</button>`}
       ${g.spot && html`<label class="row small"><input type="checkbox" checked=${outline} onChange=${view_(toggleOutline)} /> Outline it</label>`}
-      <span class="small muted push">Drag to move · + and - zoom${layout === 'flip' ? ' · Space flips' : ''}</span>
+      <span class="small muted push">Drag to move · + and - zoom${layout === 'flip' ? ' · Space flips' : ''}</span>`}
     </div>
 
-    ${layout === 'side'
+    ${!pictures ? html`<${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'}
+        actions=${(i) => html`${choices(i)}<${FileActions} id=${g.images[i].file} />`} />`
+      : layout === 'side'
       ? html`<div class="cards">${g.images.map(card)}</div>`
       : html`<div class="flip">
           <div class="flip-main">
@@ -502,7 +621,7 @@ function GroupScreen({ question, answer, sending }) {
           </div>
         </div>`}
 
-    ${g.spot && html`<section class="strip" aria-label="Where they differ most">
+    ${pictures && g.spot && html`<section class="strip" aria-label="Where they differ most">
       <div class="row"><h3>Where they differ most</h3>
         <span class="small muted">The square with the largest difference, enlarged, from each picture</span></div>
       <div class="row strip-row">${g.images.map((image, i) => html`<figure key=${image.name}>
@@ -511,8 +630,8 @@ function GroupScreen({ question, answer, sending }) {
         <figcaption class="mono small">#${i} · ${diffText(image)}</figcaption></figure>`)}</div>
     </section>`}
 
-    <details class="details" open><summary>Details</summary>
-      <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} /></details>
+    ${pictures && html`<details class="details" open><summary>Details</summary>
+      <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} /></details>`}
     ${q.note && html`<p class="line">${q.note}</p>`}
     <${Primary} question=${q} answer=${answer} sending=${sending} />
     <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k)} />
@@ -541,6 +660,8 @@ function RemuxView({ question, answer, sending }) {
   const q = question;
   const g = q.group;
   const [playing, setPlaying] = useState(0);
+  const [player, setPlayer] = useState(prefs.pictures);
+  const togglePlayer = (e) => { prefs.pictures = !player; setPlayer(!player); e.currentTarget.blur(); };
   return html`<div class="stack">
     <div class="row"><span class="mono">[${q.number}/${q.total}]</span><span class="badge b-keep">REMUX</span>
       ${g.tracks === 'reordered' && html`<span class="badge b-borderline">TRACK ORDER</span>`}
@@ -549,19 +670,20 @@ function RemuxView({ question, answer, sending }) {
     <p class="muted">${TRACK_TEXT[g.tracks] || TRACK_TEXT.differ}</p>
     ${g.tracks === 'differ' && html`<p class="alert">No file contains all tracks of the others: removing them loses a track
       (other sound, language or subtitles).</p>`}
-    <div class="remux">
-      <div class="remux-player stack-tight">
+    <label class="row small switch-inline"><input type="checkbox" checked=${player} onChange=${togglePlayer} /> Show the player</label>
+    <div class=${'remux' + (player ? '' : ' no-player')}>
+      ${player && html`<div class="remux-player stack-tight">
         <div class="row" role="group" aria-label="File to play">${g.files.map((f, i) => html`<button key=${i}
           class=${'zoom' + (i === playing ? ' on' : '')} aria-pressed=${i === playing}
           onClick=${(e) => { setPlaying(i); e.currentTarget.blur(); }}>#${i} ${f.name}</button>`)}</div>
         <${Player} key=${playing} file=${g.files[playing]} />
-      </div>
+      </div>`}
       <div class="remux-files stack-tight">${g.files.map((f, i) => html`<article key=${i} class=${'card' + (i === 0 ? ' keep' : '')}>
         <div class="card-head"><b class="mono">#${i}</b><span class=${'badge ' + (i === 0 ? 'b-keep' : 'b-remove')}>${i === 0 ? 'KEEP' : 'REMOVE'}</span>
           ${i === 0 && html`<span class="small muted">recommended</span>`}<span class="mono small push">${f.size}</span></div>
         <div class="card-body"><div class="file">${f.name}</div><div class="small muted">${f.streams}</div></div>
-        ${i > 0 && html`<div class="row card-actions"><button class="btn btn-small" disabled=${sending}
-          onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button></div>`}
+        <div class="row card-actions">${i > 0 && html`<button class="btn btn-small" disabled=${sending} title=${keyTitle(String(i))}
+          onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>`}<${FileActions} id=${f.file} video=${true} /></div>
       </article>`)}</div>
     </div>
     <${Primary} question=${q} answer=${answer} sending=${sending} />
@@ -580,31 +702,37 @@ function Thumb({ id, label }) {
 function Overview({ question, answer, sending }) {
   const q = question;
   const [filter, setFilter] = useState('all');
+  const [pictures, setPictures] = useState(prefs.pictures);
   const open = (g) => g.status === 'pending' || g.status === 'skipped';
   const shown = q.groups.filter((g) => filter === 'all' || (filter === 'open' ? open(g) : !open(g)));
   const count = (st) => q.groups.filter((g) => g.status === st).length;
   return html`<div class="stack">
     <div class="row">
       <span>${`${count('done')} decided · ${count('skipped')} skipped · ${count('ignored')} not duplicates · ${count('pending')} open`}</span>
-      <div class="segmented push" role="group" aria-label="Show">${[['all', 'All'], ['open', 'Open'], ['decided', 'Decided']].map(([id, label]) =>
+      <label class="row small switch-inline push"><input type="checkbox" checked=${pictures}
+        onChange=${(e) => { prefs.pictures = !pictures; setPictures(!pictures); e.currentTarget.blur(); }} /> Show pictures</label>
+      <div class="segmented" role="group" aria-label="Show">${[['all', 'All'], ['open', 'Open'], ['decided', 'Decided']].map(([id, label]) =>
         html`<button key=${id} class=${filter === id ? 'on' : ''} aria-pressed=${filter === id}
           onClick=${(e) => { setFilter(id); e.currentTarget.blur(); }}>${label}</button>`)}</div>
     </div>
-    <ul class="grid">${shown.map((g) => {
+    <ul class=${pictures ? 'grid' : 'grid list'}>${shown.map((g) => {
       const [text, cls] = STATUS[g.status] || STATUS.pending;
       return html`<li key=${g.key}><button class=${'tile-button' + (String(q.current + 1) === g.key ? ' current' : '')
-        + (open(g) ? '' : ' closed')} disabled=${sending} onClick=${() => answer(g.key)}>
-        <${Thumb} id=${g.preview} label=${g.keeper} />
+        + (open(g) ? '' : ' closed')} disabled=${sending} title="Open this group" onClick=${() => answer(g.key)}>
+        ${pictures && html`<${Thumb} id=${g.preview} label=${g.keeper} />`}
         <span class="row"><b class="mono">${g.key}</b><span class=${'badge ' + cls}>${text}</span>
           ${String(q.current + 1) === g.key && html`<span class="small" style=${{ color: 'var(--keep)' }}>▶ current</span>`}</span>
         <span class="file">${g.keeper}</span>
         <span class=${'small ' + (g.borderline ? 'diff-hot' : 'muted')}>${g.count} images · worst ${g.worst}/${g.limit}${g.borderline ? ' · borderline' : ''}</span>
-      </button></li>`;
+      </button><div class="tile-actions"><${FileActions} id=${g.file} /></div></li>`;
     })}</ul>
     <${Primary} question=${q} answer=${answer} sending=${sending} />
     <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+-\d+$/.test(k)} />
   </div>`;
 }
+
+// Screens that come back changed after most answers: shown until their next state arrives.
+const FORMS = ['StartScreen', 'FolderScreen'];
 
 const TITLES = {
   StartScreen: 'Settings', FolderScreen: 'Choose folders to scan', DecisionScreen: 'Duplicate group',
@@ -612,7 +740,7 @@ const TITLES = {
   EndScreen: 'What next?', AfterDryRunScreen: 'Dry run finished',
 };
 
-function Question({ question, onAnswer }) {
+function Question({ question, onAnswer, stale = false }) {
   const [sending, setSending] = useState(false);
   // One answer per question: a second click while the first is on its way
   // (a double click) must never decide twice.
@@ -627,7 +755,7 @@ function Question({ question, onAnswer }) {
   // The terminal's keys: a single-letter key of the screen, y/n, Enter.
   const keys = useRef(null);
   keys.current = (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    if (stale || e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
     if (question.kind === 'screen') {
       const key = e.key === 'Enter' ? '' : e.key.toLowerCase();
       if ((key.length === 1 || key === '') && question.keys.includes(key) && !(key === '' && e.target.tagName === 'BUTTON')) {
@@ -646,16 +774,16 @@ function Question({ question, onAnswer }) {
     return () => removeEventListener('keydown', handler);
   }, []);
 
-  const props = { question, answer, sending };
+  const props = { question, answer, sending: sending || stale };
   let title = question.prompt;
   let body;
   if (question.kind === 'confirm') {
     const danger = question.tone === 'danger';
     body = html`<div class="row">
-      <button class=${'btn ' + (question.default ? 'btn-primary' : '')} disabled=${sending} onClick=${() => answer(true)}>
-        ${danger ? 'Yes, delete' : 'Yes'} <kbd>y</kbd></button>
-      <button class=${'btn ' + (!question.default ? 'btn-primary' : '')} disabled=${sending} onClick=${() => answer(false)}>
-        No <kbd>n</kbd></button></div>`;
+      <button class=${'btn ' + (question.default ? 'btn-primary' : '')} disabled=${sending} title="Key: y" onClick=${() => answer(true)}>
+        <${Label} text=${danger ? 'Yes, delete' : 'Yes'} k="y" />${question.default ? html` <${Key} k="" />` : ''}</button>
+      <button class=${'btn ' + (!question.default ? 'btn-primary' : '')} disabled=${sending} title="Key: n" onClick=${() => answer(false)}>
+        <${Label} text="No" k="n" />${!question.default ? html` <${Key} k="" />` : ''}</button></div>`;
   } else if (question.kind === 'path') {
     title = 'Choose the picture folder';
     body = html`<${FolderPicker} ...${props} />`;
@@ -672,7 +800,8 @@ function Question({ question, onAnswer }) {
         the delete mode <${Mode} mode=${question.realMode} /> from your config.</p>${body}</div>`;
     }
   }
-  return html`<section class=${'question' + (question.tone === 'danger' ? ' danger' : '')} aria-live="polite">
+  return html`<section class=${'question' + (question.tone === 'danger' ? ' danger' : '') + (stale ? ' stale' : '')}
+    aria-live="polite" aria-busy=${stale}>
     <h2 class="prompt">${title}</h2>${body}</section>`;
 }
 
@@ -686,6 +815,12 @@ function App() {
   const stick = useRef(true);
   const lastHeight = useRef(0);
   const ownScroll = useRef(false);
+  // A form (settings, folders) stays in place, dimmed, while its next state is
+  // worked out (counting files), instead of vanishing and coming back.
+  const lastQuestion = useRef(null);
+  const lastForm = useRef(null);
+  const changing = useRef(false);
+  const holdLast = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -695,12 +830,27 @@ function App() {
         try {
           const state = await api(`/state?since=${rev}`);
           rev = state.rev;
+          // media-optimizer's page takes the tab: go there once; coming back,
+          // the same run is not followed again (without sessionStorage, never
+          // automatically, so it can't send the tab back and forth).
+          for (const e of state.events) {
+            if (e.kind !== 'tool' || !e.handoff || !e.url || !e.running) continue;
+            const key = `keepbest-handoff-${e.id}`;
+            let seen = true;
+            try { seen = sessionStorage.getItem(key) === '1'; sessionStorage.setItem(key, '1'); } catch (err) { seen = true; }
+            if (!seen) { location.href = e.url; return; }
+          }
           if (state.events.length) {
             setEvents((list) => {
               const next = list.slice();
               for (const e of state.events) next[e.id] = e;
               return next;
             });
+          }
+          if (state.question) {
+            lastQuestion.current = state.question;
+            holdLast.current = false;
+            if (FORMS.includes(state.question.screen)) lastForm.current = state.question;
           }
           setQuestion(state.question);
           if (state.question && state.question.screen === 'StartScreen') setFolder(state.question.targetShort);
@@ -743,6 +893,14 @@ function App() {
   useEffect(follow);
 
   const answer = async (id, value) => {
+    const last = lastQuestion.current;
+    // A change on a form, and the yes/no question it may lead to ("Also switch
+    // the folders below?"): the form comes back, so it stays until it does.
+    if (last && last.id === id) {
+      if (last.kind === 'screen') changing.current = value !== '' && FORMS.includes(last.screen);
+      holdLast.current = changing.current;
+      if (last.kind === 'confirm' && changing.current) lastQuestion.current = lastForm.current;
+    }
     try {
       await api('/answer', { id, value });
     } catch (err) {
@@ -779,8 +937,9 @@ function App() {
     }
     sections[sections.length - 1].items.push(e);
   }
-  const now = question && ['StartScreen', 'FolderScreen'].includes(question.screen) ? 'settings'
-    : question && question.kind === 'path' ? null : step;
+  const shown = question || (holdLast.current && finished === null ? lastQuestion.current : null);
+  const now = shown && ['StartScreen', 'FolderScreen'].includes(shown.screen) ? 'settings'
+    : shown && shown.kind === 'path' ? null : step;
   const order = STEPS.map(([id]) => id);
 
   return html`
@@ -794,14 +953,14 @@ function App() {
           return html`<li class=${'step ' + state} aria-current=${state === 'now' ? 'step' : undefined}>${name}</li>`;
         })}
       </ol>
-      ${finished === null && html`<button class="btn btn-small" onClick=${quit}>Quit <kbd>q</kbd></button>`}
+      ${finished === null && html`<button class="btn btn-small" title="Key: q" onClick=${quit}><${Label} text="Quit" k="q" /></button>`}
     </header>
     <main>
       ${sections.map((s, i) => html`<section class=${'section' + (i < sections.length - 1 ? ' old' : '')} key=${i}>
         ${s.title && html`<h2>${s.title}</h2>`}
         ${s.items.map((e) => html`<${Item} key=${e.id} event=${e} />`)}
       </section>`)}
-      ${question && html`<${Question} key=${question.id} question=${question} onAnswer=${answer} />`}
+      ${shown && html`<${Question} key=${shown.id} question=${shown} onAnswer=${answer} stale=${!question} />`}
       ${finished !== null && !question && html`<section class="question">
         <h2 class="prompt">${finished === 0 ? 'keepbest has finished' : finished === 130 ? 'keepbest was stopped' : `keepbest ended with exit code ${finished}`}</h2>
         <p class="muted">${finished === 0 ? 'Everything above is done.' : 'Saved progress is kept; start keepbest on the folder again to continue.'}</p>

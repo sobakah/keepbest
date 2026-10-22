@@ -1,4 +1,4 @@
-"""Opening the images of a duplicate group in a viewer."""
+"""Opening the images of a duplicate group in a viewer, and a file in its folder."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-from .ui import warn
+from .front import warn  # on the page when it runs there
 
 # Comparison apps: viewer name -> (display name, Flatpak app id, native command or None).
 COMPARE_APPS = {
@@ -71,19 +72,6 @@ def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str | None:
         used = _open_compare_app(viewer_mode, paths)
         if used:
             return used
-    elif viewer_mode == "timg":
-        try:
-            subprocess.run(["timg", *paths])
-            return "timg"
-        except OSError:
-            warn("timg not found in PATH. Falling back to the default viewer.")
-    elif viewer_mode == "kitty":
-        try:
-            subprocess.run(["kitty", "+kitten", "icat", *paths])
-            return "kitty"
-        except OSError:
-            warn("kitty not found in PATH. Falling back to the default viewer.")
-
     # 'auto', and the fallback: the system's default viewer, one window per image.
     opener = "open" if sys.platform == "darwin" else "xdg-open"
     for path in paths:
@@ -99,3 +87,21 @@ def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str | None:
              f"Set \"viewer\" in the config to one that is installed.")
         return None
     return "the default viewer"
+
+
+def show_in_folder(path) -> str | None:
+    """Open the file manager at *path*'s folder, with the file selected where
+    the file manager can do that. Returns how, or None when nothing started."""
+    path = Path(path).resolve()
+    if sys.platform == "darwin":
+        return "Finder" if _start(["open", "-R", str(path)]) else None
+    if sys.platform == "win32":
+        return "Explorer" if _start(["explorer", f"/select,{path}"]) else None
+    # The desktop's file manager selects the file (Nautilus, Dolphin, Nemo, ...).
+    if shutil.which("gdbus") and subprocess.run(
+            ["gdbus", "call", "--session", "--dest", "org.freedesktop.FileManager1",
+             "--object-path", "/org/freedesktop/FileManager1",
+             "--method", "org.freedesktop.FileManager1.ShowItems", f"['{path.as_uri()}']", ""],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10).returncode == 0:
+        return "the file manager"
+    return "the file manager" if _start(["xdg-open", str(path.parent)]) else None

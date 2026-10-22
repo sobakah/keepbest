@@ -16,7 +16,7 @@ from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_f
                         resolve_limit, resume_review, review_dry_run_again)
 from .front import (AfterDryRunScreen, EndScreen, FolderEntry, FolderHeader, FolderRow, FolderScreen, Note,
                     SessionPanel, SettingRow, StartScreen, ask, ask_path, blank, confirm, error, exit_script,
-                    in_terminal, info, show, success, transient, warn)
+                    info, page_address, show, success, transient, warn)
 from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
 from .video import tools_available as video_tools_available
@@ -43,8 +43,7 @@ def session_stages(matching: dict, fallback: str) -> str:
     return _LEGACY_STAGES.get(stages, stages) if matching.get("stages_version") != 2 else stages
 CONFIRM_OPTIONS = {"uncertain": "borderline only", "always": "every group", "never": "never"}
 MODE_OPTIONS = {"trash": "trash", "dry_run": "dry run", "permanent": "permanent"}
-VIEWER_OPTIONS = {"auto": "auto", "identity": "identity", "imagecompare": "imagecompare",
-                  "kitty": "kitty", "timg": "timg"}
+VIEWER_OPTIONS = {"auto": "system viewer", "identity": "Identity", "imagecompare": "Image Compare"}
 SUBFOLDER_OPTIONS = {False: "excluded", True: "included"}
 RENAME_OPTIONS = {True: "on", False: "off"}
 VIDEO_OPTIONS = {True: "included", False: "excluded"}
@@ -188,8 +187,7 @@ def resolve_directory(initial: Path | None, index: FolderIndex,
             else:
                 error(f"\nPath is not a directory: {resolved}")
 
-        hint = "empty to cancel" if allow_cancel else "or 'q' to quit"
-        raw = ask_path(f"Enter picture folder path ({hint}): ")
+        raw = ask_path("Picture folder (empty to cancel): " if allow_cancel else "Picture folder: ")
 
         cleaned = raw.strip().strip("'\" ")
         if not cleaned or cleaned.lower() == "q":
@@ -492,10 +490,10 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         blocked = None
         if forced_dry and session and saved_finished:
             blocked = ("--dry-run was given, so the saved dry run is not carried out. Start keepbest "
-                       "without --dry-run to carry it out, or press n to discard it and scan again.")
+                       "without --dry-run to carry it out, or start over to discard it and scan again.")
         elif forced_dry and session and not saved_dry:
             blocked = ("--dry-run was given, but the saved session is a real run that would delete files. "
-                       "Start keepbest without --dry-run to resume it, or press n to discard it.")
+                       "Start keepbest without --dry-run to resume it, or start over to discard it.")
         matching = (saved or {}).get("matching") or {}
         fixed = "fixed by the saved session"
         cap = session_limit(saved) if session and not saved_finished else None
@@ -554,10 +552,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                                   chosen=sum(1 for rel, _ in entries if rel not in settings["excluded"]),
                                   total=len(entries)))
         if session:
-            rows.append(Note("Greyed-out settings belong to the saved session. "
-                             "Press n to start over with all settings.", style="hint"))
-        else:
-            rows.append(Note("Press a setting's key to switch to the next choice.", style="hint"))
+            rows.append(Note("Locked settings belong to the saved session. "
+                             "Start over to change them all.", style="hint"))
         if mode == "dry_run":
             rows.append(Note("Dry runs change nothing and are not logged; their progress is saved."))
 
@@ -575,6 +571,10 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             primary = f"Resume saved {label} ({open_groups} open group(s))"
         elif in_scope >= 2:
             primary = f"Start scan ({in_scope} files)"
+        else:
+            hidden_videos = 0 if shown["videos"] else index.in_scope(target, {**shown, "videos": True}) - in_scope
+            rows.append(Note(f"Nothing to scan here - {'include videos, ' if hidden_videos else ''}"
+                             "include subfolders or change the directory."))
 
         if session:
             settings_menu = [("1-7", "Next choice (not greyed-out ones)")]
@@ -605,9 +605,6 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 return "resume", saved
             if in_scope >= 2:
                 return "start", None
-            hidden_videos = 0 if shown["videos"] else index.in_scope(target, {**shown, "videos": True}) - in_scope
-            hint = "include videos (7), " if hidden_videos else ""
-            warn(f"Nothing to scan here - {hint}include subfolders (r) or change directory (c).")
         elif choice == "q":
             exit_script()
         elif choice == "c":
@@ -619,9 +616,9 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 store.delete()
                 info("Saved session discarded - all settings can be changed now; Enter starts a new scan.")
         elif session and choice in ("1", "7", "r", "f"):
-            warn("That setting belongs to the saved session. Press n to start over with all settings.")
+            warn("That setting belongs to the saved session. Start over to change all settings.")
         elif choice == "2" and saved_finished:
-            warn("A finished dry run is carried out as it showed. Press n to start over with all settings.")
+            warn("A finished dry run is carried out as it showed. Start over to change all settings.")
         elif choice == "1":
             settings["stages"] = _cycle(settings["stages"], STAGE_OPTIONS)
         elif choice == "2":
@@ -638,7 +635,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             if forced_dry:
                 warn("--dry-run was given on the command line: this run deletes nothing.")
             elif session and saved_dry and not saved_finished:
-                warn("A dry run resumes as a dry run. Press n to start over with all settings.")
+                warn("A dry run resumes as a dry run. Start over to change all settings.")
             else:
                 unavailable = {"dry_run"} if session else set()
                 config["delete_mode"] = _cycle_available(mode, MODE_OPTIONS, unavailable)
@@ -648,7 +645,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             config["viewer"] = _cycle(config["viewer"], VIEWER_OPTIONS)
         elif choice == "6":
             if saved_finished:
-                warn("A finished dry run is carried out as it showed. Press n to start over with all settings.")
+                warn("A finished dry run is carried out as it showed. Start over to change all settings.")
             else:
                 config["rename_numbered"] = not config["rename_numbered"]
         elif choice == "7":
@@ -822,7 +819,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
                 ctx.save(finished=True)  # kept until it is carried out
                 if config.get("_cli_dry_run"):
                     note = ("Dry run saved - to carry it out without a rescan, start keepbest on this "
-                            "folder again without --dry-run and press Enter on the start screen.")
+                            "folder again without --dry-run and carry it out from the start screen.")
                 else:
                     note = "Dry run saved - it can also be carried out later from the start screen."
             else:
@@ -947,9 +944,11 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
     After a real run, media-optimizer is offered for the same folder if it is
     installed; when it exits, this menu comes back for a new run.
     """
-    optimizer = offer_optimizer and handoff.available() is not None
-    # On the page it can't ask its questions: it runs with its config's settings there.
-    label = ("Optimize this folder with media-optimizer" if in_terminal()
+    executable = handoff.available() if offer_optimizer else None
+    optimizer = executable is not None
+    # One with a page of its own asks its questions there; an older one runs with its config's settings.
+    label = ("Optimize this folder with media-optimizer (on its page)"
+             if optimizer and handoff.has_page(executable) and page_address()
              else "Optimize this folder with media-optimizer (its config's settings, no questions)")
     while True:
         groups = []
@@ -974,13 +973,14 @@ def run_optimizer(target: Path, settings: dict) -> None:
         info("It gets the same choice: only the main folder, no subfolders.")
     elif settings["excluded"]:
         info(f"It gets the same folder choice: {len(settings['excluded'])} folder(s) left out.")
-    if in_terminal():
-        code = handoff.run(target, settings["recursive"], settings["excluded"])
-    else:  # the page: no questions, its output shown there
-        show("tool_start", name="media-optimizer", command=f"media-optimizer run -y {target}")
-        code = handoff.run(target, settings["recursive"], settings["excluded"],
-                           output=lambda line: show("tool_line", text=line))
-        show("tool_end", code=code)
+    executable = handoff.available()
+    # Its own page takes over this tab and leads back here; else its output shows here.
+    back = page_address() if executable and handoff.has_page(executable) else ""
+    show("tool_start", name="media-optimizer", handoff=bool(back),
+         command=f"media-optimizer run {target} --web" if back else f"media-optimizer run -y {target}")
+    code = handoff.run(target, lambda line: show("tool_line", text=line), settings["recursive"],
+                       settings["excluded"], return_url=back)
+    show("tool_end", code=code)
     blank()
     if code == 127:
         error("media-optimizer could not be started.")

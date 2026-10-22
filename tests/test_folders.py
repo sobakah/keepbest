@@ -4,6 +4,8 @@ import os
 
 import pytest
 
+from conftest import asked, shown
+
 from keepbest.app import (ROOT, FolderIndex, find_images, folder_entries, media_text, normalize_excluded,
                          parse_numbers, subfolders_along, switch_folders)
 
@@ -78,13 +80,14 @@ def test_subfolders_along_tells_what_would_change(entries):
 
 def test_the_folder_list_asks_before_switching_subfolders(tree, run_cli):
     # f opens the list, 2 is Urlaub with Berge and Strand below it
-    declined = run_cli(tree.path, "-r", keys=["f", "2", "n", "", "q"]).stdout
-    assert "Also switch the 2 subfolders below Urlaub/? [Y/n]" in declined
-    assert "Selected: main folder + 3 of 4 subfolders" in declined
-    accepted = run_cli(tree.path, "-r", keys=["f", "2", "", "", "q"]).stdout   # Enter = yes
-    assert "Selected: main folder + 1 of 4 subfolders" in accepted
-    no_question = run_cli(tree.path, "-r", keys=["f", "1", "", "q"]).stdout   # Familie has none
-    assert "Also switch" not in no_question
+    declined = run_cli(tree.path, "-r", keys=["f", "2", "n", "", "q"])
+    question = next(q for q in declined.questions if q["kind"] == "confirm")
+    assert question["prompt"] == "Also switch the 2 subfolders below Urlaub/?" and question["default"] is True
+    assert asked(declined, "FolderScreen")[-1]["chosen"] == 3                # of 4
+    accepted = run_cli(tree.path, "-r", keys=["f", "2", "", "", "q"])        # Enter = yes
+    assert asked(accepted, "FolderScreen")[-1]["chosen"] == 1
+    no_question = run_cli(tree.path, "-r", keys=["f", "1", "", "q"])         # Familie has none
+    assert not any(q["kind"] == "confirm" for q in no_question.questions)
 
 
 def test_folders_count_images_and_videos_apart(tree):
@@ -109,19 +112,18 @@ def test_media_text(images, videos, scanned, text):
 def test_the_folder_list_shows_images_and_videos(tree, run_cli):
     (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")
     (tree.path / "Urlaub" / "Strand" / "wave.mkv").write_bytes(b"not decoded")
-    screen = run_cli(tree.path, "-r", keys=["f", "", "q"]).stdout   # open the list, done, quit
-    assert "Main folder  1 image directly in it" in screen
-    assert "Familie/   1 image\n" in screen
-    assert "Urlaub/    1 video\n" in screen
-    assert "Strand/  1 image · 1 video\n" in screen
-    assert "Selected: main folder + 4 of 4 subfolders · 4 images · 2 videos\n" in screen
+    screen = asked(run_cli(tree.path, "-r", keys=["f", "", "q"]), "FolderScreen")[0]   # open the list, done, quit
+    assert screen["header"]["files_text"] == "1 image directly in it"
+    assert [(e["name"], e["depth"], e["amount"]) for e in screen["entries"]] == [
+        ("Familie", 0, "1 image"), ("Urlaub", 0, "1 video"), ("Berge", 1, "1 image"), ("Strand", 1, "1 image · 1 video")]
+    assert (screen["chosen"], screen["scopeText"]) == (4, "4 images · 2 videos")
 
 
 def test_the_folder_list_marks_videos_that_are_not_scanned(tree, run_cli):
     (tree.path / "Urlaub" / "clip.mp4").write_bytes(b"not decoded")
-    screen = run_cli(tree.path, "-r", "--no-videos", keys=["f", "", "q"]).stdout
-    assert "1 video (not scanned)" in screen
-    assert "Selected: main folder + 4 of 4 subfolders · 4 images\n" in screen
+    screen = asked(run_cli(tree.path, "-r", "--no-videos", keys=["f", "", "q"]), "FolderScreen")[0]
+    assert {e["name"]: e["amount"] for e in screen["entries"]}["Urlaub"] == "1 video (not scanned)"
+    assert (screen["chosen"], screen["scopeText"]) == (4, "4 images")
 
 
 @pytest.fixture
@@ -167,4 +169,4 @@ def test_with_videos_switched_off_the_hint_names_them(library, run_cli):
     (library / "a.mp4").write_bytes(b"not really a video")
     (library / "b.mp4").write_bytes(b"not really a video either")
     result = run_cli(library.path, "--no-videos", keys=["", "q"])          # Enter: nothing to scan
-    assert "Nothing to scan here - include videos (7)" in result.stdout
+    assert "Nothing to scan here - include videos, include subfolders or change the directory." in shown(result)

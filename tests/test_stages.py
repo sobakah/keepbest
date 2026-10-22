@@ -8,7 +8,7 @@ from PIL import Image
 import pytest
 
 import pictures
-from conftest import summary
+from conftest import asked, summary
 
 
 @pytest.fixture
@@ -195,7 +195,7 @@ def test_a_group_nothing_could_be_removed_from_stays_open(library, run_cli, lock
     assert "Nothing was removed - the group stays open." in result.stdout
     assert summary(result)["renamed"] == 0
     assert "photo (1).png" in library.files()
-    assert "Resume saved session (1 open group(s))" in run_cli(library.path, keys=["q"]).stdout
+    assert asked(run_cli(library.path, keys=["q"]), "StartScreen")[0]["primary"] == "Resume saved session (1 open group(s))"
 
 
 def test_the_folders_above_home_and_system_folders_are_refused(isolated, monkeypatch):

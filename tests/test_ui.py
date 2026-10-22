@@ -1,4 +1,4 @@
-"""Terminal helpers: text width, truncation, tables and path completion."""
+"""Terminal helpers: text width, truncation, and tables."""
 
 from keepbest import ui
 
@@ -21,47 +21,3 @@ def test_tables_have_no_trailing_spaces(capsys, monkeypatch):
                    [[("▶", ""), ("kept.png", ui.StyleUI.BOLD)], [" ", "other.png"]])
     lines = capsys.readouterr().out.splitlines()
     assert lines and all(line == line.rstrip() for line in lines)
-
-
-def test_path_completion_handles_brackets(tmp_path):
-    folder = tmp_path / "Photos [2024]"
-    folder.mkdir()
-    prefix = str(tmp_path / "Photos [")
-    assert ui.complete_path(prefix, 0) == str(folder) + "/"
-    assert ui.complete_path(prefix, 1) is None
-
-
-def test_path_completion_lists_all_matches_once(tmp_path):
-    for name in ("a1", "a2", "b"):
-        (tmp_path / name).mkdir()
-    prefix = str(tmp_path / "a")
-    found = []
-    state = 0
-    while (match := ui.complete_path(prefix, state)) is not None:
-        found.append(match)
-        state += 1
-    assert found == [str(tmp_path / "a1") + "/", str(tmp_path / "a2") + "/"]
-
-
-def test_path_completion_keeps_spaces_and_an_opening_quote(tmp_path):
-    folder = tmp_path / "My Pictures" / "2024 Urlaub"
-    folder.mkdir(parents=True)
-    assert ui.complete_path(str(tmp_path / "My Pictures" / "20"), 0) == str(folder) + "/"
-    assert ui.complete_path("'" + str(tmp_path / "My Pic"), 0) == "'" + str(tmp_path / "My Pictures") + "/"
-
-
-def test_spaces_do_not_split_the_path_for_completion():
-    readline = __import__("pytest").importorskip("readline")
-    ui.enable_path_completion()
-    try:
-        assert " " not in readline.get_completer_delims()
-    finally:
-        ui.disable_path_completion()
-
-
-def test_a_typo_in_a_yes_no_question_asks_again(monkeypatch, capsys):
-    answers = iter(["mm", "", "nope", "n"])
-    monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
-    assert ui.confirm("Save progress?", default=True) is True       # "mm" is asked again, then Enter
-    assert ui.confirm("Delete?", default=True) is False              # "nope" asked again, then n
-    assert capsys.readouterr().out.count("Please answer y or n.") == 2

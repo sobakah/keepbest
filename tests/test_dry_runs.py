@@ -3,7 +3,7 @@
 import pytest
 
 import pictures
-from conftest import make_video, remux, requires_ffmpeg, summary
+from conftest import asked, make_video, remux, requires_ffmpeg, summary
 
 
 # --- identical copies and remuxes -------------------------------------------------
@@ -48,7 +48,7 @@ def test_a_skipped_remux_is_counted_and_asked_again(silent_remux, run_cli):
     dry = run_cli(silent_remux.path, "--dry-run", keys=["", "s", ""])     # start, skip the remux, quit
     assert summary(dry)["skipped"] == 1
     again = run_cli(silent_remux.path, keys=["e", "", ""])          # review again, keep clip.mp4, quit
-    assert "TRACKS DIFFER" in again.stdout
+    assert [q["group"]["tracks"] for q in asked(again, "RemuxScreen")] == ["covered"]   # asked again
     assert silent_remux.files() == ["a.png", "clip.mp4"]
 
 
@@ -98,15 +98,14 @@ def test_a_taken_name_is_not_counted_as_a_rename(library, run_cli):
     numbered_copies(library, name_taken=True)
     result = run_cli(library.path, "--stages", "1", keys=["4", "", "q"])   # dry run from the start screen
     assert "Name taken" in result.stdout and summary(result)["renamed"] == 0
-    assert "rename 1" not in result.stdout.split("Dry run finished.", 1)[1]
+    assert "rename 1" not in asked(result, "AfterDryRunScreen")[0]["primary"]
 
 
 def test_the_saved_session_counts_identical_copies_as_groups(library, run_cli):
     numbered_copies(library)
     run_cli(library.path, "--stages", "1", keys=["4", "", "q"])
-    screen = run_cli(library.path, keys=["q"]).stdout
-    panel = next(line for line in screen.splitlines() if "Saved session:" in line)
-    assert "1 group(s)" in panel
+    panel = asked(run_cli(library.path, keys=["q"]), "StartScreen")[0]["panel"]
+    assert panel["finished"] and panel["groups"] == 1
 
 
 @pytest.mark.parametrize("dry_args, now_args, renamed", [((), ("--no-rename",), True),
@@ -115,7 +114,7 @@ def test_carrying_out_renames_as_the_dry_run_showed(library, run_cli, dry_args, 
     numbered_copies(library)
     run_cli(library.path, "--stages", "1", *dry_args, keys=["4", "", "q"])
     result = run_cli(library.path, *now_args, keys=["", "q"])       # carry out, quit
-    enter = next(line for line in result.stdout.splitlines() if "Carry out the saved dry run" in line)
-    panel = next(line for line in result.stdout.splitlines() if "Saved session:" in line)
-    assert ("rename 1" in enter) == ("1 to rename" in panel) == renamed
+    start = asked(result, "StartScreen")[0]
+    assert "Carry out the saved dry run" in start["primary"]
+    assert ("rename 1" in start["primary"]) == (start["panel"]["to_rename"] == 1) == renamed
     assert ("photo.jpg" in library.files()) == renamed

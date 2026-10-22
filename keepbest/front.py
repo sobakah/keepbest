@@ -1,11 +1,11 @@
 """What the program shows and asks, apart from how it looks.
 
 The flow (app.py, core_logic.py) never prints or reads input itself: it calls
-the functions here, and the current front end draws them. Without one set, that
-is the terminal (terminal.py). Every question that has a whole screen is a
-Screen with its data and the keys it understands; the answer is the key, the
-same one a user types in the terminal, so another front end (a page) can offer
-the keys as buttons and the flow handles both alike.
+the functions here, and the current front end draws them: the page (web.py)
+whenever there are questions, else the terminal (terminal.py), which only
+shows messages (--auto). Every question that has a whole screen is a Screen
+with its data and the keys it understands; the answer is a key (the page's
+buttons send them, and its keyboard shortcuts are the same keys).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ class Front:
 
     def ask(self, screen: "Screen", again: bool = False) -> str:
         """The key chosen on *screen*: "" for its primary action. *again*: the
-        same screen after an invalid key, which the terminal doesn't redraw."""
+        same screen asked once more."""
         raise NotImplementedError
 
     def confirm(self, question: str, default: bool = False, tone: str = "") -> bool:
@@ -54,9 +54,10 @@ def use(front: Front | None) -> None:
     _front = front
 
 
-def in_terminal() -> bool:
-    """True when no other front end is set: output and questions use the terminal."""
-    return _front is None
+def page_address() -> str:
+    """The address of the page the flow runs on ("" outside one), for another
+    program's page to lead back to."""
+    return getattr(_front, "page_url", "")
 
 
 def current() -> Front:
@@ -136,9 +137,9 @@ Menu = list  # [(group title, [(key, label), ...]), ...]
 
 @dataclass
 class Screen:
-    """A question with a whole screen. *prompt* is what the terminal asks with,
-    *primary* what Enter does (None: Enter does nothing special), *menu* the
-    other keys in groups."""
+    """A question with a whole screen. *prompt* names the question, *primary*
+    is what Enter does (None: Enter does nothing special), *menu* the other
+    keys in groups."""
     prompt: str
     primary: str | None
     menu: Menu

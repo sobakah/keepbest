@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import summary
+from conftest import asked, shown, summary
 from keepbest import session as session_mod
 from keepbest.core_logic import (Group, RunContext, Stats, stats_from_session, tighten_groups,
                                 validate_groups)
@@ -165,18 +165,19 @@ def test_an_interrupted_session_ends_with_the_same_totals(three_groups, run_cli,
 
 def test_the_start_screen_locks_the_session_settings(three_groups, run_cli):
     run_cli(three_groups.path, "-i", keys=["", "q", ""])            # leave a saved session
-    screen = run_cli(three_groups.path, keys=["2", "q"]).stdout
-    assert "[1] Stages" in screen and "(locked)" in screen and "Resume saved session" in screen
-    after_2 = screen.split("[2] Strictness")[2].splitlines()[0]    # second start screen, after pressing 2
-    assert "‹strict (12)›" in after_2 and "✗loose (28)" in after_2
+    before, after = asked(run_cli(three_groups.path, keys=["2", "q"]), "StartScreen")
+    stages = next(row for row in before["rows"] if row.get("label") == "Stages")
+    assert stages["locked"] and before["primary"].startswith("Resume saved session")
+    strictness = {o["label"]: o for o in next(row for row in after["rows"] if row.get("label") == "Strictness")["options"]}
+    assert strictness["strict (12)"]["current"] and strictness["loose (28)"]["unavailable"]   # after pressing 2
 
 
 def test_n_discards_the_session_and_unlocks_everything(three_groups, run_cli):
     run_cli(three_groups.path, "-i", keys=["", "q", ""])
-    screen = run_cli(three_groups.path, keys=["n", "y", "q"]).stdout
-    assert "Saved session discarded" in screen
-    last = screen.rsplit("[1] Stages", 1)[1]
-    assert "(locked)" not in last and "Start scan" in last
+    result = run_cli(three_groups.path, keys=["n", "y", "q"])
+    assert "Saved session discarded" in result.stdout
+    last = asked(result, "StartScreen")[-1]
+    assert not any(row.get("locked") for row in last["rows"]) and last["primary"].startswith("Start scan")
 
 
 # --- --dry-run always wins --------------------------------------------------------
@@ -184,7 +185,7 @@ def test_dry_run_does_not_resume_a_real_session(three_groups, run_cli):
     run_cli(three_groups.path, "-i", keys=["", "q", ""])            # leave a real (trash) session
     before = three_groups.files()
     result = run_cli(three_groups.path, "--dry-run", keys=["", "4", "q"])   # Enter, try the mode, quit
-    assert "the saved session is a real run that would delete files" in result.stdout
+    assert "the saved session is a real run that would delete files" in shown(result)
     assert "this run deletes nothing" in result.stdout
     assert "Resuming" not in result.stdout
     assert three_groups.files() == before
@@ -194,7 +195,7 @@ def test_dry_run_does_not_carry_out_a_saved_dry_run(three_groups, run_cli):
     run_cli(three_groups.path, "--dry-run", keys=["", "q"])         # finish a dry run, keep it saved
     before = three_groups.files()
     result = run_cli(three_groups.path, "--dry-run", keys=["", "e", "q"])
-    assert "the saved dry run is not carried out" in result.stdout
+    assert "the saved dry run is not carried out" in shown(result)
     assert three_groups.files() == before
     carried_out = run_cli(three_groups.path, keys=["", ""])         # without --dry-run, Enter carries it out
     assert summary(carried_out)["visual"] == 3
@@ -203,14 +204,14 @@ def test_dry_run_does_not_carry_out_a_saved_dry_run(three_groups, run_cli):
 def test_dry_run_is_not_carried_out_right_after_it_finished(three_groups, run_cli):
     before = three_groups.files()
     result = run_cli(three_groups.path, "--dry-run", keys=["", "", ""])   # start, then Enter twice
-    assert "Apply exactly what the dry run showed" not in result.stdout
+    assert "Apply exactly what the dry run showed" not in shown(result)
     assert "start keepbest on this folder again without --dry-run" in result.stdout
     assert three_groups.files() == before
 
 
 def test_a_dry_run_chosen_on_the_start_screen_can_still_be_carried_out(three_groups, run_cli):
     result = run_cli(three_groups.path, keys=["4", "", ""])         # trash -> dry run, start, apply
-    assert "Apply exactly what the dry run showed" in result.stdout
+    assert "Apply exactly what the dry run showed" in shown(result)
     assert len(three_groups.files()) == 3
 
 
@@ -227,7 +228,7 @@ def one_group(library):
 def test_a_dry_run_decision_can_be_undone(one_group, run_cli):
     # start, keep #1, jump to group 1 in the overview, undo, keep #0, finish, quit
     result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "u", "", "", ""])
-    assert "Undo this decision and choose again" in result.stdout
+    assert "Undo this decision and choose again" in shown(result)
     assert "Decision undone - choose again." in result.stdout
     assert summary(result)["visual"] == 2                      # counted once, not twice
     assert one_group.files() == ["a 95.jpg", "a.jpg", "a.png"]
@@ -238,12 +239,12 @@ def test_a_dry_run_decision_can_be_undone(one_group, run_cli):
 def test_a_real_decision_offers_no_undo(one_group, run_cli):
     # start, keep #1, jump to group 1, "u" does nothing here, finish, quit
     result = run_cli(one_group.path, "-i", keys=["", "1", "1", "u", "", ""])
-    assert "Undo this decision" not in result.stdout
+    assert "Undo this decision" not in shown(result)
     assert one_group.files() == ["a 95.jpg"]
 
 
-def test_a_typo_on_a_handled_group_asks_again(one_group, run_cli):
-    # start, keep #1, open group 1 from the overview, a typo, continue, finish, quit
+def test_a_handled_group_offers_only_its_own_keys(one_group, run_cli):
+    # start, keep #1, open group 1 from the overview, a key it has no button for, continue, finish, quit
     result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "mm", "", "", ""])
-    assert "Unknown option." in result.stdout
+    assert [(q["screen"], key) for q, key in result.typos] == [("HandledScreen", "mm")]
     assert result.returncode == 0

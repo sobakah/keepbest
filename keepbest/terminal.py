@@ -1,17 +1,14 @@
-"""The terminal front end: draws what front.py is told to show and reads the
-answers from the keyboard. The default whenever no other front end is set."""
+"""The terminal front end: draws the messages front.py is told to show. The
+default whenever no other front end is set, which is --auto; on the page it
+keeps a log of the run in the terminal (web.py). It asks nothing."""
 
 from __future__ import annotations
 
 from .core_logic import format_size
-from .front import (AfterDryRunScreen, DecisionScreen, EndScreen, FolderRow, FolderScreen, Front,
-                    HandledScreen, Note, OverviewScreen, RemuxScreen, SettingRow, StartScreen)
-from .ui import (Column, StyleUI, badge, confirm, dim, disable_path_completion, display_width,
-                 enable_path_completion, error, info, pad, print_banner, print_menu, print_primary_action,
-                 print_table, progress, safe_input, success, terminal_width, transient, truncate, warn)
+from .front import Front
+from .ui import Column, StyleUI, badge, dim, error, info, print_banner, print_table, progress, success, transient, warn
 
 _TONES = {"ok": "GREEN", "bad": "RED", "note": "CYAN", "warn": "YELLOW"}
-_CONFIRM_TONES = {"warn": "YELLOW", "danger": "RED"}
 
 
 # --- badges ----------------------------------------------------------------------
@@ -27,16 +24,6 @@ def verdict(group) -> str:
     if group.borderline:
         return badge("BORDERLINE", StyleUI.YELLOW)
     return badge("CONFIDENT ", StyleUI.GREEN)
-
-
-def status_badge(group) -> str:
-    if group.status == "done":
-        return badge("DONE   ", StyleUI.GREEN)
-    if group.status == "skipped":
-        return badge("SKIPPED", StyleUI.YELLOW)
-    if group.status == "ignored":
-        return badge("NOT DUP", StyleUI.MAGENTA)
-    return badge("OPEN   ", StyleUI.GRAY)
 
 
 def _tracks_badge(group) -> str:
@@ -59,8 +46,8 @@ def _exact_heading(group, number: int, total: int, tracks: bool = False) -> None
     print(f"\n{StyleUI.BOLD}[{number}/{total}]{StyleUI.RESET} {label} {extra}{detail}")
 
 
-def _exact_table(group, rel, keep_index: int | None = 0) -> None:
-    """*keep_index* None: every file stays."""
+def _exact_table(group, rel, keep_index: int | None = 0, dry: bool = False) -> None:
+    """*keep_index* None: every file stays. (*dry* matters on the page only.)"""
     remux = group.kind == "remux"
     rows = []
     for i, f in enumerate(group.files):
@@ -82,7 +69,7 @@ def _exact_table(group, rel, keep_index: int | None = 0) -> None:
     print_table(columns, rows)
 
 
-def _group_table(group, rel, keep_index: int = 0, done: bool = False) -> None:
+def _group_table(group, rel, keep_index: int = 0, done: bool = False, dry: bool = False) -> None:
     rows = []
     for i, (meta, diff) in enumerate(zip(group.images, group.diffs)):
         kept = i == keep_index
@@ -181,250 +168,32 @@ _MESSAGES = {
     "stage3_header": _stage3_header,
     "summary": _summary,
     "folder_header": lambda header: _folder_header(header),
-    # media-optimizer's output on the page (in the terminal it writes there itself)
-    "tool_start": lambda name, command: info(f"$ {command}"),
-    "tool_line": lambda text: print(text),
+    # media-optimizer on the page: its command and exit code (its lines stay on the page)
+    "tool_start": lambda name, command, handoff=False: info(f"$ {command}"),
+    "tool_line": lambda text: None,
     "tool_end": lambda code: dim(f"exit code {code}"),
 }
 
 
-# --- screens ---------------------------------------------------------------------
-_LABEL_WIDTH = 12
-
-
-def _setting(row: SettingRow) -> None:
-    """One settings row: every choice listed, the current one in normal bold
-    text and the others greyed out. Choices in *unavailable* are also struck
-    through. A *locked* row is greyed out entirely and shows only its current
-    value, followed by the reason. Without colours, the current choice is
-    wrapped in ‹ ›, unavailable ones are marked ✗ and locked rows are labelled.
-    Wraps to the terminal width."""
-    key, label, options, current = row.key, row.label, row.options, row.current
-    colored = bool(StyleUI.GRAY)
-    if row.locked is not None:
-        value = options.get(current, str(current))
-        shown = value if colored else f"‹{value}› (locked)"
-        print(f"  {StyleUI.GRAY}[{key}] {label:<{_LABEL_WIDTH}} {shown}   - {row.locked}{StyleUI.RESET}")
-        return
-
-    prefix = f"  {StyleUI.GRAY}[{key}]{StyleUI.RESET} {StyleUI.BOLD}{label:<{_LABEL_WIDTH}}{StyleUI.RESET} "
-    indent = display_width(prefix)
-    gap = "   "
-
-    cells = []
-    for value, text in options.items():
-        if value == current:
-            color = StyleUI.RED if value == row.danger else ""
-            shown = text if colored else f"‹{text}›"
-            cells.append((display_width(shown), f"{color}{StyleUI.BOLD}{shown}{StyleUI.RESET}"))
-        elif value in row.unavailable:
-            shown = text if colored else f"✗{text}"
-            cells.append((display_width(shown), f"{StyleUI.GRAY}{StyleUI.STRIKE}{shown}{StyleUI.RESET}"))
-        else:
-            cells.append((display_width(text), f"{StyleUI.GRAY}{text}{StyleUI.RESET}"))
-
-    width = terminal_width()
-    lines, line, used = [], [], indent
-    for cell_width, cell in cells:
-        extra = cell_width + (len(gap) if line else 0)
-        if line and used + extra > width:
-            lines.append(gap.join(line))
-            line, used = [], indent
-            extra = cell_width
-        line.append(cell)
-        used += extra
-    lines.append(gap.join(line))
-    print(prefix + ("\n" + " " * indent).join(lines))
-
-
-def _folder_row(row: FolderRow) -> None:
-    main_text = ("main folder" if row.main_on
-                 else f"{StyleUI.YELLOW}main folder excluded{StyleUI.RESET}{StyleUI.BOLD}")
-    subs = f"all {row.total} subfolders" if row.chosen == row.total else f"{row.chosen} of {row.total} subfolders"
-    text = f"{StyleUI.BOLD}{main_text} + {subs}{StyleUI.RESET}"
-    print(f"  {StyleUI.GRAY}[{row.key}]{StyleUI.RESET} {StyleUI.BOLD}{row.label:<{_LABEL_WIDTH}}{StyleUI.RESET} "
-          f"{text} {StyleUI.GRAY}- press f to choose{StyleUI.RESET}")
-
-
-def _note(note: Note) -> None:
-    indent = " " * (_LABEL_WIDTH + 5)
-    if note.style == "hint":
-        print(f"  {StyleUI.GRAY}{indent}{note.text}{StyleUI.RESET}")
-    else:
-        dim(f"  {indent}{note.text}")
-
-
-def _session_panel(panel) -> None:
-    kind = badge("DRY RUN", StyleUI.CYAN) + " " if panel.dry else ""
-    if panel.finished:
-        text = (f"{kind}{badge('FINISHED', StyleUI.GREEN)} from {panel.when} · {panel.groups} group(s) · "
-                f"{panel.to_remove} file(s) to remove, {panel.to_rename} to rename")
-    else:
-        text = (f"{kind}{badge('RESUMABLE', StyleUI.CYAN)} from {panel.when} · {panel.groups} groups: "
-                f"{StyleUI.GREEN}{panel.done} done{StyleUI.RESET} · {StyleUI.YELLOW}{panel.skipped} skipped{StyleUI.RESET} · "
-                + (f"{StyleUI.MAGENTA}{panel.ignored} not duplicates{StyleUI.RESET} · " if panel.ignored else "")
-                + f"{panel.open - panel.skipped} open")
-    print(f"\n{StyleUI.BOLD}Saved session:{StyleUI.RESET} {text}")
-    if panel.description:
-        dim(f"               Matched with: {panel.description}.")
-
-
-def _start(screen: StartScreen) -> None:
-    from .config import NAME
-    print_banner(f"{NAME} · Duplicate image finder")
-    print(f"{StyleUI.BOLD}Folder:{StyleUI.RESET}  {StyleUI.GRAY}{screen.target}{StyleUI.RESET}")
-    scope = (f"{StyleUI.BOLD}{screen.in_scope}{StyleUI.RESET} file(s) in scope "
-             f"{StyleUI.GRAY}({screen.in_scope - screen.scope_videos} images, {screen.scope_videos} videos){StyleUI.RESET}")
-    if screen.more_in_subfolders:
-        scope += f" {StyleUI.GRAY}({screen.more_in_subfolders} more in subfolders - press r){StyleUI.RESET}"
-    print(f"{StyleUI.BOLD}Files:{StyleUI.RESET}   {scope}")
-    if screen.panel is not None:
-        _session_panel(screen.panel)
-
-    print(f"\n{StyleUI.BOLD}Settings:{StyleUI.RESET} {mode_badge(screen.mode)}")
-    for row in screen.rows:
-        if isinstance(row, SettingRow):
-            _setting(row)
-        elif isinstance(row, FolderRow):
-            _folder_row(row)
-        else:
-            _note(row)
-
-    if screen.blocked:
-        print()
-        warn(screen.blocked)
-    elif screen.primary:
-        print_primary_action("Enter", screen.primary)
-    elif screen.nothing_to_scan:
-        warn("\nFewer than two files in scope - nothing to compare.")
-    print_menu(screen.menu)
-
-
-def _folders(screen: FolderScreen) -> None:
-    _folder_header(screen.header)
-    entries = screen.entries
-    name_width = min(max(display_width(e.name) for e in entries), max(20, terminal_width() - 30))
-    for number, entry in enumerate(entries, 1):
-        box = f"{StyleUI.GREEN}[✓]{StyleUI.RESET}" if entry.on else f"{StyleUI.GRAY}[ ]{StyleUI.RESET}"
-        shown = pad(truncate(entry.name, name_width), name_width)
-        shown = shown if entry.on else f"{StyleUI.GRAY}{shown}{StyleUI.RESET}"
-        print(f"  [{StyleUI.GREEN}{number:3d}{StyleUI.RESET}] {box} {shown}  {StyleUI.GRAY}{entry.amount}{StyleUI.RESET}")
-
-    main_text = "main folder" if screen.header.main_on else f"{StyleUI.YELLOW}main folder excluded{StyleUI.RESET}"
-    print(f"\n{StyleUI.BOLD}Selected:{StyleUI.RESET} {main_text} + {screen.chosen} of {len(entries)} subfolders · "
-          f"{screen.scope_text}")
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-    dim("  Several at once: 2-5 or 1,3,7 - each listed folder is switched.")
-
-
-def _decision(screen: DecisionScreen) -> None:
-    group = screen.group
-    print_banner(f"[{screen.position}] Duplicate group · {len(group.images)} images")
-    print(_group_heading(group))
-    if group.status == "skipped":
-        dim("You skipped this group earlier.")
-    print()
-    _group_table(group, screen.rel)
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-def _handled(screen: HandledScreen) -> None:
-    group = screen.group
-    print_banner(f"[{screen.position}] Duplicate group · {len(group.images)} images")
-    print(_group_heading(group))
-    print()
-    if group.status == "ignored":
-        _group_table(group, screen.rel)
-    else:
-        _group_table(group, screen.rel, keep_index=group.kept or 0, done=True)
-    info(screen.note)
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-def _overview(screen: OverviewScreen) -> None:
-    groups, rel = screen.groups, screen.rel
-    print_banner(f"Duplicate groups overview ({len(groups)} groups)")
-    for number, group in enumerate(groups, 1):
-        selected = screen.current == number - 1
-        marker = f"{StyleUI.GREEN}{StyleUI.BOLD}▶{StyleUI.RESET}" if selected else " "
-        keeper = group.images[group.kept if group.kept is not None else 0]["path"]
-        name = f"{StyleUI.BOLD}{rel(keeper)}{StyleUI.RESET}" if selected else rel(keeper)
-        print(f"{marker} [{StyleUI.GREEN}{number:3d}{StyleUI.RESET}] {status_badge(group)} "
-              f"{verdict(group)} {len(group.images)} images · diff {group.worst}/{group.limit} · {name}")
-
-    done = sum(g.status == "done" for g in groups)
-    skipped = sum(g.status == "skipped" for g in groups)
-    ignored = sum(g.status == "ignored" for g in groups)
-    pending = len(groups) - done - skipped - ignored
-    progress_line = (f"\n{StyleUI.BOLD}Progress:{StyleUI.RESET} {StyleUI.GREEN}{done} done{StyleUI.RESET}   "
-                     f"{StyleUI.YELLOW}{skipped} skipped{StyleUI.RESET}   ")
-    if ignored:
-        progress_line += f"{StyleUI.MAGENTA}{ignored} not duplicates{StyleUI.RESET}   "
-    print(progress_line + f"{StyleUI.GRAY}{pending} open{StyleUI.RESET}")
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-def _remux(screen: RemuxScreen) -> None:
-    group = screen.group
-    _exact_heading(group, screen.number, screen.total, tracks=True)
-    if group.tracks == "reordered":
-        dim("The video is identical and so are the other tracks, but in another order: "
-            "a player starts with another language or sound.")
-    elif group.tracks == "same":
-        dim("The video and every other track are identical.")
-    else:
-        dim("The video is identical; the files differ in their other tracks (sound, subtitles, ...).")
-    if group.tracks == "differ":
-        warn("No file contains all tracks of the others: removing them loses a track "
-             "(other sound, language or subtitles).")
-    _exact_table(group, screen.rel)
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-def _end(screen: EndScreen) -> None:
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-def _after_dry_run(screen: AfterDryRunScreen) -> None:
-    print(f"\n{StyleUI.BOLD}Dry run finished.{StyleUI.RESET} The groups found are kept, so continuing needs no rescan. "
-          f"Real runs use the delete mode {mode_badge(screen.real_mode)} from your config.")
-    print_primary_action("Enter", screen.primary)
-    print_menu(screen.menu)
-
-
-_SCREENS = {
-    StartScreen: _start, FolderScreen: _folders, DecisionScreen: _decision, HandledScreen: _handled,
-    OverviewScreen: _overview, RemuxScreen: _remux, EndScreen: _end, AfterDryRunScreen: _after_dry_run,
-}
+class NeedsPage(RuntimeError):
+    """A question outside the page: since 2.1.0 only the page asks."""
 
 
 class TerminalFront(Front):
+    """Messages in the terminal: --auto's whole output, and the log of a run
+    on the page. Questions are the page's (web.py); --auto asks none."""
+
     def show(self, kind: str, data: dict) -> None:
         _MESSAGES[kind](**data)
 
     def ask(self, screen, again: bool = False) -> str:
-        if not again:
-            _SCREENS[type(screen)](screen)
-        return safe_input(f"{StyleUI.BOLD}{screen.prompt}{StyleUI.RESET}").strip().lower()
+        raise NeedsPage(f"asked in the terminal: {screen.prompt!r}")
 
     def confirm(self, question: str, default: bool = False, tone: str = "") -> bool:
-        if tone:
-            color = getattr(StyleUI, _CONFIRM_TONES[tone])
-            question = f"{color}{question}{StyleUI.RESET}"
-        return confirm(question, default=default)
+        raise NeedsPage(f"asked in the terminal: {question!r}")
 
     def ask_path(self, prompt: str) -> str:
-        enable_path_completion()
-        try:
-            return safe_input(f"{StyleUI.BOLD}{prompt}{StyleUI.RESET}")
-        finally:
-            disable_path_completion()
+        raise NeedsPage(f"asked in the terminal: {prompt!r}")
 
     def progress(self, label: str, total: int):
         return progress(label, total)

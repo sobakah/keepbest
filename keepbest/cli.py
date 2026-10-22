@@ -34,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Find exact and visually identical duplicate images and remove the "
                     "redundant copies, keeping the best one.",
     )
-    parser.add_argument("path", nargs="?", help="picture directory (default: the page asks; in the "
-                                                "terminal, the current directory)")
+    parser.add_argument("path", nargs="?", help="picture directory (default: the page asks; with --auto, "
+                                                "the current directory)")
     parser.add_argument("--version", action="version", version=f"{NAME} {__version__}")
     parser.add_argument("-c", "--config", type=Path, metavar="FILE", help="use this config file instead of the search paths")
 
@@ -61,11 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help='show pairs marked "not duplicates" again, for this run')
 
     page = parser.add_argument_group("browser page")
-    where = page.add_mutually_exclusive_group()
-    where.add_argument("--web", action="store_true",
-                       help="show keepbest in the browser (the default with a graphical session)")
-    where.add_argument("--terminal", action="store_true", help="show keepbest's screens in this terminal")
-    page.add_argument("--no-browser", action="store_true", help="only print the page's address, don't open it")
+    # The page is the only way keepbest asks since 2.1.0: --web stays for app-menu
+    # entries and scripts written for 2.0, --terminal explains where the screens went.
+    page.add_argument("--web", action="store_true", help=argparse.SUPPRESS)
+    page.add_argument("--terminal", action="store_true", help=argparse.SUPPRESS)
+    page.add_argument("--no-browser", action="store_true",
+                      help="only print the page's address, don't open it (without a display: always)")
     entry = page.add_mutually_exclusive_group()
     entry.add_argument("--install-desktop-entry", action="store_true",
                        help="add keepbest to the app menu (it opens the page) and exit")
@@ -108,16 +109,6 @@ def graphical_session() -> bool:
     return True
 
 
-def use_page(args, config: dict) -> bool:
-    """The page unless asked for the terminal (--terminal, "browser_page": false),
-    with --auto (nothing to show), or without a graphical session; --web always."""
-    if args.web:
-        return True
-    if args.terminal or args.auto:
-        return False
-    return bool(config.get("browser_page", True)) and graphical_session()
-
-
 def _desktop_entry(install: bool) -> int:
     from . import desktop
 
@@ -141,6 +132,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.web and args.auto:
         parser.error("--web and --auto don't go together: --auto asks nothing, so there is no page to show")
+    if args.terminal:
+        parser.error(f"the terminal screens were removed in {NAME} 2.1.0: {NAME} asks on its page in the "
+                     "browser (--no-browser only prints its address), or asks nothing with --auto")
     configure_logging(args.verbose)
 
     moved, migration_warnings = migrate_old_locations()  # before the config is looked for
@@ -178,11 +172,6 @@ def main(argv: list[str] | None = None) -> int:
         print("  .venv/bin/python run.py /path/to/pictures")
         print(f"Or install {NAME} with pipx, which takes care of this (see the README).")
         return 2
-    page = use_page(args, config)
-    if not ui.HAS_READLINE and not args.auto and not page:
-        ui.warn("readline is unavailable - Tab completion and prefilled prompts are disabled. "
-                "On Windows: pip install pyreadline3")
-
     settings = {
         "stages": args.stages,
         "recursive": args.recursive,
@@ -194,11 +183,11 @@ def main(argv: list[str] | None = None) -> int:
     from . import app  # imports Pillow/send2trash, so only after the dependency check
     stop_on_signals()
 
-    if page:
+    if not args.auto:  # questions: the page asks them
         from . import web
         initial = Path(args.path) if args.path else None  # from the app menu: the page asks
         return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude),
-                         open_browser=not args.no_browser)
+                         open_browser=not args.no_browser and graphical_session())
     try:
         return app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude)
     except KeyboardInterrupt:

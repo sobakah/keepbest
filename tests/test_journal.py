@@ -6,12 +6,11 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 
 import pytest
 
 import pictures
-from conftest import REPO, Library, make_video, remux, requires_ffmpeg, summary
+from conftest import ADDRESS, REPO, Library, Page, make_video, remux, requires_ffmpeg, summary
 
 
 @pytest.fixture
@@ -244,17 +243,14 @@ def test_an_interrupted_run_ends_with_interrupted(library, journal, config_file)
     """SIGTERM while a group waits for a decision: the journal still says the run ended."""
     library.photo("a.png", 1, size=(640, 480))
     library.variant("a.png", "b.jpg", change=pictures.downscaled)
-    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", "--terminal",
+    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", "--no-browser",
             str(library.path), "-i"]
-    proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            cwd=REPO)
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, cwd=REPO)
     try:
-        proc.stdin.write(b"\n")                                  # start; then the decision screen waits
-        proc.stdin.flush()
-        deadline = time.monotonic() + 60
-        while not journal.path.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
-        time.sleep(1)
+        page = Page(ADDRESS.search(proc.stdout.readline()).group(1))
+        start, = page.walk("")                                   # start; then the decision screen waits
+        assert page.question(start["id"])["screen"] == "DecisionScreen"
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=60)
     finally:

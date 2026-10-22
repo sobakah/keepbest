@@ -115,6 +115,15 @@ def test_folders_and_confirmations(library, run_with):
     assert library.files() == ["a.png", "sub/a.png"]
 
 
+def test_the_terminal_asks_nothing():
+    """--auto's front end shows messages only; a question there is a bug."""
+    from keepbest.terminal import TERMINAL, NeedsPage
+    with pytest.raises(NeedsPage):
+        TERMINAL.ask(EndScreen(prompt="Action: ", primary="Quit", menu=[]))
+    with pytest.raises(NeedsPage):
+        TERMINAL.confirm("Delete?")
+
+
 def test_auto_asks_nothing(library, run_with):
     library.photo("a.png", 1)
     library.copy_of("a.png", "b.png")

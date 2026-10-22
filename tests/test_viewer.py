@@ -65,6 +65,21 @@ def test_without_any_viewer_nothing_crashes(images, monkeypatch, tmp_path, capsy
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
-    for mode in ("auto", "timg", "identity"):
+    for mode in ("auto", "identity"):
         assert viewer.open_image_viewer(images, mode) is None
     assert "No viewer could be started" in capsys.readouterr().out
+
+
+def test_show_in_folder_asks_the_file_manager_to_select_the_file(only_fakes, images):
+    gdbus = only_fakes("gdbus")
+    assert viewer.show_in_folder(images[0]) == "the file manager"
+    call = gdbus.calls()[0]
+    assert "org.freedesktop.FileManager1.ShowItems" in call
+    assert f"['{images[0].resolve().as_uri()}']" in call
+    assert only_fakes.xdg.calls(wait=0) == []
+
+
+def test_show_in_folder_opens_the_folder_without_a_file_manager_service(only_fakes, images):
+    only_fakes("gdbus", exit_code=1)       # no file manager answers on D-Bus
+    assert viewer.show_in_folder(images[0]) == "the file manager"
+    assert only_fakes.xdg.calls() == [[str(images[0].resolve().parent)]]

@@ -1,7 +1,8 @@
 # keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
-A local browser page (since 2.0.0; the terminal screens remain behind `--terminal`), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
+A local browser page (since 2.0.0; the only way it asks since the terminal screens were removed after 2.0.0, for 2.1.0;
+`--auto` runs in the terminal without questions), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
 Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
 Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
 
@@ -22,23 +23,27 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
   `journal.py` (the file journal, see below), `front.py` / `terminal.py` / `ui.py` (see below),
-  `viewer.py`, `handoff.py` (runs media-optimizer
+  `viewer.py` (comparison apps for `v`, `show_in_folder`), `handoff.py` (runs media-optimizer
   from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0` and the run's
   folder choice as `MO_SUBFOLDERS`/`MO_EXCLUDE_FOLDERS` (JSON; same model: an excluded folder loses
-  only its own files); keepbest ignores
+  only its own files). One whose `run --help` lists `--return-url` (media-optimizer 2.4+) gets
+  `--web --no-browser --return-url <keepbest's page> --return-name keepbest` and takes over the tab;
+  an older one gets `-y` and its output goes into a box on the page. keepbest ignores
   SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on; the handlers are
   set before the start, as no-op handlers rather than SIG_IGN so the child gets default handling).
 - **Output and questions go through `front.py`**, never `print`/`input`. `app.py` and `core_logic.py`
   call `front.info/warn/…`, `front.show(kind, …)` for structured output (group tables, outcomes,
   summary) and `front.ask(screen)` with a `Screen` dataclass. The screen carries its data, `primary`
-  (what Enter does) and `menu` (the other keys). The answer is the key a user would type, so a page
-  can send the same keys from buttons. `terminal.py` is the default front end and draws everything;
-  `ui.py` holds its primitives. A new screen needs a dataclass in `front.py` and a renderer in
-  `terminal.py`; a new message kind needs an entry in `terminal._MESSAGES`. `tests/test_front.py`
+  (what Enter does) and `menu` (the other keys). The answer is a key: the page's buttons send them,
+  and they are its keyboard shortcuts. Only the page asks (`web.WebFront`); `terminal.py` shows
+  messages only (`--auto`, and the log of a page run, `WebFront.echo`) and raises `NeedsPage` if
+  asked anything. `ui.py` holds its primitives. A new screen needs a dataclass in `front.py`, data in
+  `web.screen_data` and a view in `app.js` (or the generic one); a new message kind needs an entry in
+  `terminal._MESSAGES` and `web.message_data`. Wording is for the page: no "press x". `tests/test_front.py`
   runs the flow with a scripted front end and fails if anything reaches stdout directly. `cli.py`
   still prints its startup errors with `ui` directly.
-- **The page** (the default since 2.0.0; `cli.use_page`: `--web`/`--terminal`, config `browser_page`,
-  the terminal without `DISPLAY`/`WAYLAND_DISPLAY` and with `--auto`):
+- **The page** (everything but `--auto`; `--web` is accepted and does nothing, `--terminal` is an
+  error; without `DISPLAY`/`WAYLAND_DISPLAY` no browser is opened, only the address printed):
   - `web.py` is the second front end, `WebFront`, with the HTTP server; `static/` holds the page
     (`app.js` with Preact+htm from `static/vendor/`, unchanged, licences in `LICENSES.txt`).
   - `serve(flow)` runs the flow in the **main thread**; the server and a watcher run in threads.
@@ -46,6 +51,23 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     `KeyboardInterrupt`), so the Ctrl+C handling saves progress. Work in progress is never cut off.
   - Answers are screen keys, checked against `screen_keys()` (ranges written out). Choosing a
     start-screen option directly (`{"set": [key, index]}`) presses the row's key until it shows.
+    Key badges only for Enter and the numbers; other keys are a bold letter in the label (`Label`)
+    and a hover title. A menu item with the primary's label is not shown twice.
+  - Files are only reachable by the random ids `WebFront.file_id` hands out: previews, `/api/media`
+    (videos, Range), `/api/file` (opening one in a tab: the original where the browser can show it,
+    else rendered at full size; own CSP), `/api/reveal` (`viewer.show_in_folder`: FileManager1
+    ShowItems over gdbus, else xdg-open of the folder). A file's `file` id is only given while it is
+    on disk; the log's tables of a real run give it to the kept file only (`dry` in the show call).
+  - Each grouped image carries `beaten`: the `image_utils.deciding_criterion` (the first part of
+    `score_image` in which the kept file ranks above it), for the "why" line and bold cells.
+  - Pictures (and the remux player) are off until switched on; then on for the page's lifetime.
+  - Forms (start screen, folder tree) stay shown, dimmed, after a change (and the yes/no question it
+    leads to) until their next state arrives, so nothing flickers while files are counted.
+  - media-optimizer's page: the tool event with `handoff` gets the `url` read from its output
+    (`_HANDOFF`, only 127.0.0.1/localhost); the page goes there once (sessionStorage), and while it is
+    away (`WebFront.away`, plus `HANDOFF_GRACE` after the child ended) keepbest's page doesn't count
+    as gone.
+  - Ctrl+C/SIGTERM in the terminal ends keepbest after `INTERRUPT_GRACE`, not when the tab closes.
   - Screens without their own view on the page get a generic one (table plus key buttons).
   - Group view: previews come from `image_utils.preview_jpeg` (the comparison's `_normalize`,
     so upright and 16-bit/CMYK/JXL safe), only by the random ids `WebFront.preview_id` hands out.
@@ -60,7 +82,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 287 tests, ~45 s (see below for which Python)
+python3 -m pytest                 # 303 tests, ~95 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -87,18 +109,22 @@ Both paths change when the Python version changes.
 
 - `tests/conftest.py`: autouse isolation (own HOME, XDG dirs, trash and `KEEPBEST_STATE_DIR`),
   `library` (build picture folders: `photo`, `variant`, `copy_of`), `run_cli(folder, *args,
-  keys=[...])` (runs the real CLI, typed answers via stdin; adds `--terminal` unless the test
-  passes `--web`/`--terminal`, since the page is the default), `summary(result)` (parses the final
-  numbers), `fake_command` (stand-in programs on PATH; `.calls(count=…)` waits for background calls),
+  keys=[...])` (runs the real CLI with `--no-browser` and answers its page over the API, one key per
+  question: a screen key, "" for Enter, y/n for yes/no, a path; a key the question doesn't offer is
+  recorded in `.typos` and skipped; keys running out close the page, which stops at the question
+  with 130 as end of input did. The result has the terminal log as `stdout` and `.questions`/
+  `.events` from the page), `asked(result, "StartScreen")` (that screen's question data),
+  `shown(result)` (log plus every text the page asked with), `Page` (the API as the page's script
+  uses it), `summary(result)` (parses the final numbers from the log), `fake_command` (stand-in programs on PATH; `.calls(count=…)` waits for background calls),
   `make_video` / `remux` (ffmpeg).
 - `tests/pictures.py`: deterministic photo-like pictures. Calibrated: re-encodes/resizes score ≤ 16,
   edits (`with_text`, `with_patch`, `brighter`) ≥ 32, limit 20.
 - `KEEPBEST_STATE_DIR` (old: `IMG_DEDUPE_STATE_DIR`) redirects log and sessions (otherwise a
   checkout writes them into the project folder). Never let tests touch the real project folder, config or trash.
 - Every fix gets a test that fails without the fix. Prefer reproducing a reported bug first.
-- **Checking that the terminal output didn't change** (refactoring):
-  - `KEEPBEST_RECORD=DIR` makes `run_cli` save every run's output there (paths and saved-session
-    times normalised); add `KEEPBEST_RECORD_COLOR=always` for a pass with colours.
+- **Checking that the terminal output (log, `--auto`) didn't change** (refactoring):
+  - `KEEPBEST_RECORD=DIR` makes `run_cli` save every run's output there (paths, the page's address
+    and saved-session times normalised); add `KEEPBEST_RECORD_COLOR=always` for a pass with colours.
   - Record the suite on the old code (a `git worktree` of the last commit, with the current
     `conftest.py` copied in) and on the new one, then `diff -r` the folders.
   - The colour pass fails about 10 tests that read plain text; that's expected, and both sides
@@ -107,7 +133,9 @@ Both paths change when the Python version changes.
 - **The page** is covered by API tests (`tests/test_web.py`, server in the test process, no
   browser). Clicking through it is a manual check: Playwright in a venv outside the repo,
   `chromium.launch(channel="chrome")` (Chrome is installed), keepbest started with the system
-  `python3` and `--web --no-browser`, generated pictures only. The page's CSP blocks
+  `python3` and `--no-browser`, generated pictures only (the last script:
+  `scratchpad/click21.py` of the 2026-10-22 session: tree, pictures switch, Open/Show in folder
+  with a fake `gdbus`, one Quit, the hand-off to a media-optimizer 2.4 checkout via a wrapper). The page's CSP blocks
   `wait_for_function`; wait with locators.
 
 ## Behaviour that must not regress (safety rules)
@@ -250,7 +278,7 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed 2026-10-22; the default since 2.0.0)
+## Web page (agreed 2026-10-22; the default since 2.0.0, the only way to ask since 2.1.0)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
@@ -259,13 +287,14 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
   media-optimizer on the page with `-y` and an output box (`handoff.run(output=…)`; the pipe is
   not read to its end once the child exited, so a stray grandchild can't block). The page is the
   default; `--terminal` keeps the screens, and the terminal output never changed.
+- Done for 2.1.0 (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
+  hand-off to media-optimizer 2.4 (plan step 6), pictures off by default, Open/Show in folder,
+  the "why" line, key badges only for Enter and numbers, the collapsed folder tree, one Quit.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
   `signal.signal()` and interrupt handling need the main thread. Tests that reach `handoff` on the
   page go through the real CLI (`cli_page` in `tests/test_web.py`).
-- **Still open (plan steps 6–7):** once media-optimizer has its page (behind `--web`, brief:
-  `~/Software/Claude/Projects/media-optimizer/WEB_PAGE_BRIEF.md`), hand the tab over like
-  cdimport → lyrembed (`--web --no-browser --return-url … --return-name keepbest`, detected via
-  `--help`), keeping the `-y` box for older versions. Then picktag may drop its terminal window.
+- **Still open (plan step 7):** picktag may drop its terminal window (it only waits for the exit
+  code; keepbest's terminal now only shows the address and a log).
 
 ## Open tasks (target: release 2.1.0)
 

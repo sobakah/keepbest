@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from conftest import make_video, remux, requires_ffmpeg, summary
+from conftest import asked, make_video, remux, requires_ffmpeg, summary
 
 pytestmark = requires_ffmpeg
 WIDE = {"COLUMNS": "160"}      # room for the optional Streams column
@@ -62,7 +62,8 @@ def test_when_tracks_differ_the_user_is_asked(library, run_cli):
     clip = make_video(library / "clip.mp4", codec="mpeg4")
     remux(clip, library / "silent.mkv", "-an")
     result = run_cli(library.path, "--dry-run", keys=["", "s", "q"])     # start, skip the question, quit
-    assert "TRACKS DIFFER" in result.stdout and "Skipped - all files kept." in result.stdout
+    assert [q["group"]["tracks"] for q in asked(result, "RemuxScreen")] == ["covered"]
+    assert "Skipped - all files kept." in result.stdout
 
 
 def test_without_ffmpeg_remuxes_are_skipped_with_a_notice(library, run_cli, tmp_path):
@@ -104,7 +105,7 @@ def test_other_sound_is_asked_about(library, run_cli):
     clip = make_video(library / "clip.mp4", codec="mpeg4")
     with_other_sound(clip, library / "dub.mkv")
     result = run_cli(library.path, "--dry-run", keys=["", "s", "q"])     # start, skip the question, quit
-    assert "TRACKS DIFFER" in result.stdout and "No file contains all tracks" in result.stdout
+    assert [q["group"]["tracks"] for q in asked(result, "RemuxScreen")] == ["differ"]   # no file has them all
 
 
 def test_a_copy_with_extra_tracks_is_kept_automatically(library, run_cli, tmp_path):
@@ -168,7 +169,7 @@ def test_tracks_in_another_order_are_left_alone_without_questions(reordered, run
 
 def test_tracks_in_another_order_are_asked_about(reordered, run_cli):
     result = run_cli(reordered.path, "--dry-run", keys=["", "s", ""])   # start, skip, quit
-    assert "TRACK ORDER" in result.stdout and "in another order" in result.stdout
+    assert [q["group"]["tracks"] for q in asked(result, "RemuxScreen")] == ["reordered"]
     assert summary(result)["skipped"] == 1
 
 

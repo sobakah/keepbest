@@ -4,9 +4,10 @@ The flow keeps the main thread: handoff.py and the interrupt handling set
 signal handlers, which Python allows only there. The HTTP server and a watcher
 run in threads. WebFront collects what the flow shows and holds the question
 it waits on; the page asks for what is new and sends the key of the button
-pressed, the same key a user types in the terminal. Only this machine can
-connect, and only with the token from the printed address, which the first
-visit turns into a cookie (as in lyrembed and cdimport).
+pressed (its keyboard shortcuts are the same keys). The terminal keepbest was
+started in keeps a log of the messages. Only this machine can connect, and
+only with the token from the printed address, which the first visit turns
+into a cookie (as in lyrembed and cdimport).
 
 A page that is closed stops the flow at its next question, as Ctrl+C would
 there; work in progress (a scan, a deletion) is never cut off.
@@ -36,7 +37,7 @@ from .config import NAME
 from .core_logic import format_size
 from .front import (AfterDryRunScreen, DecisionScreen, EndScreen, FolderRow, FolderScreen, Front, HandledScreen,
                     Note, OverviewScreen, RemuxScreen, SettingRow, StartScreen)
-from .image_utils import IMAGE_EXTENSIONS, preview_jpeg
+from .image_utils import IMAGE_EXTENSIONS, deciding_criterion, preview_jpeg
 from .video import VIDEO_EXTENSIONS
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ _CONTENT_TYPES = {
 }
 _CSP = ("default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; "
         "frame-ancestors 'none'; form-action 'none'")
+# A picture opened in a tab of its own: the browser's viewer styles it inline, nothing runs.
+_FILE_CSP = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"
 # Cookies belong to a host, not a port: two pages on 127.0.0.1 (a second
 # keepbest, or another program's page) would overwrite each other's token
 # under one name. The port goes into the name.
@@ -60,6 +63,8 @@ COOKIE = f"{NAME}_token"
 # too, then pings again within the grace.
 HEARTBEAT_TIMEOUT = 90.0
 CLOSE_GRACE = 10.0
+# Stopped from the terminal (Ctrl+C, SIGTERM): how long the page gets to see that.
+INTERRUPT_GRACE = 2.0
 MAX_BODY = 64 * 1024
 MAX_FOLDER_ENTRIES = 500
 # How often a progress counter is sent on to the page at most.
@@ -72,6 +77,15 @@ PREVIEW_CACHE = 40
 # Lines of a tool's output the page keeps.
 TOOL_LINES = 500
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# media-optimizer prints its page's address like this (its web.ADDRESS_LINE), as lyrembed does for cdimport.
+_HANDOFF = re.compile(r"is running at (http://(?:127\.0\.0\.1|localhost):\d+/\?token=[A-Za-z0-9_-]+)")
+# The tab is on media-optimizer's page while it runs; coming back takes a moment.
+HANDOFF_GRACE = 30.0
+# Pictures the browser shows as they are; other formats (JXL, TIFF, ...) are rendered.
+_BROWSER_IMAGES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
+                   ".webp": "image/webp", ".avif": "image/avif", ".bmp": "image/bmp"}
+# Longest side of a rendered picture opened on its own: in practice the full size.
+FULL_SIZE = 16384
 
 
 def cookie_name(port: int) -> str:
@@ -120,15 +134,29 @@ def _lossless(meta: dict) -> str:
     return {True: "lossless", None: "unknown"}.get(meta.get("lossless"), "lossy")
 
 
+def _present(file_id, path) -> str | None:
+    """*path*'s id for opening it or showing it in its folder, while it is on disk
+    (after a real run, only the kept file of a group is)."""
+    return file_id(path) if file_id and Path(path).is_file() else None
+
+
 def visual_group(group, rel, preview=None) -> dict:
-    """A visual group for the page; *preview* gives a picture's preview id."""
+    """A visual group for the page; *preview* gives a picture's id (previews,
+    opening it). Each image that ranks below the kept one says in which
+    criterion of score_image ("beaten"), so the page can show why."""
     worst = max(range(len(group.diffs)), key=lambda i: -1 if group.diffs[i] is None else group.diffs[i])
+    kept = group.kept if group.status == "done" and group.kept is not None else 0
+    keeper = group.images[kept] if kept < len(group.images) else None
     return {
         "images": [{"name": rel(meta["path"]), "format": meta.get("format"), "type": _lossless(meta),
                     "width": meta.get("width"), "height": meta.get("height"), "size": format_size(meta["size"]),
                     "bpp": round(meta["bpp"], 2) if meta.get("bpp") is not None else None, "diff": diff,
-                    "spot": meta.get("spot"), "preview": preview(meta["path"]) if preview else None}
-                   for meta, diff in zip(group.images, group.diffs)],
+                    "spot": meta.get("spot"), "preview": preview(meta["path"]) if preview else None,
+                    "file": _present(preview, meta["path"]),
+                    "beaten": deciding_criterion(keeper, meta) if keeper is not None and i != kept else None,
+                    "jxlPreferred": meta.get("format") == "JXL" and bool(meta.get("lossless_rank"))
+                                    and meta.get("lossless") is not True}
+                   for i, (meta, diff) in enumerate(zip(group.images, group.diffs))],
         # where the group differs most: the spot of its least similar image
         "spot": group.images[worst].get("spot"),
         "worst": group.worst, "limit": group.limit, "borderline": group.borderline,
@@ -141,7 +169,8 @@ def exact_group(group, rel, file_id=None) -> dict:
     """An exact or remux group for the page; *file_id* gives a video's id for the player."""
     return {"kind": group.kind, "tracks": group.tracks, "status": group.status,
             "files": [{"name": rel(f["path"]), "size": format_size(f["size"]), "streams": f.get("streams", ""),
-                       "media": file_id(f["path"]) if file_id else None, "type": _video_type(f["path"])}
+                       "media": file_id(f["path"]) if file_id else None, "type": _video_type(f["path"]),
+                       "file": _present(file_id, f["path"])}
                       for f in group.files]}
 
 
@@ -199,6 +228,7 @@ def screen_data(screen, file_id=None) -> dict:
         for n, g in enumerate(screen.groups, 1):
             keeper = g.images[g.kept if g.kept is not None else 0]["path"]
             groups.append({"key": str(n), "keeper": screen.rel(keeper), "preview": file_id(keeper) if file_id else None,
+                           "file": _present(file_id, keeper),
                            "status": g.status, "borderline": g.borderline, "worst": g.worst, "limit": g.limit,
                            "count": len(g.images)})
         data.update(current=screen.current, groups=groups)
@@ -211,8 +241,18 @@ def screen_data(screen, file_id=None) -> dict:
     return data
 
 
-def message_data(kind: str, data: dict) -> dict:
-    """A message as the page gets it."""
+def _only_kept(rows: list[dict], keep_index, dry: bool) -> list[dict]:
+    """A real run removes the other files right after its table is shown: only
+    the kept one keeps its buttons (open it, show it in its folder)."""
+    if not dry and keep_index is not None:
+        for i, row in enumerate(rows):
+            if i != keep_index:
+                row["file"] = None
+    return rows
+
+
+def message_data(kind: str, data: dict, file_id=None) -> dict:
+    """A message as the page gets it; *file_id* gives the ids of files it may open."""
     if "text" in data:
         return {"text": data["text"].strip("\n")}
     if kind == "outcome":
@@ -223,14 +263,17 @@ def message_data(kind: str, data: dict) -> dict:
                 "tracks": group.tracks if data.get("tracks") else "", "count": len(group.files),
                 "size": format_size(group.files[0]["size"])}
     if kind == "exact_table":
-        return {"group": exact_group(data["group"], data["rel"]), "keepIndex": data.get("keep_index", 0)}
+        group = exact_group(data["group"], data["rel"], file_id)
+        _only_kept(group["files"], data.get("keep_index", 0), data.get("dry", False))
+        return {"group": group, "keepIndex": data.get("keep_index", 0)}
     if kind == "group_line":
         group = data["group"]
         return {"position": data["position"], "worst": group.worst, "limit": group.limit,
                 "borderline": group.borderline}
     if kind == "group_table":
-        return {"group": visual_group(data["group"], data["rel"]), "keepIndex": data.get("keep_index", 0),
-                "done": data.get("done", False)}
+        group = visual_group(data["group"], data["rel"], file_id)
+        _only_kept(group["images"], data.get("keep_index", 0), data.get("dry", False))
+        return {"group": group, "keepIndex": data.get("keep_index", 0), "done": data.get("done", False)}
     if kind == "stage3_header":
         return {"limit": data["limit"], "preset": data["preset"], "confirm": data["confirm_mode"],
                 "mode": data["delete_mode"]}
@@ -291,7 +334,9 @@ class WebFront(Front):
     newer than the last one it saw.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, echo: bool = True) -> None:
+        self.echo = echo                # messages also go to the terminal, as a log
+        self.page_url = ""              # set by serve(): where media-optimizer's page leads back to
         self._cond = threading.Condition()
         self._rev = 0
         self.events: list[dict] = []
@@ -309,6 +354,7 @@ class WebFront(Front):
         # reads, so the page can never make keepbest open anything else.
         self._tool: dict | None = None  # the running tool's output event (media-optimizer)
         self._tool_sent = 0.0
+        self._handoff_end: float | None = None
         self._previews: dict[str, Path] = {}
         self._file_ids: dict[Path, str] = {}
         self._preview_cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
@@ -332,11 +378,14 @@ class WebFront(Front):
             self._bump(event)
 
     def show(self, kind: str, data: dict) -> None:
+        if self.echo:
+            self._log(kind, data)
         if kind in ("blank", "goodbye"):
             return
         if kind == "tool_start":
             self._tool = self._add({"kind": "tool", "name": data["name"], "command": data["command"],
-                                    "lines": [], "running": True, "code": None})
+                                    "lines": [], "running": True, "code": None,
+                                    "handoff": data.get("handoff", False), "url": None})
             self._tool_sent = 0.0
             return
         if kind in ("tool_line", "tool_end") and self._tool is not None:
@@ -344,17 +393,41 @@ class WebFront(Front):
             with self._cond:
                 if kind == "tool_line":
                     # A redrawn progress line keeps only its newest state.
-                    tool["lines"].append(_ANSI.sub("", data["text"]).split("\r")[-1].rstrip())
+                    line = _ANSI.sub("", data["text"]).split("\r")[-1].rstrip()
+                    tool["lines"].append(line)
                     del tool["lines"][:-TOOL_LINES]
+                    found = _HANDOFF.search(line) if tool["handoff"] and not tool["url"] else None
+                    if found:  # the page moves its tab there; that page leads back
+                        tool["url"] = found.group(1)
+                        self._bump(tool)
+                        return
                 else:
                     tool.update(running=False, code=data["code"])
+                    if tool["handoff"]:
+                        self._handoff_end = time.monotonic()
                     self._tool = None
                 now = time.monotonic()
                 if kind == "tool_end" or now - self._tool_sent >= PROGRESS_INTERVAL:
                     self._tool_sent = now
                     self._bump(tool)
             return
-        self._add({"kind": kind, **message_data(kind, data)})
+        self._add({"kind": kind, **message_data(kind, data, self.file_id)})
+
+    @staticmethod
+    def _log(kind: str, data: dict) -> None:
+        from .terminal import TERMINAL
+        try:
+            TERMINAL.show(kind, data)
+        except OSError:  # no terminal to write to (started from the app menu)
+            pass
+
+    @property
+    def away(self) -> bool:
+        """The tab is on media-optimizer's page, or only just came back from it."""
+        with self._cond:
+            if self._tool is not None and self._tool["handoff"]:
+                return True
+            return self._handoff_end is not None and time.monotonic() - self._handoff_end < HANDOFF_GRACE
 
     def progress(self, label: str, total: int):
         return _Counter(self, label, total)
@@ -399,7 +472,7 @@ class WebFront(Front):
             return self._file_ids[path]
 
     def media(self, file_id: str) -> Path:
-        """The video behind *file_id*, for the player."""
+        """The file behind *file_id*: a video for the player, a file to open or show."""
         with self._cond:
             path = self._previews.get(file_id)
         if path is None:
@@ -407,6 +480,18 @@ class WebFront(Front):
         if not path.is_file():
             raise ApiError(404, "The file is no longer there.")
         return path
+
+    def original(self, file_id: str) -> tuple[bytes, str]:
+        """A picture to open on its own: as it is where the browser can show it,
+        else rendered at full size."""
+        path = self.media(file_id)
+        content_type = _BROWSER_IMAGES.get(path.suffix.lower())
+        if content_type is not None:
+            return path.read_bytes(), content_type
+        try:
+            return preview_jpeg(path, FULL_SIZE, quality=92), "image/jpeg"
+        except Exception as exc:  # whatever Pillow raises for a file it can't read
+            raise ApiError(415, f"This file can't be shown: {exc}") from exc
 
     def preview(self, image_id: str, size: str) -> bytes:
         """The preview behind *image_id* as JPEG, rendered when first asked for."""
@@ -686,6 +771,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if not self._authorized():
                 raise ApiError(403, f"Open {NAME} through the address it printed in the terminal.")
+            if method == "GET" and url.path == "/favicon.ico":  # asked for by a tab with a picture
+                self._static("icon.svg")
+                return
             if method == "GET" and url.path.startswith("/static/"):
                 self._static(url.path[len("/static/"):])
                 return
@@ -698,6 +786,16 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if method == "GET" and url.path.startswith("/api/media/"):
                 self._media(self.server.web.media(url.path[len("/api/media/"):]))
+                return
+            if method == "GET" and url.path.startswith("/api/file/"):
+                file_id = url.path[len("/api/file/"):]
+                path = self.server.web.media(file_id)
+                if path.suffix.lower() in VIDEO_EXTENSIONS:
+                    self._media(path)
+                    return
+                data, content_type = self.server.web.original(file_id)
+                self._send(200, data, content_type, {"Cache-Control": "private, max-age=600",
+                                                     "Content-Security-Policy": _FILE_CSP})
                 return
             body = self._body(json_required=url.path != "/api/closing") if method == "POST" else {}
             self.server.contact()
@@ -787,6 +885,15 @@ class _Handler(BaseHTTPRequestHandler):
             return {"ok": True}
         if method == "GET" and path == "/api/folders":
             return list_folders((query.get("path") or [""])[0])
+        if method == "POST" and path == "/api/reveal":
+            from .viewer import show_in_folder
+            file_id = body.get("id")
+            if not isinstance(file_id, str):
+                raise ApiError(400, "Which file?")
+            how = show_in_folder(web.media(file_id))
+            if how is None:
+                raise ApiError(500, "No file manager could be started.")
+            return {"how": how}
         if method == "POST" and path == "/api/stop-tool":
             from . import handoff
             return {"stopped": handoff.interrupt()}
@@ -810,33 +917,39 @@ def _exit_code(exc: SystemExit) -> int:
     return exc.code if isinstance(exc.code, int) else 1
 
 
-def serve(flow, open_browser: bool = True, port: int = 0, announce=_say) -> int:
+def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: bool = True) -> int:
     """Run *flow* (no arguments, returns an exit code) with the page as its
-    front end, in this thread; returns its exit code."""
+    front end, in this thread; returns its exit code. With *echo* the
+    terminal gets a log of the messages."""
     from . import running
 
     token = secrets.token_urlsafe(24)
-    web = WebFront()
+    web = WebFront(echo=echo)
     server = _Server(web, token, port)
     url = f"http://127.0.0.1:{server.port}/?token={token}"
+    web.page_url = f"http://127.0.0.1:{server.port}/"  # the cookie is set by then
     running.set_address(url)
     threading.Thread(target=server.serve_forever, name=f"{NAME}-web", daemon=True).start()
     announce(f"{NAME} is running at {url}")
     opened = open_browser and webbrowser.open(url)
     if not opened:
         announce("Open that address in your browser.")
+        if os.environ.get("SSH_CONNECTION"):
+            announce(f"Over SSH, forward the port first: ssh -L {server.port}:127.0.0.1:{server.port} <this computer>")
     announce("Close the page when done, or press Ctrl+C here.")
     sys.stdout.flush()
 
     def watch() -> None:
         while not server.stop.wait(1.0):
-            if server.page_gone() and not web.gone:
+            # While the tab shows media-optimizer's page, keepbest's isn't gone.
+            if server.page_gone() and not web.gone and not web.away:
                 web.page_gone()
         if web.finished is None:  # closed while the flow still runs: nobody answers any more
             web.page_gone()
 
     threading.Thread(target=watch, name=f"{NAME}-watch", daemon=True).start()
     code = 130
+    interrupted = False
     try:
         while not server.visited.wait(0.5):
             if server.stop.is_set():
@@ -849,8 +962,8 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say) -> int:
         except Cancelled:
             code = 130
             announce("The page was closed: stopped at the open question. Saved progress is kept.")
-        except KeyboardInterrupt:
-            code = 130
+        except KeyboardInterrupt:  # Ctrl+C or a SIGTERM here, not on the page
+            code, interrupted = 130, True
             announce("\nProgram aborted by user.")
         except Exception as exc:  # shown on the page and here, not lost
             code = 1
@@ -859,9 +972,11 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say) -> int:
         finally:
             front_mod.use(None)
             web.finish(code)
-        # Let the page show the end until it is closed or gone.
-        while not server.stop.wait(1.0):
-            if web.gone or server.page_gone():
+        # Let the page show the end until it is closed or gone; stopped from
+        # the terminal, only for a moment, so the page still learns of it.
+        end = time.monotonic() + INTERRUPT_GRACE if interrupted else None
+        while not server.stop.wait(0.2 if interrupted else 1.0):
+            if web.gone or (server.page_gone() and not web.away) or (end is not None and time.monotonic() > end):
                 break
     except KeyboardInterrupt:
         pass

@@ -263,3 +263,34 @@ tr.kept td.file { color: var(--ink); font-weight: 600; }
 .tool-body { margin: 0; padding: 12px 14px; max-height: 420px; overflow: auto; background: #0A0B0D; color: var(--soft);
              border: 1px solid var(--border); border-radius: 10px; font: 13px/1.5 var(--mono); white-space: pre-wrap;
              overflow-wrap: anywhere; }
+.grid > li { display: flex; flex-direction: column; gap: 6px; }
+.grid.list { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.grid.list .tile-button { padding-top: 10px; }
+.tile-actions { padding: 0 2px; }
+
+/* keys: a bold letter in a label instead of a badge (Enter and numbers keep theirs) */
+.hotkey { font-weight: 800; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* why a file is kept: its deciding cells and a sentence */
+td.win { font-weight: 700; color: var(--keep-ink); }
+.why { margin: 0; }
+.why b { color: var(--keep-ink); }
+
+/* a file's buttons (open it, show it in its folder) */
+.file-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.cell-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 190px; }
+.switch-inline { cursor: pointer; }
+.switch-inline input { width: 16px; height: 16px; accent-color: var(--keep); }
+.remux.no-player .remux-files { flex-basis: 100%; }
+
+/* the folder tree: deeper folders open on request */
+.tree-row { display: flex; align-items: center; gap: 2px; }
+.tree-row > label { flex: 1 1 auto; min-width: 0; }
+.twisty { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+          background: none; border: 0; border-radius: 6px; color: var(--soft); cursor: pointer; font-size: 14px; }
+button.twisty:hover { background: var(--raised); }
+
+/* a form shown while its next state is worked out */
+.question { transition: opacity .15s ease; }
+.question.stale { opacity: .7; }

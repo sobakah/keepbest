@@ -10,10 +10,13 @@ The helpers are meant for writing new tests quickly:
         library.copy_of("a.png", "backup/a copy.png")
         result = run_cli(library.path, "-r", "--auto", "--dry-run")
         assert summary(result)["exact"] == 1
+
+Without --auto, run_cli answers keepbest's page with the keys given.
 """
 
 from __future__ import annotations
 
+import http.cookiejar
 import json
 import os
 import re
@@ -21,7 +24,10 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -103,39 +109,193 @@ def config_file(tmp_path):
     return write
 
 
+class Page:
+    """What the page's script does: open the printed address, then use the API."""
+
+    def __init__(self, url):
+        self.base = url.split("/?")[0]
+        self.port = int(self.base.rsplit(":", 1)[1])
+        self.jar = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
+        self.opener.open(url).read()
+
+    def get(self, path):
+        return json.loads(self.opener.open(self.base + path).read())
+
+    def post(self, path, body=None, headers=None):
+        data = json.dumps(body if body is not None else {}).encode()
+        request = urllib.request.Request(self.base + path, data, {
+            "Content-Type": "application/json", "Origin": self.base, **(headers or {})})
+        return json.loads(self.opener.open(request).read())
+
+    def question(self, after=0, timeout=30):
+        """The next open question with an id above *after* (None once finished)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            state = self.get("/api/state")
+            q = state["question"]
+            if q and q["id"] > after:
+                return q
+            if state["finished"] is not None:
+                return None
+            time.sleep(0.05)
+        raise AssertionError("no question came")
+
+    def answer(self, q, value):
+        self.post("/api/answer", {"id": q["id"], "value": value})
+
+    def walk(self, *answers):
+        """Answer the next questions in turn; returns them."""
+        asked, last = [], 0
+        for value in answers:
+            q = self.question(last)
+            assert q is not None, f"finished before {value!r}"
+            asked.append(q)
+            self.answer(q, value)
+            last = q["id"]
+        return asked
+
+    def events(self, kind=None):
+        return [e for e in self.get("/api/state")["events"] if kind is None or e["kind"] == kind]
+
+
+ADDRESS = re.compile(r"keepbest is running at (http://127\.0\.0\.1:\d+/\?token=[\w-]+)")
+
+
+def _typed(question: dict, key: str):
+    """A key as typed in the terminal before 2.1.0, as the page's answer to *question*;
+    None when the page has no such answer (a typo)."""
+    if question["kind"] == "confirm":
+        key = key.strip().lower()
+        if key == "":
+            return question["default"]
+        return {"y": True, "yes": True, "n": False, "no": False}.get(key)
+    if question["kind"] == "path":
+        return key
+    key = key.strip().lower()
+    return key if key in question["keys"] else None
+
+
+def drive(page: Page, keys, proc) -> tuple[list, list, list]:
+    """Answer keepbest's questions on its page with *keys*, one per question, as
+    a user clicks through it. A key the question doesn't offer (a typo) is
+    skipped, as the page has no button for it. When the keys run out with a
+    question open, the page is closed, which stops the flow there (like the
+    end of input in the terminal before). Returns (questions asked, typos, events)."""
+    keys, asked, typos, events = list(keys), [], [], {}
+    answered = set()
+    rev = 0
+    while proc.poll() is None:
+        try:
+            state = page.get(f"/api/state?since={rev}")
+        except (urllib.error.URLError, ConnectionError):
+            break                                   # it has just ended
+        rev = state["rev"]
+        for event in state["events"]:
+            events[event["id"]] = event
+        q = state["question"]
+        if q is None:
+            if state["finished"] is not None:
+                page.post("/api/close")
+                break
+            continue
+        if q["id"] in answered:
+            continue
+        value = None
+        while value is None and keys:
+            key = keys.pop(0)
+            value = _typed(q, key)
+            if value is None:
+                typos.append((q, key))
+        if value is None:                           # no keys left: the page goes away
+            page.post("/api/close")
+            break
+        asked.append(q)
+        answered.add(q["id"])
+        page.answer(q, value)
+    return asked, typos, [events[i] for i in sorted(events)]
+
+
 @pytest.fixture
 def run_cli(config_file, request):
-    """Run keepbest as a user would: run_cli(folder, "--auto", keys=["", "q"]).
+    """Run keepbest as a user would: run_cli(folder, "-r", keys=["", "q"]).
 
-    *keys* are typed answers, one per prompt (use "" for Enter). The program
-    always gets the test's own config file, so no real config is read.
+    Without --auto keepbest shows its page; *keys* answer its questions in turn
+    (see drive(): the key of a button, "" for Enter, y/n for yes/no questions,
+    a path for the folder question). The program always gets the test's own
+    config file, so no real config is read. The result has the terminal's
+    output (the run's log) and .questions, .typos and .events from the page.
 
-    KEEPBEST_RECORD=DIR saves every run's output there (KEEPBEST_RECORD_COLOR=always
-    with colours), so two versions of the code can be compared byte for byte:
-    run the suite with each and diff the folders.
+    KEEPBEST_RECORD=DIR saves every run's terminal output there
+    (KEEPBEST_RECORD_COLOR=always with colours), so two versions of the code can
+    be compared byte for byte: run the suite with each and diff the folders.
     """
     record = os.environ.get("KEEPBEST_RECORD")
     color = os.environ.get("KEEPBEST_RECORD_COLOR", "never") if record else "never"
     calls = []
 
     def run(*args, keys=(), env=None, timeout=180):
-        # The terminal screens, unless the test asks for the page (the default with a display).
-        where = [] if {"--web", "--terminal"} & set(map(str, args)) else ["--terminal"]
-        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", color, *where,
-                *map(str, args)]
-        stdin = "".join(f"{key}\n" for key in keys)
-        result = subprocess.run(argv, input=stdin, capture_output=True, text=True, cwd=REPO,
-                                env={**os.environ, **(env or {})}, timeout=timeout)
+        args = [str(a) for a in args]
+        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", color, "--no-browser", *args]
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, cwd=REPO, env={**os.environ, **(env or {})})
+        out, err = [], []
+        readers = [threading.Thread(target=lambda s=s, b=b: b.extend(iter(s.readline, "")), daemon=True)
+                   for s, b in ((proc.stdout, out), (proc.stderr, err))]
+        for reader in readers:
+            reader.start()
+        asked, typos, events = [], [], []
+        try:
+            deadline = time.monotonic() + timeout
+            url = None
+            while url is None and proc.poll() is None and time.monotonic() < deadline:
+                found = ADDRESS.search("".join(out[:3]))
+                url = found.group(1) if found else None
+                time.sleep(0.02)
+            if url is not None:
+                asked, typos, events = drive(Page(url), keys, proc)
+            proc.wait(timeout=max(1, deadline - time.monotonic()))
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            for reader in readers:
+                reader.join(timeout=5)
+        result = subprocess.CompletedProcess(argv, proc.returncode, "".join(out), "".join(err))
+        result.questions, result.typos, result.events = asked, typos, events
         if record:
             calls.append(result)
             name = re.sub(r"[^\w.-]+", "_", request.node.nodeid) + f"-{len(calls)}.txt"
             text = f"exit {result.returncode}\n--- stdout\n{result.stdout}--- stderr\n{result.stderr}"
             text = text.replace(str(config_file.path.parent), "<tmp>")
+            text = re.sub(r"http://127\.0\.0\.1:\d+/\?token=[\w-]+", "<address>", text)
             text = re.sub(r"\d\d [A-Z][a-z]{2} \d{4} \d\d:\d\d", "<date>", text)  # saved-session times
             Path(record).mkdir(parents=True, exist_ok=True)
             (Path(record) / name).write_text(text, encoding="utf-8", errors="surrogateescape")
         return result
     return run
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _strings(item)
+
+
+def asked(result, screen: str) -> list[dict]:
+    """The questions of one kind of screen the page asked, as it got them (web.screen_data)."""
+    return [q for q in result.questions if q.get("screen") == screen]
+
+
+def shown(result) -> str:
+    """Everything a run showed as text: the terminal's log, then every text of
+    the questions the page asked (prompts, choices, settings, file names, notes)."""
+    return result.stdout + "\n".join(_strings(result.questions))
 
 
 _SUMMARY_FIELDS = {

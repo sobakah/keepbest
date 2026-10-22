@@ -15,7 +15,7 @@ PROJECT_URL = "https://github.com/sobakah/keepbest"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "delete_mode": "trash",       # 'trash', 'permanent', 'dry_run'
-    "viewer": "auto",             # 'auto', 'identity', 'imagecompare', 'kitty', 'timg'
+    "viewer": "auto",             # 'auto' (the system's viewer), 'identity', 'imagecompare'
     "confirm": "uncertain",       # 'uncertain' (ask for borderline groups), 'always', 'never'
     "strictness": "normal",       # 'strict', 'normal', 'loose' (see STRICTNESS_PRESETS)
     "max_pixel_diff": None,       # number overrides the strictness preset
@@ -25,7 +25,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "hash_size": 8,               # dhash grid; hash has 2*size*size bits (128 by default)
     "hash_max_distance": 28,      # candidate filter only (out of 128 bits); lenient on purpose
     "color": "auto",              # 'auto', 'always', 'never'
-    "browser_page": True,         # show keepbest in the browser; false = the terminal screens
     "include_videos": True,       # also find identical and remuxed copies of videos
     "prefer_jxl": False,          # keep a JPEG XL copy instead of a lossless original (PNG, TIFF, ...)
     "rename_numbered": True,      # strip "(1)" from a kept copy when the group shows it is a copy number
@@ -46,12 +45,16 @@ KNOWN_FORMATS = set(DEFAULT_CONFIG["format_ranks"]) | {"MPO"}
 
 VALID_CHOICES = {
     "delete_mode": ("trash", "permanent", "dry_run"),
-    "viewer": ("auto", "identity", "imagecompare", "kitty", "timg"),
+    "viewer": ("auto", "identity", "imagecompare"),
     "confirm": ("uncertain", "always", "never"),
     "strictness": ("strict", "normal", "loose"),
     "color": ("auto", "always", "never"),
 }
-DEPRECATED_KEYS = {"threshold", "hash_algo"}
+# "browser_page" chose between the page and the terminal screens, which 2.1.0 removed.
+DEPRECATED_KEYS = {"threshold", "hash_algo", "browser_page"}
+# Choices that were removed: the value falls back to the default with this reason.
+REMOVED_CHOICES = {("viewer", "kitty"): "the terminal viewers were removed in 2.1.0",
+                   ("viewer", "timg"): "the terminal viewers were removed in 2.1.0"}
 
 # Numeric settings: (type, minimum, maximum). Invalid values fall back to the default,
 # instead of silently breaking the comparison later on.
@@ -106,6 +109,9 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
             warnings.append(f"'{key}' in {path.name} is no longer used and is ignored (see README).")
         elif key not in DEFAULT_CONFIG:
             warnings.append(f"Unknown key '{key}' in {path.name} ignored.")
+        elif isinstance(value, str) and (key, value) in REMOVED_CHOICES:
+            warnings.append(f"'{key}': {value!r} is no longer available ({REMOVED_CHOICES[key, value]}), "
+                            f"using {DEFAULT_CONFIG[key]!r}.")
         elif key in VALID_CHOICES and value not in VALID_CHOICES[key]:
             warnings.append(f"Invalid value {value!r} for '{key}', using {DEFAULT_CONFIG[key]!r}. "
                             f"Choices: {', '.join(VALID_CHOICES[key])}.")
@@ -113,7 +119,7 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
             kind, low, high = NUMERIC_RANGES[key]
             what = "a whole number" if kind is int else "a number"
             warnings.append(f"'{key}' must be {what} from {low} to {high}, using {DEFAULT_CONFIG[key]!r}.")
-        elif key in ("rename_numbered", "save_sessions", "include_videos", "prefer_jxl", "browser_page") \
+        elif key in ("rename_numbered", "save_sessions", "include_videos", "prefer_jxl") \
                 and not isinstance(value, bool):
             warnings.append(f"'{key}' must be true or false, using {DEFAULT_CONFIG[key]!r}.")
         elif key in ("log_file", "journal_file") and not (value is None or value is False or isinstance(value, str)):

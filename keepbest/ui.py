@@ -1,39 +1,20 @@
-"""Terminal presentation: colours, prompts, menus, tables and progress.
+"""Terminal presentation: colours, tables and progress.
 
 Follows the same conventions as lrckit's ui module: plain ANSI styling via
-StyleUI, banners, [BADGE] tags, grouped key menus with a highlighted primary
-action, transient status lines, and readline-based path completion.
+StyleUI, banners, [BADGE] tags and transient status lines. Since 2.1.0 the
+terminal only shows messages (--auto, startup errors and the log of a run on
+the page); the questions are the page's.
 No third-party dependencies.
 """
 
 from __future__ import annotations
 
-import glob
 import os
 import re
 import shutil
 import sys
 import time
 import unicodedata
-
-# --- readline shim -----------------------------------------------------------
-# The stdlib module is POSIX-only. On Windows we fall back to pyreadline3 and,
-# if that is missing too, to a no-op stub so the program still runs.
-try:  # pragma: no cover - platform dependent
-    import readline as _readline
-except ImportError:  # pragma: no cover
-    try:
-        import pyreadline3 as _readline  # type: ignore[no-redef]
-    except ImportError:
-        _readline = None
-
-HAS_READLINE = _readline is not None
-
-
-def _rl(name: str):
-    """Return a readline callable, or None when unavailable."""
-    return getattr(_readline, name, None) if _readline else None
-
 
 # --- colours -----------------------------------------------------------------
 _ANSI = {
@@ -141,48 +122,6 @@ def terminal_width(default: int = 80) -> int:
         return default
 
 
-def safe_input(prompt: str = "", default_text: str = "") -> str:
-    """input() with optional readline prefill.
-
-    Ctrl+C and end-of-input both surface as KeyboardInterrupt, which the CLI
-    turns into a clean "aborted by user" exit.
-    """
-    set_hook = _rl("set_startup_hook")
-    insert_text = _rl("insert_text")
-    try:
-        if default_text and set_hook and insert_text:
-            set_hook(lambda: insert_text(default_text))
-        elif default_text:
-            # No readline: show the prefill so the user can retype or accept it.
-            print(f"{StyleUI.GRAY}(current: {default_text}){StyleUI.RESET}")
-        return input(prompt)
-    except EOFError:
-        raise KeyboardInterrupt from None
-    finally:
-        if set_hook:
-            set_hook(None)
-
-
-def confirm(prompt: str, default: bool = False) -> bool:
-    """Ask a yes/no question; Enter takes the default, anything else is asked again,
-    so a typo never answers a question like "Save progress?" with no."""
-    suffix = "[Y/n]" if default else "[y/N]"
-    while True:
-        answer = safe_input(f"{prompt} {suffix}: ").strip().lower()
-        if not answer:
-            return default
-        if answer in ("y", "yes", "j", "ja"):
-            return True
-        if answer in ("n", "no", "nein"):
-            return False
-        warn("Please answer y or n.")
-
-
-def exit_script(code: int = 0) -> None:
-    print(f"\n{StyleUI.YELLOW}Program terminated.{StyleUI.RESET}")
-    sys.exit(code)
-
-
 # --- width-aware text --------------------------------------------------------
 def display_width(text: str) -> int:
     """Terminal columns taken by *text*: ANSI codes are free, CJK is double."""
@@ -218,18 +157,6 @@ def truncate(text: str, width: int, keep_end: bool = False) -> str:
 def pad(text: str, width: int, align: str = "left") -> str:
     gap = " " * max(0, width - display_width(text))
     return gap + text if align == "right" else text + gap
-
-
-def preview_text(text: str, max_lines: int = 16) -> None:
-    lines = text.splitlines()
-    body_width = max(20, terminal_width() - 4)
-
-    print(f"\n{StyleUI.GRAY}┌─── PREVIEW ({min(len(lines), max_lines)}/{len(lines)} lines) ───{StyleUI.RESET}")
-    for line in lines[:max_lines]:
-        print(f"{StyleUI.GRAY}│{StyleUI.RESET} {truncate(line, body_width)}")
-    if len(lines) > max_lines:
-        print(f"{StyleUI.GRAY}│ ... ({len(lines) - max_lines} more lines){StyleUI.RESET}")
-    print(f"{StyleUI.GRAY}└{'─' * 42}{StyleUI.RESET}")
 
 
 # --- tables ------------------------------------------------------------------
@@ -363,92 +290,3 @@ class progress:
         if self._enabled:
             print("\r" + " " * (self._last_width + 2) + "\r", end="", flush=True)
         return False
-
-
-# --- menus -------------------------------------------------------------------
-def print_menu(groups: list[tuple[str, list[tuple[str, str]]]], lead: str | None = None) -> None:
-    """Render keyboard options as labelled groups in aligned columns.
-
-    *groups* is a list of (group title, [(key, label), ...]). Column count and
-    width adapt to the terminal, so a long option list stays readable instead
-    of running into one wall of text.
-    """
-    entries = [entry for _, items in groups for entry in items]
-    if not entries:
-        return
-
-    key_width = max(len(key) for key, _ in entries)
-    label_width = max(len(label) for _, label in entries)
-    cell_width = key_width + label_width + 4  # "[k] label"
-    gap = 3
-    usable = max(20, terminal_width() - 2)
-    columns = max(1, (usable + gap) // (cell_width + gap))
-
-    if lead:
-        print(f"\n{lead}")
-    else:
-        print()
-
-    for title, items in groups:
-        if title:
-            print(f"{StyleUI.GRAY}{title}{StyleUI.RESET}")
-        for start in range(0, len(items), columns):
-            row = items[start:start + columns]
-            cells = []
-            for position, (key, label) in enumerate(row):
-                colored = f"[{_key_color(key)}{key}{StyleUI.RESET}]{' ' * (key_width - len(key))} {label}"
-                padding = cell_width - (key_width + len(label) + 4)
-                last = position == len(row) - 1
-                cells.append(colored + ("" if last else " " * (padding + gap)))
-            print("  " + "".join(cells).rstrip())
-
-
-_DESTRUCTIVE_KEYS = {"q", "d", "k"}
-_NAVIGATION_KEYS = {"p", "s", "t", "b", "c"}
-
-
-def _key_color(key: str) -> str:
-    lowered = key.lower()
-    if lowered in _DESTRUCTIVE_KEYS:
-        return StyleUI.RED
-    if lowered in _NAVIGATION_KEYS:
-        return StyleUI.YELLOW
-    return StyleUI.GREEN
-
-
-def print_primary_action(key: str, description: str) -> None:
-    """Highlight the action Enter would take, above the regular menu."""
-    print(f"\n  [{StyleUI.CYAN}{StyleUI.BOLD}{key}{StyleUI.RESET}] {StyleUI.BOLD}{description}{StyleUI.RESET}")
-
-
-# --- path completion ---------------------------------------------------------
-_completions: list[str] = []
-
-
-def complete_path(text: str, state: int):
-    """Readline completer. The folder is listed once per Tab (state 0); brackets
-    and other glob characters in names are taken literally."""
-    global _completions
-    if state == 0:
-        quote = text[:1] if text[:1] in ("'", '"') else ""  # a pasted or typed opening quote stays
-        expanded = os.path.expanduser(text[len(quote):])
-        matches = sorted(glob.glob(glob.escape(expanded) + "*"))
-        _completions = [quote + m + (os.sep if os.path.isdir(m) else " ") for m in matches]
-    return _completions[state] if state < len(_completions) else None
-
-
-def enable_path_completion() -> None:
-    set_delims = _rl("set_completer_delims")
-    parse_bind = _rl("parse_and_bind")
-    set_completer = _rl("set_completer")
-    if not (set_delims and parse_bind and set_completer):
-        return
-    set_delims("\t\n")  # the whole answer is one path, spaces included
-    parse_bind("tab: complete")
-    set_completer(complete_path)
-
-
-def disable_path_completion() -> None:
-    set_completer = _rl("set_completer")
-    if set_completer:
-        set_completer(None)

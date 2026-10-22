@@ -6,7 +6,7 @@ Finds duplicate images and videos in a folder and removes the redundant copies, 
 - **Remuxed videos:** the same video in another container, e.g. `clip.mp4`, `clip.mkv` and `clip.ts`.
 - **Visually identical images:** the same picture saved in another format, quality or size (JPEG vs. WebP vs. PNG, a downscaled or EXIF-rotated copy).
 
-keepbest shows a page in your browser, with the pictures of each group side by side, or its screens in the terminal.
+keepbest shows a page in your browser, where you choose the settings and decide on each group, with its pictures side by side on request.
 
 It is deliberately cautious: pictures that merely *look similar* (an edited version, an added watermark, a crop, the next frame of a burst) are left alone. Files go to the system trash by default, every change is logged, and a dry run shows everything before anything happens.
 
@@ -27,7 +27,7 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 | Update | `pipx upgrade keepbest` (new version) or `pipx reinstall keepbest` (latest commit) |
 | Uninstall | `pipx uninstall keepbest` |
 | `keepbest` not found | run `pipx ensurepath` once and open a new terminal |
-| Add it to the app menu (Linux) | `keepbest --install-desktop-entry` (see [The page](#the-page-and-the-terminal)) |
+| Add it to the app menu (Linux) | `keepbest --install-desktop-entry` (see [The page](#the-page)) |
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
 
@@ -46,9 +46,11 @@ On its first start, keepbest moves your config, log and saved sessions from the 
 keepbest ~/Pictures --dry-run
 ```
 
-`--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and press Enter on the start screen.
+`--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and carry it out from the start screen.
 
-keepbest opens a page in your browser (see [The page and the terminal](#the-page-and-the-terminal)) with a **start screen**: the folder, the number of files in scope and all settings, each with its choices. Click a choice, or press a setting's key to switch to the next one, and **Enter** to start. Without a folder, the page first lets you choose one. In the terminal (`--terminal`) the start screen looks the same, with the current choice in bold and the others greyed out.
+keepbest opens a page in your browser (see [The page](#the-page)) with a **start screen**: the folder, the number of files in scope and all settings, each with its choices. Click a choice, and **Enter** (or the blue button) starts. Without a folder, the page first lets you choose one. For scripts, `--auto` runs without the page and without questions.
+
+**Keys:** Enter does what the blue button says, and the numbers keep another file of a group; those show their key. The other choices have keyboard shortcuts too: the letter in bold in a button's label (**S**kip is `s`), and hovering a button shows its key. The settings' keys:
 
 | Key | Setting |
 |---|---|
@@ -61,9 +63,9 @@ keepbest opens a page in your browser (see [The page and the terminal](#the-page
 | `7` | Include videos: on/off |
 | `r` | Include subfolders |
 | `f` | Choose subfolders (with `r` on) |
-| `c` | Change folder (on the page a folder list, in the terminal with Tab completion) |
+| `c` | Change folder (a list of folders to choose from, or type a path) |
 
-**Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. A number switches that subfolder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). `2-5` or `1,3,7` switch several at once, each on its own (`4,1` selects 4 and unselects 1); `a` selects all subfolders, `n` none. The **main folder** is switched only with its own key `m`, so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
+**Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. It opens with the top folders only; ▸ shows the ones below, and a closed folder says how many below it are switched off. A checkbox switches that folder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). *All* (`a`) and *None* (`n`) switch all subfolders. The **main folder** has its own checkbox (`m`), so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
 
 Hidden folders such as `.thumbnails` or `.Trash` are never scanned. The home folder, the folders above it (`/home`, `/Users`), the root folder and system folders (`/usr`, `/etc`, `/var`, ...) are refused, also when they are reached through a symlink.
 
@@ -84,13 +86,13 @@ Hidden folders such as `.thumbnails` or `.Trash` are never scanned. The home fol
 5. the less compressed file;
 6. the oldest file.
 
-For exact copies it is simply: a name without a copy number, then the oldest.
+For exact copies it is simply: a name without a copy number, then the oldest. The page says why a file is recommended ("for its larger resolution (than #2) and lossless format (than #1)"), and the details table shows the values that decided it in bold.
 
 **Copy numbers:** if the kept file is called `photo (1).jpg` and another file of its group is `photo.jpg`, the number is removed after the others are gone: `photo (1).jpg` → `photo.jpg`. This only happens when another file of the group has the same base name, so series names like `Holiday (12).jpg` keep their number, and never when the new name is taken.
 
 ## Reviewing groups
 
-The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP` on the page and `▶` in the terminal. By default, only **borderline** matches are shown for a decision; clear ones are handled automatically. On the page every key below is also a button.
+The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By default, only **borderline** matches are shown for a decision; clear ones are handled automatically. Every action below is a button; the keys are its shortcuts.
 
 | Key | Action |
 |---|---|
@@ -101,7 +103,7 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP` on the 
 | `i2` | Only image #2 is not a duplicate; decide on the rest as usual |
 | `i0` | Only #0 is different: it is marked and kept, and the others are compared with each other afresh |
 | `n` | Remove "(1)" from the kept name: on/off for this group |
-| `v` | Open the images in the viewer |
+| `v` | Open the images in the viewer (see [Viewers](#viewers)) |
 | `p` / `t` | Previous open group / overview of all groups |
 | `u` | Dry runs only: undo the decision of a group you already decided, and choose again. Open the group from the overview (`t`, then its number); its images, including any a chosen file had left out, come back. Real runs can't undo: trashed files are restored from the system trash (the log has their paths). |
 | `q` | Quit (asks whether to keep your progress) |
@@ -121,40 +123,37 @@ Before anything is deleted, every file is checked against the dry run; files tha
 
 **Progress is saved** once the duplicate groups are found, in dry runs too: before every question, after every decision, and at least once a second while groups are handled automatically. Each save is written to disk completely before it replaces the previous one. Ctrl+C, closing the terminal, stopping the program from outside or a crash therefore lose at most the last second of automatic decisions, and those are safe to repeat: before resuming, every file is checked against the disk, and anything already removed or changed is left out. Only an interruption *during* the analysis means starting that scan again.
 
-When you open the same folder again, the start screen offers to **resume** (Enter), start a new scan (`n`) or discard the saved session (`x`). A finished dry run stays saved until you carry it out, so you can also do that later: on the start screen, Enter carries it out and `e` goes through its groups again.
+When you open the same folder again, the start screen offers to **resume** (Enter) or to start over (`n`), which discards the saved session. A finished dry run stays saved until you carry it out, so you can also do that later: on the start screen, Enter carries it out and `e` goes through its groups again.
 
-**`--dry-run` always wins.** Started with `--dry-run`, nothing is deleted or renamed in that run: the delete mode is locked, a saved real session isn't resumed, a finished dry run isn't carried out, and a new dry run isn't offered for carrying out when it is done. Start without `--dry-run` for that, or press `n` to discard a saved session.
+**`--dry-run` always wins.** Started with `--dry-run`, nothing is deleted or renamed in that run: the delete mode is locked, a saved real session isn't resumed, a finished dry run isn't carried out, and a new dry run isn't offered for carrying out when it is done. Start without `--dry-run` for that, or start over (`n`) to discard a saved session.
 
-**When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. The file count on the start screen and media-optimizer afterwards (`m`) use the session's folders too, not those of the command line. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. Press **`n`** to discard the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
+**When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. The file count on the start screen and media-optimizer afterwards (`m`) use the session's folders too, not those of the command line. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. **Start over** (`n`) discards the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
 
 ## After a run
 
-The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter or `q`).
+The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter).
 
-**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs media-optimizer 2.2 or newer; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest. On the page, media-optimizer can't ask its questions, so it runs with the settings of its own config (`-y`); its output is shown on the page, and *Stop* stops it as Ctrl+C would.
+**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. media-optimizer 2.4 and newer opens its own page in the same tab, where you choose its settings and follow the run; its last button leads back to keepbest's end screen. An older one runs with the settings of its own config (`-y`), its output is shown on keepbest's page, and *Stop* stops it as Ctrl+C would. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it starts with those folders selected (needs media-optimizer 2.2 or newer; older versions include all subfolders).
 
 ## Viewers
 
-`v` opens all images of a group at once, with the viewer chosen by setting `5` or `"viewer"` in the config:
+Each file of a group has *Open* (a new tab, at full size; pictures the browser can't show are rendered by keepbest) and *Show in folder* (your file manager, with the file selected). `v` opens all images of a group at once in an app, chosen by setting `5` or `"viewer"` in the config:
 
 | Viewer | What you get |
 |---|---|
 | `auto` | Your default image viewer, one window per image |
 | `imagecompare` | [Image Compare](https://github.com/gimletlove/imagecompare): side by side or in a grid, synchronised zoom; recommended. `flatpak install flathub io.github.gimletlove.imagecompare` |
 | `identity` | [Identity](https://apps.gnome.org/Identity/): tabs or side by side. `flatpak install flathub org.gnome.gitlab.YaLTeR.Identity` |
-| `kitty`, `timg` | Previews inside the terminal (kitty terminal, or `timg`) |
 
 If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
-## The page and the terminal
+## The page
 
-keepbest shows a page in your browser: it prints a local address and opens it, and only this computer can open the page, and only through that address. Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first.
+keepbest shows a page in your browser: it prints a local address and opens it, and only this computer can open the page, and only through that address. Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first. The terminal keepbest was started in keeps a log of what happens (every kept and removed file, the summary). `--no-browser` only prints the address; without a graphical session (over SSH, on a console) that is what happens anyway, so you can forward the port and open the page elsewhere (`ssh -L PORT:127.0.0.1:PORT host`, the port from the address). `--auto` asks nothing and shows no page.
 
-Its terminal screens are still there: `--terminal`, or `"browser_page": false` in the config to make them the default. Without a graphical session (over SSH, on a console) keepbest uses the terminal by itself, and `--auto` never opens a page. `--web` opens the page in any case, and `--no-browser` only prints its address.
+**Reviewing a group** shows its files in a table, with the reason for the recommendation and *Open* / *Show in folder* for each file. After a real run, only the kept file of a group can be opened (the others are in the trash); after a dry run, all of them. **Show pictures** adds the pictures, side by side or flipping between the kept one and another one in one place (click the picture or press Space); it stays on until you switch it off. Zoom (`+`, `-`) and dragging move all pictures together, so a difference stands out. *Go to the most different square* zooms in on the part where the pictures differ most, the one the score comes from, and a strip below shows that square from every picture. The pictures are shown as keepbest reads them (also JPEG XL, TIFF, 16-bit and CMYK), upright, as previews it renders itself. Remuxed videos get a player on request (*Show the player*), where the browser can play them (often not HEVC or MPEG-TS); the details show what each file holds.
 
-**Reviewing a group** on the page shows its pictures side by side, or flips between the kept one and another one in one place (click the picture or press Space). Zoom (`+`, `-`) and dragging move all pictures together, so a difference stands out. *Go to the most different square* zooms in on the part where the pictures differ most, the one the score comes from, and a strip below shows that square from every picture. The pictures are shown as keepbest reads them (also JPEG XL, TIFF, 16-bit and CMYK), upright, as previews it renders itself. Remuxed videos can be played where the browser can play them (often not HEVC or MPEG-TS); the details show what each file holds.
-
-**The overview** (`t`) shows every group with its kept picture; click one to go there.
+**The overview** (`t`) shows every group, with its kept picture when pictures are on; click one to go there.
 
 **App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere.
 
@@ -175,8 +174,7 @@ Its terminal screens are still there: `--terminal`, or `"browser_page": false` i
 | `--no-videos` | Leave videos out |
 | `--no-ignore` | Show pairs marked "not duplicates" again |
 | `-c FILE`, `--config FILE` | Use this config file |
-| `--web` / `--terminal` | Show keepbest in the browser (the default with a graphical session; not with `--auto`) / in this terminal (see [The page and the terminal](#the-page-and-the-terminal)) |
-| `--no-browser` | Only print the page's address, don't open it |
+| `--no-browser` | Only print the page's address, don't open a browser (see [The page](#the-page)) |
 | `--install-desktop-entry`, `--remove-desktop-entry` | Add keepbest to the app menu, or remove it, and exit |
 | `--color {auto,always,never}` | Colours; `auto` respects `NO_COLOR` |
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
@@ -200,7 +198,6 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 | `save_sessions` | `true` | save progress so it can be resumed |
 | `log_file` | `null` | `null` = default place, `false` = no log, or a file path |
 | `journal_file` | `null` | `null` = default place, `false` = no [journal](#the-file-journal), or a file path |
-| `browser_page` | `true` | show keepbest in the browser; `false`: its screens in the terminal (`--web` and `--terminal` override it) |
 | `color` | `auto` | `auto`, `always`, `never` |
 | `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep; names are not case-sensitive, `JPG` means JPEG and `TIF` TIFF, MPO ranks like JPEG unless given its own rank |
 | `uncertain_ratio`, `compare_size`, `max_aspect_diff`, `hash_size`, `hash_max_distance` | `0.8`, `512`, `0.02`, `8`, `28` | fine-tuning, see below |
@@ -290,7 +287,7 @@ alias keepbest='~/keepbest/.venv/bin/python ~/keepbest/run.py'
 | *attempted relative import with no known parent package* | started as `python3 keepbest/…`; use `run.py` or `python3 -m keepbest` |
 | *Missing required packages* | started without `.venv/bin/python` |
 
-On Windows (not tested yet): `py -m venv .venv`, `.venv\Scripts\pip install Pillow send2trash pyreadline3`, `.venv\Scripts\python run.py C:\Pictures`.
+On Windows (not tested yet): `py -m venv .venv`, `.venv\Scripts\pip install Pillow send2trash`, `.venv\Scripts\python run.py C:\Pictures`.
 
 ## Running the tests
 
@@ -319,7 +316,7 @@ python3 -m venv .venv
 
 Video tests are skipped if ffmpeg isn't installed, and the H.264 cases if your ffmpeg has no H.264 encoder (like Fedora's `ffmpeg-free`). Every test runs in its own temporary home, config and state folder, so your real settings, log, sessions and trash are never touched.
 
-**Writing a test** is quick with the helpers in `tests/conftest.py`: `library` builds a picture folder (`photo`, `variant`, `copy_of`), `run_cli` runs keepbest like a user would, including typed answers (`keys=[...]`), and `summary()` reads the final numbers:
+**Writing a test** is quick with the helpers in `tests/conftest.py`: `library` builds a picture folder (`photo`, `variant`, `copy_of`), `run_cli` runs keepbest like a user would and answers its page with the keys of the buttons (`keys=[...]`; `asked()` and `shown()` read what the page showed), and `summary()` reads the final numbers:
 
 ```python
 from conftest import summary

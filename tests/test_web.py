@@ -2,7 +2,6 @@
 the folder picker, the lock against two keepbests on one folder and the
 app-menu entry. No browser: the tests talk to the API as the page does."""
 
-import http.cookiejar
 import io
 import json
 import os
@@ -18,59 +17,9 @@ import urllib.request
 import pytest
 
 import pictures
-from conftest import REPO, make_video, remux, requires_ffmpeg
+from conftest import REPO, Page, make_video, remux, requires_ffmpeg
 from keepbest import front, running, web
 from keepbest.config import load_config
-
-
-class Page:
-    """What the page's script does: open the printed address, then use the API."""
-
-    def __init__(self, url):
-        self.base = url.split("/?")[0]
-        self.port = int(self.base.rsplit(":", 1)[1])
-        self.jar = http.cookiejar.CookieJar()
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
-        self.opener.open(url).read()
-
-    def get(self, path):
-        return json.loads(self.opener.open(self.base + path).read())
-
-    def post(self, path, body=None, headers=None):
-        data = json.dumps(body if body is not None else {}).encode()
-        request = urllib.request.Request(self.base + path, data, {
-            "Content-Type": "application/json", "Origin": self.base, **(headers or {})})
-        return json.loads(self.opener.open(request).read())
-
-    def question(self, after=0, timeout=30):
-        """The next open question with an id above *after* (None once finished)."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            state = self.get("/api/state")
-            q = state["question"]
-            if q and q["id"] > after:
-                return q
-            if state["finished"] is not None:
-                return None
-            time.sleep(0.05)
-        raise AssertionError("no question came")
-
-    def answer(self, q, value):
-        self.post("/api/answer", {"id": q["id"], "value": value})
-
-    def walk(self, *answers):
-        """Answer the next questions in turn; returns them."""
-        asked, last = [], 0
-        for value in answers:
-            q = self.question(last)
-            assert q is not None, f"finished before {value!r}"
-            asked.append(q)
-            self.answer(q, value)
-            last = q["id"]
-        return asked
-
-    def events(self, kind=None):
-        return [e for e in self.get("/api/state")["events"] if kind is None or e["kind"] == kind]
 
 
 def status(opener_or_none, url, method="GET", headers=None, data=None):
@@ -273,9 +222,72 @@ def test_a_preview_of_a_removed_file_says_so(library, serve):
     page, result = serve(library.path, confirm="always")
     start, decision = page.walk("", "")                       # keep a.png: "a small.jpg" goes to the trash
     gone = decision["group"]["images"][1]["preview"]
+    page.question(decision["id"])                              # the deletion is done once the next question comes
     assert status(page.opener, f"{page.base}/api/preview/{gone}") == 404
+    assert status(page.opener, f"{page.base}/api/file/{gone}") == 404
     page.walk("", "q")
     assert finish(page, result) == 0
+
+
+def test_the_page_says_why_a_file_is_kept(library, serve):
+    library.photo("a.png", 1, size=(640, 480))
+    library.variant("a.png", "a small.jpg", change=pictures.downscaled)     # fewer pixels
+    library.variant("a.png", "a.jpg", quality=95)                            # as many, but lossy
+    page, result = serve(library.path, confirm="always")
+    start, decision = page.walk("", "s")
+    beaten = {i["name"]: i["beaten"] for i in decision["group"]["images"]}
+    assert beaten == {"a.png": None, "a small.jpg": "resolution", "a.jpg": "lossless"}
+    finish(page, result)
+
+
+@pytest.mark.parametrize("dry", [False, True])
+def test_only_files_still_on_disk_can_be_opened(library, serve, dry):
+    """After a real run only the kept file of a group can be opened or shown in its
+    folder; after a dry run every file can."""
+    visual_pair(library)
+    library.copy_of("a.png", "b.png")                                         # Stage 1: an identical copy
+    page, result = serve(library.path, confirm="always", delete_mode="dry_run" if dry else "trash")
+    start, decision = page.walk("", "")                                       # keep a.png
+    assert all(image["file"] for image in decision["group"]["images"])       # all there before deciding
+    overview = page.question(decision["id"])
+    page.answer(overview, "1")                                               # the group again
+    handled = page.question(overview["id"])
+    assert handled["screen"] == "HandledScreen"
+    assert [bool(i["file"]) for i in handled["group"]["images"]] == [True, dry]
+    (table,) = page.events("exact_table")
+    assert [bool(f["file"]) for f in table["group"]["files"]] == [True, dry]
+    finish(page, result)
+
+
+def test_a_file_opens_on_its_own_and_in_its_folder(library, serve, monkeypatch):
+    from PIL import Image
+    from keepbest import viewer
+    library.photo("a.png", 1, size=(640, 480))
+    library.variant("a.png", "a small.tif", change=pictures.downscaled)    # no browser shows TIFF
+    shown_in_folder = []
+    monkeypatch.setattr(viewer, "show_in_folder", lambda path: shown_in_folder.append(path) or "the file manager")
+    page, result = serve(library.path, confirm="always")
+    start, decision = page.walk("", "s")
+    png, tif = (image["file"] for image in decision["group"]["images"])
+    with page.opener.open(f"{page.base}/api/file/{png}") as response:       # as it is
+        assert response.headers["Content-Type"] == "image/png"
+        assert response.read() == (library / "a.png").read_bytes()
+    with page.opener.open(f"{page.base}/api/file/{tif}") as response:       # rendered, full size
+        assert response.headers["Content-Type"] == "image/jpeg"
+        assert response.headers["Content-Security-Policy"].startswith("default-src 'none'")
+        with Image.open(io.BytesIO(response.read())) as rendered, Image.open(library / "a small.tif") as original:
+            assert rendered.size == original.size
+    assert status(page.opener, f"{page.base}/api/file/nosuchid") == 404
+    assert status(None, f"{page.base}/api/file/{png}") == 403
+    assert page.post("/api/reveal", {"id": tif}) == {"how": "the file manager"}
+    assert shown_in_folder == [library / "a small.tif"]
+    reveal = f"{page.base}/api/reveal"
+    json_post = {"Content-Type": "application/json", "Origin": page.base}
+    assert status(page.opener, reveal, "POST", json_post, b"{}") == 400
+    assert status(page.opener, reveal, "POST", json_post, b'{"id": "nosuchid"}') == 404
+    assert status(page.opener, reveal, "POST", {"Content-Type": "application/json"}, json.dumps({"id": png}).encode()) == 403
+    assert shown_in_folder == [library / "a small.tif"]
+    finish(page, result)
 
 
 @pytest.mark.parametrize("make", ["16-bit", "cmyk", "rotated", "mpo"])
@@ -531,7 +543,8 @@ def test_media_optimizer_runs_on_the_page_without_questions(library, cli_page, f
     library.photo("a.png", 1)
     library.copy_of("a.png", "a copy.png")
     env = tmp_path / "optimizer.env"
-    command = fake_command("media-optimizer", script=f"echo \"$MO_CALLER $MO_SUBFOLDERS\" > '{env}'\n"
+    command = fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\n"   # no page of its own
+                                                     f"echo \"$MO_CALLER $MO_SUBFOLDERS\" > '{env}'\n"
                                                      "printf 'converting\\033[1;32m a.png\\033[0m\\n'\necho done")
     page, proc = cli_page(library.path)
     start, end = page.walk("", "m")
@@ -554,7 +567,8 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
     library.photo("a.png", 1)
     library.copy_of("a.png", "a copy.png")
     got = tmp_path / "got-int"
-    fake_command("media-optimizer", script=f"trap 'echo INT > \"{got}\"; exit 130' INT\necho started\nsleep 20 & wait")
+    fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\n"
+                                           f"trap 'echo INT > \"{got}\"; exit 130' INT\necho started\nsleep 20 & wait")
     page, proc = cli_page(library.path)
     start, end = page.walk("", "m")
     tool_event(page, running=True)
@@ -566,30 +580,36 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
     assert proc.wait(timeout=20) == 0
 
 
-@pytest.mark.parametrize("argv, config, display, page", [
-    ([], {}, ":0", True),                                       # the default with a display
-    ([], {}, None, False),                                      # over SSH, on a console
-    ([], {"browser_page": False}, ":0", False),                 # the config prefers the terminal
-    (["--web"], {"browser_page": False}, None, True),          # --web always
-    (["--terminal"], {}, ":0", False),
-    (["--auto"], {}, ":0", False),                              # nothing to show
-])
-def test_page_or_terminal(monkeypatch, argv, config, display, page):
-    from keepbest import cli
-    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
-        monkeypatch.delenv(name, raising=False)
-    if display:
-        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
-    monkeypatch.setattr(cli.sys, "platform", "linux")
-    assert cli.use_page(cli.build_parser().parse_args(argv), config) is page
+def test_the_terminal_screens_are_gone(library, run_cli):
+    result = run_cli(library.path, "--terminal")
+    assert result.returncode == 2 and "removed in keepbest 2.1.0" in result.stderr
 
 
-def test_without_a_display_the_terminal_screens_come(library, config_file):
+def test_without_a_display_the_page_only_prints_its_address(library, config_file, fake_command):
+    """Over SSH or on a console no browser is opened; the address is there to forward."""
     visual_pair(library)
+    browser = fake_command("xdg-open")
     env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
-    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", str(library.path)]
-    result = subprocess.run(argv, input="q\n", capture_output=True, text=True, cwd=REPO, env=env, timeout=60)
-    assert "Duplicate image finder" in result.stdout and "is running at" not in result.stdout
+    env["SSH_CONNECTION"] = "10.0.0.2 50000 10.0.0.1 22"
+    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), str(library.path)]
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO, env=env)
+    try:
+        lines = [proc.stdout.readline() for _ in range(3)]
+    finally:
+        proc.kill()
+    port = re.search(r"127\.0\.0\.1:(\d+)", lines[0]).group(1)
+    assert lines[1] == "Open that address in your browser.\n"
+    assert f"ssh -L {port}:127.0.0.1:{port}" in lines[2]
+    assert browser.calls(count=0) == []
+
+
+def test_the_page_keeps_a_log_in_the_terminal(library, run_cli):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    result = run_cli(library.path, keys=["", "q"])
+    assert result.stdout.startswith("keepbest is running at http://127.0.0.1:")
+    assert "Stage 1 · Identical files" in result.stdout and "Exact copies removed: 1" in result.stdout
+    assert [q["screen"] for q in result.questions] == ["StartScreen", "EndScreen"]
 
 
 def test_with_a_display_the_page_comes(library, config_file):
@@ -667,7 +687,7 @@ def test_the_desktop_entry_opens_the_page(tmp_path, monkeypatch):
     entry, icon, command = desktop.install()
     assert command == [sys.executable, str(launcher)]
     text = entry.read_text()
-    assert f'Exec={sys.executable} "{launcher}" --web %f' in text and f"Icon={icon}" in text
+    assert f'Exec={sys.executable} "{launcher}" %f' in text and f"Icon={icon}" in text
     assert "Terminal=false" in text and "MimeType=inode/directory;" in text
     assert icon.read_text().startswith("<svg")
     if shutil.which("desktop-file-validate"):
@@ -686,5 +706,5 @@ def test_desktop_exec_arguments_are_quoted_and_escaped():
 def test_the_command_line_installs_the_entry(run_cli, tmp_path, library):
     result = run_cli(library.path, "--install-desktop-entry")
     entry = tmp_path / "home" / ".local" / "share" / "applications" / "keepbest.desktop"
-    assert result.returncode == 0 and entry.is_file() and "--web %f" in entry.read_text()
+    assert result.returncode == 0 and entry.is_file() and "run.py %f" in entry.read_text()
     assert run_cli(library.path, "--remove-desktop-entry").returncode == 0 and not entry.exists()

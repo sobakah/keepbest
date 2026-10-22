@@ -288,3 +288,17 @@ def test_a_chosen_keeper_moves_the_squares_too(library):
     regroup_around(group, 1, COMPARE)
     assert group.images[0]["path"].name == "a.jpg" and group.images[0]["spot"] is None
     assert all(len(m["spot"]) == 3 for m in group.images[1:])
+
+
+def test_the_deciding_criterion_follows_the_ranking_order():
+    from keepbest.image_utils import deciding_criterion
+    base = {"resolution": 100, "lossless": False, "format_rank": 2, "numbered": False, "bpp": 2.0, "age": 10.0}
+    assert deciding_criterion(base, {**base, "resolution": 50, "lossless": True}) == "resolution"
+    assert deciding_criterion({**base, "lossless": True}, base) == "lossless"
+    assert deciding_criterion({**base, "format_rank": 5}, base) == "format"
+    assert deciding_criterion(base, {**base, "numbered": True}) == "name"
+    assert deciding_criterion(base, {**base, "bpp": 1.0}) == "bpp"
+    assert deciding_criterion(base, {**base, "age": 20.0}) == "age"            # older wins
+    assert deciding_criterion(base, {**base, "resolution": 200}) is None       # chosen by hand
+    assert deciding_criterion(base, dict(base)) is None
+    assert deciding_criterion({"resolution": 1}, base) is None                  # an old session's fields
