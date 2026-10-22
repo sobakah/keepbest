@@ -65,8 +65,13 @@ MAX_FOLDER_ENTRIES = 500
 # How often a progress counter is sent on to the page at most.
 PROGRESS_INTERVAL = 0.2
 # Longest side of a preview: for the group view, and for zooming in.
-PREVIEW_SIZES = {"screen": 1200, "zoom": 3000}
+PREVIEW_SIZES = {"thumb": 480, "screen": 1200, "zoom": 3000}
+# Bytes of a video sent per request at most; the player asks for the rest in ranges.
+MEDIA_CHUNK = 4 * 1024 * 1024
 PREVIEW_CACHE = 40
+# Lines of a tool's output the page keeps.
+TOOL_LINES = 500
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
 
 def cookie_name(port: int) -> str:
@@ -132,10 +137,23 @@ def visual_group(group, rel, preview=None) -> dict:
     }
 
 
-def exact_group(group, rel) -> dict:
+def exact_group(group, rel, file_id=None) -> dict:
+    """An exact or remux group for the page; *file_id* gives a video's id for the player."""
     return {"kind": group.kind, "tracks": group.tracks, "status": group.status,
-            "files": [{"name": rel(f["path"]), "size": format_size(f["size"]), "streams": f.get("streams", "")}
+            "files": [{"name": rel(f["path"]), "size": format_size(f["size"]), "streams": f.get("streams", ""),
+                       "media": file_id(f["path"]) if file_id else None, "type": _video_type(f["path"])}
                       for f in group.files]}
+
+
+# What a browser is told a video is; it decides itself whether it can play it.
+_VIDEO_TYPES = {".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
+                ".mkv": "video/x-matroska", ".ogv": "video/ogg", ".avi": "video/x-msvideo", ".ts": "video/mp2t",
+                ".mts": "video/mp2t", ".m2ts": "video/mp2t", ".3gp": "video/3gpp", ".wmv": "video/x-ms-wmv",
+                ".flv": "video/x-flv", ".mpg": "video/mpeg", ".mpeg": "video/mpeg"}
+
+
+def _video_type(path) -> str:
+    return _VIDEO_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
 
 
 def _option_list(row: SettingRow) -> list[dict]:
@@ -156,9 +174,9 @@ def _row(row) -> dict:
     return {"type": "note", "text": row.text, "style": row.style}
 
 
-def screen_data(screen, preview=None) -> dict:
+def screen_data(screen, file_id=None) -> dict:
     """A Screen as the page gets it: plain data, no paths outside its texts.
-    *preview* gives a picture's preview id (WebFront.preview_id)."""
+    *file_id* gives the id under which the page may show a file (WebFront.file_id)."""
     data = {"screen": type(screen).__name__, "prompt": screen.prompt.strip().rstrip(":"),
             "primary": screen.primary, "menu": _menu(screen), "keys": screen_keys(screen)}
     if isinstance(screen, StartScreen):
@@ -173,17 +191,19 @@ def screen_data(screen, preview=None) -> dict:
                               "depth": (len(e.name) - len(e.name.lstrip(" "))) // 2, "on": e.on, "amount": e.amount}
                              for n, e in enumerate(screen.entries, 1)])
     elif isinstance(screen, (DecisionScreen, HandledScreen)):
-        data.update(position=screen.position, group=visual_group(screen.group, screen.rel, preview))
+        data.update(position=screen.position, group=visual_group(screen.group, screen.rel, file_id))
         if isinstance(screen, HandledScreen):
             data["note"] = screen.note.strip()
     elif isinstance(screen, OverviewScreen):
-        data.update(current=screen.current, groups=[
-            {"key": str(n), "keeper": screen.rel(g.images[g.kept if g.kept is not None else 0]["path"]),
-             "status": g.status, "borderline": g.borderline, "worst": g.worst, "limit": g.limit,
-             "count": len(g.images)}
-            for n, g in enumerate(screen.groups, 1)])
+        groups = []
+        for n, g in enumerate(screen.groups, 1):
+            keeper = g.images[g.kept if g.kept is not None else 0]["path"]
+            groups.append({"key": str(n), "keeper": screen.rel(keeper), "preview": file_id(keeper) if file_id else None,
+                           "status": g.status, "borderline": g.borderline, "worst": g.worst, "limit": g.limit,
+                           "count": len(g.images)})
+        data.update(current=screen.current, groups=groups)
     elif isinstance(screen, RemuxScreen):
-        data.update(number=screen.number, total=screen.total, group=exact_group(screen.group, screen.rel))
+        data.update(number=screen.number, total=screen.total, group=exact_group(screen.group, screen.rel, file_id))
     elif isinstance(screen, AfterDryRunScreen):
         data.update(realMode=screen.real_mode)
     else:
@@ -287,8 +307,10 @@ class WebFront(Front):
         self._presses = 0
         # Pictures the page may show, by random id: the only files /api/preview
         # reads, so the page can never make keepbest open anything else.
+        self._tool: dict | None = None  # the running tool's output event (media-optimizer)
+        self._tool_sent = 0.0
         self._previews: dict[str, Path] = {}
-        self._preview_ids: dict[Path, str] = {}
+        self._file_ids: dict[Path, str] = {}
         self._preview_cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
 
     # recording
@@ -311,6 +333,26 @@ class WebFront(Front):
 
     def show(self, kind: str, data: dict) -> None:
         if kind in ("blank", "goodbye"):
+            return
+        if kind == "tool_start":
+            self._tool = self._add({"kind": "tool", "name": data["name"], "command": data["command"],
+                                    "lines": [], "running": True, "code": None})
+            self._tool_sent = 0.0
+            return
+        if kind in ("tool_line", "tool_end") and self._tool is not None:
+            tool = self._tool
+            with self._cond:
+                if kind == "tool_line":
+                    # A redrawn progress line keeps only its newest state.
+                    tool["lines"].append(_ANSI.sub("", data["text"]).split("\r")[-1].rstrip())
+                    del tool["lines"][:-TOOL_LINES]
+                else:
+                    tool.update(running=False, code=data["code"])
+                    self._tool = None
+                now = time.monotonic()
+                if kind == "tool_end" or now - self._tool_sent >= PROGRESS_INTERVAL:
+                    self._tool_sent = now
+                    self._bump(tool)
             return
         self._add({"kind": kind, **message_data(kind, data)})
 
@@ -343,18 +385,28 @@ class WebFront(Front):
         key = self._press_toward_target(screen)
         if key is not None:
             return key
-        data = screen_data(screen, self.preview_id)
+        data = screen_data(screen, self.file_id)
         answer = self._ask("screen", data, screen)
         if not isinstance(screen, (StartScreen, FolderScreen)):  # forms: the screen itself shows the change
             self._add({"kind": "answer", "prompt": data["prompt"], "text": _key_text(screen, answer)})
         return answer
 
-    def preview_id(self, path: Path) -> str:
+    def file_id(self, path: Path) -> str:
         with self._cond:
-            if path not in self._preview_ids:
+            if path not in self._file_ids:
                 image_id = secrets.token_urlsafe(9)
-                self._preview_ids[path], self._previews[image_id] = image_id, path
-            return self._preview_ids[path]
+                self._file_ids[path], self._previews[image_id] = image_id, path
+            return self._file_ids[path]
+
+    def media(self, file_id: str) -> Path:
+        """The video behind *file_id*, for the player."""
+        with self._cond:
+            path = self._previews.get(file_id)
+        if path is None:
+            raise ApiError(404, "No such file.")
+        if not path.is_file():
+            raise ApiError(404, "The file is no longer there.")
+        return path
 
     def preview(self, image_id: str, size: str) -> bytes:
         """The preview behind *image_id* as JPEG, rendered when first asked for."""
@@ -644,6 +696,9 @@ class _Handler(BaseHTTPRequestHandler):
                 data = self.server.web.preview(url.path[len("/api/preview/"):], size)
                 self._send(200, data, "image/jpeg", {"Cache-Control": "private, max-age=600"})
                 return
+            if method == "GET" and url.path.startswith("/api/media/"):
+                self._media(self.server.web.media(url.path[len("/api/media/"):]))
+                return
             body = self._body(json_required=url.path != "/api/closing") if method == "POST" else {}
             self.server.contact()
             result = self._api(method, url.path, parse_qs(url.query), body)
@@ -665,6 +720,32 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # a bug must not kill the server thread silently
             log.exception("web request failed: %s %s", method, self.path)
             self._send_json(500, {"error": f"Internal error: {exc}"})
+
+    def _media(self, path: Path) -> None:
+        """A video for the browser's player, in the byte ranges it asks for."""
+        size = path.stat().st_size
+        start, end, status = 0, size - 1, 200
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "").strip())
+        if match and (match[1] or match[2]):
+            if match[1]:
+                start = int(match[1])
+                end = min(int(match[2]), size - 1) if match[2] else size - 1
+            else:  # the last n bytes
+                start = max(0, size - int(match[2]))
+            if start >= size or start > end:
+                self._send(416, b"", "text/plain", {"Content-Range": f"bytes */{size}"})
+                return
+            status = 206
+        end = min(end, start + MEDIA_CHUNK - 1)
+        with open(path, "rb") as handle:
+            handle.seek(start)
+            data = handle.read(end - start + 1)
+        headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=600"}
+        if status == 206:
+            headers["Content-Range"] = f"bytes {start}-{start + len(data) - 1}/{size}"
+        elif len(data) < size:  # too big for one answer: send the start as a range
+            status, headers["Content-Range"] = 206, f"bytes 0-{len(data) - 1}/{size}"
+        self._send(status, data, _video_type(path), headers)
 
     def _index(self, query: str) -> None:
         given = (parse_qs(query).get("token") or [""])[0]
@@ -706,6 +787,9 @@ class _Handler(BaseHTTPRequestHandler):
             return {"ok": True}
         if method == "GET" and path == "/api/folders":
             return list_folders((query.get("path") or [""])[0])
+        if method == "POST" and path == "/api/stop-tool":
+            from . import handoff
+            return {"stopped": handoff.interrupt()}
         if method == "POST" and path == "/api/quit":
             if web.finished is None and not web.cancel():
                 raise ApiError(409, f"{NAME} is busy; it stops at its next question.")

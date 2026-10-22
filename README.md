@@ -6,6 +6,8 @@ Finds duplicate images and videos in a folder and removes the redundant copies, 
 - **Remuxed videos:** the same video in another container, e.g. `clip.mp4`, `clip.mkv` and `clip.ts`.
 - **Visually identical images:** the same picture saved in another format, quality or size (JPEG vs. WebP vs. PNG, a downscaled or EXIF-rotated copy).
 
+keepbest shows a page in your browser, with the pictures of each group side by side, or its screens in the terminal.
+
 It is deliberately cautious: pictures that merely *look similar* (an edited version, an added watermark, a crop, the next frame of a burst) are left alone. Files go to the system trash by default, every change is logged, and a dry run shows everything before anything happens.
 
 ## Installation
@@ -25,6 +27,7 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 | Update | `pipx upgrade keepbest` (new version) or `pipx reinstall keepbest` (latest commit) |
 | Uninstall | `pipx uninstall keepbest` |
 | `keepbest` not found | run `pipx ensurepath` once and open a new terminal |
+| Add it to the app menu (Linux) | `keepbest --install-desktop-entry` (see [The page](#the-page-and-the-terminal)) |
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
 
@@ -45,7 +48,7 @@ keepbest ~/Pictures --dry-run
 
 `--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and press Enter on the start screen.
 
-The program opens on a **start screen** with the folder, the number of files in scope and all settings. Each setting shows its choices: the current one in bold, the others greyed out. Press a setting's number to switch it, and **Enter** to start.
+keepbest opens a page in your browser (see [The page and the terminal](#the-page-and-the-terminal)) with a **start screen**: the folder, the number of files in scope and all settings, each with its choices. Click a choice, or press a setting's key to switch to the next one, and **Enter** to start. Without a folder, the page first lets you choose one. In the terminal (`--terminal`) the start screen looks the same, with the current choice in bold and the others greyed out.
 
 | Key | Setting |
 |---|---|
@@ -58,7 +61,7 @@ The program opens on a **start screen** with the folder, the number of files in 
 | `7` | Include videos: on/off |
 | `r` | Include subfolders |
 | `f` | Choose subfolders (with `r` on) |
-| `c` | Change folder (with Tab completion) |
+| `c` | Change folder (on the page a folder list, in the terminal with Tab completion) |
 
 **Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. A number switches that subfolder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). `2-5` or `1,3,7` switch several at once, each on its own (`4,1` selects 4 and unselects 1); `a` selects all subfolders, `n` none. The **main folder** is switched only with its own key `m`, so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
 
@@ -87,7 +90,7 @@ For exact copies it is simply: a name without a copy number, then the oldest.
 
 ## Reviewing groups
 
-The groups are numbered (`[3/12]`) and the file to keep is marked `▶`. By default, only **borderline** matches are shown for a decision; clear ones are handled automatically.
+The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP` on the page and `▶` in the terminal. By default, only **borderline** matches are shown for a decision; clear ones are handled automatically. On the page every key below is also a button.
 
 | Key | Action |
 |---|---|
@@ -128,7 +131,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter or `q`).
 
-**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs media-optimizer 2.2 or newer; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest.
+**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It runs in the same window and asks its usual questions; when it ends, you are back on keepbest's end screen. media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it doesn't ask about subfolders again (needs media-optimizer 2.2 or newer; older versions include all subfolders). Ctrl+C stops media-optimizer, not keepbest. On the page, media-optimizer can't ask its questions, so it runs with the settings of its own config (`-y`); its output is shown on the page, and *Stop* stops it as Ctrl+C would.
 
 ## Viewers
 
@@ -143,15 +146,15 @@ The end screen offers to scan again with other settings (`b`), change the folder
 
 If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
-## In the browser (preview)
+## The page and the terminal
 
-`keepbest --web [FOLDER]` shows keepbest in your browser instead of the terminal: the same steps and questions as a page with buttons, and the keys still work there. keepbest prints a local address and opens it; only this computer can open the page, and only through that address. Without a folder, the page lets you choose one.
+keepbest shows a page in your browser: it prints a local address and opens it, and only this computer can open the page, and only through that address. Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first.
 
-Close the page when you are done, and keepbest ends. Closing it while keepbest waits for an answer stops it there, as Ctrl+C would, and progress is saved; work in progress (a scan, a deletion) is finished first.
+Its terminal screens are still there: `--terminal`, or `"browser_page": false` in the config to make them the default. Without a graphical session (over SSH, on a console) keepbest uses the terminal by itself, and `--auto` never opens a page. `--web` opens the page in any case, and `--no-browser` only prints its address.
 
-**Reviewing a group** shows its pictures side by side, or flips between the kept one and another one in one place (click the picture or press Space). Zoom (`+`, `-`) and dragging move all pictures together, so a difference stands out. *Go to the most different square* zooms in on the part where the pictures differ most, the one the score comes from, and a strip below shows that square from every picture. The pictures are shown as keepbest reads them (also JPEG XL, TIFF, 16-bit and CMYK), upright, as previews it renders itself.
+**Reviewing a group** on the page shows its pictures side by side, or flips between the kept one and another one in one place (click the picture or press Space). Zoom (`+`, `-`) and dragging move all pictures together, so a difference stands out. *Go to the most different square* zooms in on the part where the pictures differ most, the one the score comes from, and a strip below shows that square from every picture. The pictures are shown as keepbest reads them (also JPEG XL, TIFF, 16-bit and CMYK), upright, as previews it renders itself. Remuxed videos can be played where the browser can play them (often not HEVC or MPEG-TS); the details show what each file holds.
 
-This is a preview: remuxed videos are shown as tables only, and media-optimizer can't be started from the page yet; use the terminal for that.
+**The overview** (`t`) shows every group with its kept picture; click one to go there.
 
 **App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere.
 
@@ -172,8 +175,8 @@ This is a preview: remuxed videos are shown as tables only, and media-optimizer 
 | `--no-videos` | Leave videos out |
 | `--no-ignore` | Show pairs marked "not duplicates" again |
 | `-c FILE`, `--config FILE` | Use this config file |
-| `--web` | Show keepbest in the browser (see [In the browser](#in-the-browser-preview)); not with `--auto` |
-| `--no-browser` | With `--web`: only print the page's address |
+| `--web` / `--terminal` | Show keepbest in the browser (the default with a graphical session; not with `--auto`) / in this terminal (see [The page and the terminal](#the-page-and-the-terminal)) |
+| `--no-browser` | Only print the page's address, don't open it |
 | `--install-desktop-entry`, `--remove-desktop-entry` | Add keepbest to the app menu, or remove it, and exit |
 | `--color {auto,always,never}` | Colours; `auto` respects `NO_COLOR` |
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
@@ -197,6 +200,7 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 | `save_sessions` | `true` | save progress so it can be resumed |
 | `log_file` | `null` | `null` = default place, `false` = no log, or a file path |
 | `journal_file` | `null` | `null` = default place, `false` = no [journal](#the-file-journal), or a file path |
+| `browser_page` | `true` | show keepbest in the browser; `false`: its screens in the terminal (`--web` and `--terminal` override it) |
 | `color` | `auto` | `auto`, `always`, `never` |
 | `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep; names are not case-sensitive, `JPG` means JPEG and `TIF` TIFF, MPO ranks like JPEG unless given its own rank |
 | `uncertain_ratio`, `compare_size`, `max_aspect_diff`, `hash_size`, `hash_max_distance` | `0.8`, `512`, `0.02`, `8`, `28` | fine-tuning, see below |

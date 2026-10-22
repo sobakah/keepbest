@@ -244,7 +244,7 @@ def test_an_interrupted_run_ends_with_interrupted(library, journal, config_file)
     """SIGTERM while a group waits for a decision: the journal still says the run ended."""
     library.photo("a.png", 1, size=(640, 480))
     library.variant("a.png", "b.jpg", change=pictures.downscaled)
-    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never",
+    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", "--terminal",
             str(library.path), "-i"]
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             cwd=REPO)

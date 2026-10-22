@@ -181,6 +181,10 @@ _MESSAGES = {
     "stage3_header": _stage3_header,
     "summary": _summary,
     "folder_header": lambda header: _folder_header(header),
+    # media-optimizer's output on the page (in the terminal it writes there itself)
+    "tool_start": lambda name, command: info(f"$ {command}"),
+    "tool_line": lambda text: print(text),
+    "tool_end": lambda code: dim(f"exit code {code}"),
 }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -33,8 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Find exact and visually identical duplicate images and remove the "
                     "redundant copies, keeping the best one.",
     )
-    parser.add_argument("path", nargs="?", help="picture directory (default: the current directory; "
-                                                "with --web, the page asks)")
+    parser.add_argument("path", nargs="?", help="picture directory (default: the page asks; in the "
+                                                "terminal, the current directory)")
     parser.add_argument("--version", action="version", version=f"{NAME} {__version__}")
     parser.add_argument("-c", "--config", type=Path, metavar="FILE", help="use this config file instead of the search paths")
 
@@ -59,9 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--no-ignore", action="store_true",
                         help='show pairs marked "not duplicates" again, for this run')
 
-    page = parser.add_argument_group("browser page (preview)")
-    page.add_argument("--web", action="store_true", help="show keepbest in the browser instead of the terminal")
-    page.add_argument("--no-browser", action="store_true", help="with --web: only print the page's address")
+    page = parser.add_argument_group("browser page")
+    where = page.add_mutually_exclusive_group()
+    where.add_argument("--web", action="store_true",
+                       help="show keepbest in the browser (the default with a graphical session)")
+    where.add_argument("--terminal", action="store_true", help="show keepbest's screens in this terminal")
+    page.add_argument("--no-browser", action="store_true", help="only print the page's address, don't open it")
     entry = page.add_mutually_exclusive_group()
     entry.add_argument("--install-desktop-entry", action="store_true",
                        help="add keepbest to the app menu (it opens the page) and exit")
@@ -94,6 +98,24 @@ def stop_on_signals() -> None:
 
 def missing_packages() -> list[str]:
     return [pip for module, pip in REQUIRED_PACKAGES.items() if importlib.util.find_spec(module) is None]
+
+
+def graphical_session() -> bool:
+    """Whether a browser can be shown here: on Linux and BSD only with a display
+    (not over SSH or on a console)."""
+    if sys.platform.startswith(("linux", "freebsd", "openbsd", "netbsd")):
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
+
+
+def use_page(args, config: dict) -> bool:
+    """The page unless asked for the terminal (--terminal, "browser_page": false),
+    with --auto (nothing to show), or without a graphical session; --web always."""
+    if args.web:
+        return True
+    if args.terminal or args.auto:
+        return False
+    return bool(config.get("browser_page", True)) and graphical_session()
 
 
 def _desktop_entry(install: bool) -> int:
@@ -156,7 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         print("  .venv/bin/python run.py /path/to/pictures")
         print(f"Or install {NAME} with pipx, which takes care of this (see the README).")
         return 2
-    if not ui.HAS_READLINE and not args.auto and not args.web:
+    page = use_page(args, config)
+    if not ui.HAS_READLINE and not args.auto and not page:
         ui.warn("readline is unavailable - Tab completion and prefilled prompts are disabled. "
                 "On Windows: pip install pyreadline3")
 
@@ -171,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     from . import app  # imports Pillow/send2trash, so only after the dependency check
     stop_on_signals()
 
-    if args.web:
+    if page:
         from . import web
         initial = Path(args.path) if args.path else None  # from the app menu: the page asks
         return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude),

@@ -18,7 +18,7 @@ import urllib.request
 import pytest
 
 import pictures
-from conftest import REPO
+from conftest import REPO, make_video, remux, requires_ffmpeg
 from keepbest import front, running, web
 from keepbest.config import load_config
 
@@ -313,6 +313,97 @@ def test_closing_while_a_question_is_open_stops_keepbest(library, serve):
     assert result["code"] == 130
 
 
+# --- the same decisions on the page and in the terminal ------------------------------------
+def _session(folder):
+    from keepbest.session import SessionStore
+    text = json.dumps(SessionStore(folder).load(), sort_keys=True).replace(str(folder), "<folder>")
+    data = json.loads(text)
+    for key in ("created", "updated"):
+        data.pop(key, None)
+    return data
+
+
+def test_page_and_terminal_save_the_same_session(library, serve, run_cli, tmp_path):
+    """The page sends the keys the terminal reads, so the same answers must leave the
+    same saved session behind (here a dry run, kept to be carried out later)."""
+    library.photo("a.png", 1, size=(640, 480))
+    library.variant("a.png", "a small.jpg", change=pictures.downscaled)
+    library.variant("a.png", "a q50.jpg", quality=50)
+    library.photo("b.png", 2, size=(640, 480))
+    library.variant("b.png", "b small.jpg", change=pictures.downscaled)
+    library.photo("c.png", 3)
+    library.copy_of("c.png", "c (1).png")
+    terminal = tmp_path / "terminal"
+    shutil.copytree(library.path, terminal, copy_function=shutil.copy2)
+    keys = ["4", "", "2", "i", "", "q"]          # dry run; start; keep #2 in group 1; group 2 not duplicates; finish; quit
+    result = run_cli(terminal, "-i", keys=keys)
+    assert result.returncode == 0, result.stdout
+    page, done = serve(library.path, confirm="always")
+    page.walk(*keys)
+    assert finish(page, done) == 0
+    assert _session(library.path) == _session(terminal)
+    assert _session(library.path)["finished"] is True
+
+
+def test_a_saved_dry_run_is_carried_out_from_the_page(library, serve, run_cli):
+    visual_pair(library)
+    library.photo("c.png", 3)
+    library.copy_of("c.png", "c (1).png")
+    run_cli(library.path, "--dry-run", keys=["", ""])            # dry run, saved
+    assert len(library.files()) == 4
+    page, done = serve(library.path)
+    start = page.question()
+    assert start["panel"]["finished"] is True and start["primary"].startswith("Carry out the saved dry run")
+    end = page.walk("")[0]
+    page.answer(page.question(end["id"]), "q")
+    assert finish(page, done) == 0
+    assert library.files() == ["a.png", "c.png"]
+
+
+@requires_ffmpeg
+def test_remuxed_videos_on_the_page(library, serve):
+    clip = make_video(library / "clip.mp4", codec="mpeg4")
+    remux(clip, library / "clip.mkv")
+    page, result = serve(library.path, confirm="always")
+    start, remuxes = page.walk("", "s")
+    assert remuxes["screen"] == "RemuxScreen"
+    files = remuxes["group"]["files"]
+    assert [f["name"] for f in files] == ["clip.mp4", "clip.mkv"] or [f["name"] for f in files] == ["clip.mkv", "clip.mp4"]
+    mp4 = next(f for f in files if f["name"] == "clip.mp4")
+    url = f"{page.base}/api/media/{mp4['media']}"
+    size = (library / "clip.mp4").stat().st_size
+    with page.opener.open(url) as answer:
+        assert answer.status == 200 and answer.headers["Content-Type"] == "video/mp4"
+        assert answer.headers["Accept-Ranges"] == "bytes" and len(answer.read()) == size
+    request = urllib.request.Request(url, headers={"Range": "bytes=10-109"})
+    with page.opener.open(request) as answer:
+        assert answer.status == 206 and answer.headers["Content-Range"] == f"bytes 10-109/{size}"
+        assert answer.read() == (library / "clip.mp4").read_bytes()[10:110]
+    request = urllib.request.Request(url, headers={"Range": "bytes=-50"})
+    with page.opener.open(request) as answer:
+        assert answer.read() == (library / "clip.mp4").read_bytes()[-50:]
+    assert status(page.opener, url, headers={"Range": f"bytes={size}-"}) == 416
+    assert status(None, url) == 403
+    assert status(page.opener, f"{page.base}/api/media/unknown") == 404
+    page.answer(page.question(remuxes["id"]), "q")
+    assert finish(page, result) == 0
+
+
+def test_the_overview_shows_each_groups_kept_picture(library, serve):
+    from PIL import Image
+    visual_pair(library)
+    page, result = serve(library.path, confirm="always")
+    start, decision = page.walk("", "t")
+    overview = page.question(decision["id"])
+    assert overview["screen"] == "OverviewScreen"
+    [group] = overview["groups"]
+    data = page.opener.open(f"{page.base}/api/preview/{group['preview']}?size=thumb").read()
+    assert max(Image.open(io.BytesIO(data)).size) <= 480
+    page.answer(overview, "q")
+    page.answer(page.question(overview["id"]), False)          # don't keep the session
+    assert finish(page, result) == 0
+
+
 # --- starting without a folder (the app menu) and the folder picker ---------------------
 def test_without_a_folder_the_page_asks_for_one(library, serve, tmp_path):
     visual_pair(library)
@@ -407,6 +498,109 @@ def test_the_command_line_starts_the_page(library, config_file, tmp_path):
     finally:
         proc.kill()
     assert library.files() == ["a.png"]
+
+
+@pytest.fixture
+def cli_page(config_file):
+    """keepbest --web as a separate process (needed where it sets signal handlers,
+    which only the main thread may): cli_page(folder, *args) -> (Page, process)."""
+    procs = []
+
+    def start(*args):
+        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--web", "--no-browser", *map(str, args)]
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO)
+        procs.append(proc)
+        url = re.search(r"http://\S+", proc.stdout.readline()).group(0)
+        return Page(url), proc
+    yield start
+    for proc in procs:
+        proc.kill()
+
+
+def tool_event(page, running=False, timeout=20):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        tools = [e for e in page.get("/api/state")["events"] if e["kind"] == "tool"]
+        if tools and tools[-1]["running"] == running and (running is False or tools[-1]["lines"]):
+            return tools[-1]
+        time.sleep(0.05)
+    raise AssertionError("no such tool event")
+
+
+def test_media_optimizer_runs_on_the_page_without_questions(library, cli_page, fake_command, tmp_path):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    env = tmp_path / "optimizer.env"
+    command = fake_command("media-optimizer", script=f"echo \"$MO_CALLER $MO_SUBFOLDERS\" > '{env}'\n"
+                                                     "printf 'converting\\033[1;32m a.png\\033[0m\\n'\necho done")
+    page, proc = cli_page(library.path)
+    start, end = page.walk("", "m")
+    offer = dict(end["menu"][0][1])["m"]
+    assert "no questions" in offer
+    tool = tool_event(page)
+    assert tool["name"] == "media-optimizer" and tool["code"] == 0
+    assert tool["lines"] == ["converting a.png", "done"]          # colours taken out
+    assert command.calls() == [["run", str(library.path), "-y"]]
+    assert env.read_text().split() == ["keepbest", "exclude"]
+    again = page.question(end["id"])
+    assert again["screen"] == "EndScreen" and "m" not in again["keys"]   # once per run, as in the terminal
+    page.answer(again, "q")
+    page.post("/api/close")
+    assert proc.wait(timeout=20) == 0
+    assert len(library.files()) == 1
+
+
+def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_command, tmp_path):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    got = tmp_path / "got-int"
+    fake_command("media-optimizer", script=f"trap 'echo INT > \"{got}\"; exit 130' INT\necho started\nsleep 20 & wait")
+    page, proc = cli_page(library.path)
+    start, end = page.walk("", "m")
+    tool_event(page, running=True)
+    assert page.post("/api/stop-tool") == {"stopped": True}
+    tool = tool_event(page, timeout=5)        # not waiting for the "sleep" that still holds the pipe
+    assert tool["code"] == 130 and got.read_text().strip() == "INT"
+    page.answer(page.question(end["id"]), "q")                   # keepbest itself goes on
+    page.post("/api/close")
+    assert proc.wait(timeout=20) == 0
+
+
+@pytest.mark.parametrize("argv, config, display, page", [
+    ([], {}, ":0", True),                                       # the default with a display
+    ([], {}, None, False),                                      # over SSH, on a console
+    ([], {"browser_page": False}, ":0", False),                 # the config prefers the terminal
+    (["--web"], {"browser_page": False}, None, True),          # --web always
+    (["--terminal"], {}, ":0", False),
+    (["--auto"], {}, ":0", False),                              # nothing to show
+])
+def test_page_or_terminal(monkeypatch, argv, config, display, page):
+    from keepbest import cli
+    for name in ("DISPLAY", "WAYLAND_DISPLAY"):
+        monkeypatch.delenv(name, raising=False)
+    if display:
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    assert cli.use_page(cli.build_parser().parse_args(argv), config) is page
+
+
+def test_without_a_display_the_terminal_screens_come(library, config_file):
+    visual_pair(library)
+    env = {k: v for k, v in os.environ.items() if k not in ("DISPLAY", "WAYLAND_DISPLAY")}
+    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", "never", str(library.path)]
+    result = subprocess.run(argv, input="q\n", capture_output=True, text=True, cwd=REPO, env=env, timeout=60)
+    assert "Duplicate image finder" in result.stdout and "is running at" not in result.stdout
+
+
+def test_with_a_display_the_page_comes(library, config_file):
+    visual_pair(library)
+    env = {**os.environ, "WAYLAND_DISPLAY": "wayland-0"}
+    argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--no-browser", str(library.path)]
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO, env=env)
+    try:
+        assert "keepbest is running at http://127.0.0.1:" in proc.stdout.readline()
+    finally:
+        proc.kill()
 
 
 def test_web_and_auto_dont_go_together(library, run_cli):

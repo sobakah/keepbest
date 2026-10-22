@@ -119,7 +119,10 @@ def run_cli(config_file, request):
     calls = []
 
     def run(*args, keys=(), env=None, timeout=180):
-        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", color, *map(str, args)]
+        # The terminal screens, unless the test asks for the page (the default with a display).
+        where = [] if {"--web", "--terminal"} & set(map(str, args)) else ["--terminal"]
+        argv = [sys.executable, "-m", "keepbest", "-c", str(config_file.path), "--color", color, *where,
+                *map(str, args)]
         stdin = "".join(f"{key}\n" for key in keys)
         result = subprocess.run(argv, input=stdin, capture_output=True, text=True, cwd=REPO,
                                 env={**os.environ, **(env or {})}, timeout=timeout)

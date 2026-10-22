@@ -3,13 +3,24 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.0] — 2026-10-22
+
+**Upgrading:** `pipx upgrade keepbest`. keepbest now opens a page in the browser. For its terminal screens, start it with `--terminal`, or set `"browser_page": false` in `config.json`; without a graphical session (over SSH, on a console) it uses the terminal by itself, and `--auto` is unchanged. Programs that start keepbest in a terminal, like picktag, get the page too unless they add `--terminal`. Sessions saved by 1.3.0 can be resumed.
 
 ### Added
 
-- **keepbest in the browser (preview).** `keepbest --web [FOLDER]` shows the same steps and questions as a page with buttons on a local address only this computer can open; the keys still work there. Started without a folder, the page lets you choose one. Closing the page stops keepbest at its next question, as Ctrl+C would, with progress saved. Groups show their pictures side by side or flipping between two, with one zoom and position for all of them and the most different square outlined and enlarged; keepbest renders the previews itself, so JPEG XL, TIFF, 16-bit and CMYK pictures show too. Remuxed videos are shown as tables, and media-optimizer is only offered in the terminal. `--no-browser` only prints the address.
+- **keepbest in the browser.** The same steps and questions as a page with buttons, on a local address only this computer can open; every terminal key still works there. Started without a folder, the page lets you choose one. Closing the page stops keepbest at its next question, as Ctrl+C would, with progress saved; work in progress is finished first.
+- **Pictures in the group review.** Side by side or flipping between two, with one zoom and position for all of them, so a difference stands out. The square where the pictures differ most, the one the score comes from, is outlined and shown enlarged from every picture. keepbest renders the previews itself, so JPEG XL, TIFF, 16-bit, CMYK and rotated pictures show as it compares them.
+- **Remuxed videos can be played** on the page where the browser can play them, and the overview shows every group with its kept picture.
+- **media-optimizer from the page.** It runs with its own config's settings, without questions (`-y`), and its output is shown on the page, with a Stop button.
 - **App-menu entry.** `--install-desktop-entry` adds keepbest to the desktop's app menu (Linux); it opens the page, and file managers offer "Open with keepbest" for folders. `--remove-desktop-entry` removes it.
 - **One keepbest per folder.** A folder that another running keepbest works on, or a folder inside or above it, is refused, naming the other keepbest's process and page. With `--auto` this ends with exit code 2.
+- Options `--web`, `--terminal` and `--no-browser`; setting `browser_page`.
+
+### Changed
+
+- The page is the default front end; the terminal screens are unchanged behind `--terminal`. Without a folder argument, the terminal still starts in the current folder, the page asks.
+- Saved sessions also store where each picture differs most from its group's kept one; older keepbest versions ignore it.
 
 ## [1.3.0] — 2026-10-18
 
@@ -333,7 +344,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
-[Unreleased]: https://github.com/sobakah/keepbest/compare/1.3.0...HEAD
+[2.0.0]: https://github.com/sobakah/keepbest/releases/tag/2.0.0
 [1.3.0]: https://github.com/sobakah/keepbest/releases/tag/1.3.0
 [1.2.1]: https://github.com/sobakah/keepbest/releases/tag/1.2.1
 [1.2.0]: https://github.com/sobakah/keepbest/releases/tag/1.2.0

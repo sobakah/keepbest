@@ -115,6 +115,33 @@ function Summary({ event }) {
   </div>`;
 }
 
+// Another program's output (media-optimizer), as in cdimport: it follows new
+// lines only while scrolled to its end; Stop is Ctrl+C for that program.
+function Tool({ event }) {
+  const body = useRef(null);
+  const stick = useRef(true);
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (stick.current && body.current) body.current.scrollTop = body.current.scrollHeight;
+  });
+  const scrolled = (e) => { stick.current = e.target.scrollTop + e.target.clientHeight >= e.target.scrollHeight - 40; };
+  const stop = async () => {
+    if (!confirm(`Stop ${event.name}? It stops as on Ctrl+C and can continue next time.`)) return;
+    setStopping(true);
+    await api('/stop-tool', {}).catch(() => {});
+  };
+  const status = event.running
+    ? html`<span class="row small"><span class="spinner" aria-hidden="true"></span> running</span>`
+    : event.code === 0 ? html`<span class="small k-success">done</span>`
+      : html`<span class="small k-error">${event.code === 127 ? 'could not be started' : `exit code ${event.code}`}</span>`;
+  return html`<div class="tool">
+    <div class="row tool-head"><b>${event.name}</b><span class="mono small muted">${event.command}</span>${status}
+      ${event.running && html`<button class="btn btn-small push" disabled=${stopping} onClick=${stop}>
+        ${stopping ? 'Stopping…' : `Stop ${event.name}`}</button>`}</div>
+    ${event.lines.length > 0 && html`<pre class="tool-body" ref=${body} onScroll=${scrolled}>${event.lines.join('\n')}</pre>`}
+  </div>`;
+}
+
 function Item({ event }) {
   switch (event.kind) {
     case 'info':
@@ -157,6 +184,8 @@ function Item({ event }) {
       return event.running ? html`<div class="progress"><span class="spinner" aria-hidden="true"></span>${event.text}</div>` : null;
     case 'answer':
       return html`<p class="answer">${event.text}</p>`;
+    case 'tool':
+      return html`<${Tool} event=${event} />`;
     default:
       return null;
   }
@@ -490,33 +519,86 @@ function GroupScreen({ question, answer, sending }) {
   </div>`;
 }
 
+// A video as the browser can play it; one that it can't (HEVC in MPEG-TS, ...) says so.
+function Player({ file }) {
+  const [failed, setFailed] = useState(false);
+  if (!file.media) return null;
+  return failed
+    ? html`<div class="player no-play"><b>This browser can't play ${file.name}</b>
+        <span class="small">${file.streams}. The details below still show what the file holds.</span></div>`
+    : html`<video class="player" key=${file.media} controls preload="metadata" src=${`/api/media/${encodeURIComponent(file.media)}`}
+        onError=${() => setFailed(true)}></video>`;
+}
+
+const TRACK_TEXT = {
+  same: 'The video and every other track are identical.',
+  covered: 'The video is identical, and #0 holds every track of the others in their order.',
+  reordered: 'The video is identical and so are the other tracks, but in another order: a player starts with another language or sound.',
+  differ: 'The video is identical; the files differ in their other tracks (sound, subtitles, ...).',
+};
+
 function RemuxView({ question, answer, sending }) {
   const q = question;
-  const actions = (i) => (i === 0 ? null : html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(i))}>
-    Keep this one <kbd>${i}</kbd></button>`);
+  const g = q.group;
+  const [playing, setPlaying] = useState(0);
   return html`<div class="stack">
     <div class="row"><span class="mono">[${q.number}/${q.total}]</span><span class="badge b-keep">REMUX</span>
-      ${q.group.tracks === 'reordered' && html`<span class="badge b-borderline">TRACK ORDER</span>`}
-      ${q.group.tracks === 'differ' && html`<span class="badge b-borderline">TRACKS DIFFER</span>`}</div>
-    <p class="muted">${q.group.tracks === 'reordered' ? 'The video is identical and so are the other tracks, but in another order: a player starts with another language or sound.'
-      : q.group.tracks === 'same' ? 'The video and every other track are identical.'
-        : 'The video is identical; the files differ in their other tracks (sound, subtitles, ...).'}</p>
-    ${q.group.tracks === 'differ' && html`<p class="alert">No file contains all tracks of the others: removing them loses a track.</p>`}
-    <${ExactTable} group=${q.group} keepIndex=${0} actions=${actions} />
+      ${g.tracks === 'reordered' && html`<span class="badge b-borderline">TRACK ORDER</span>`}
+      ${g.tracks === 'differ' && html`<span class="badge b-borderline">TRACKS DIFFER</span>`}
+      ${g.tracks === 'covered' && html`<span class="badge b-ok">COVERING COPY</span>`}</div>
+    <p class="muted">${TRACK_TEXT[g.tracks] || TRACK_TEXT.differ}</p>
+    ${g.tracks === 'differ' && html`<p class="alert">No file contains all tracks of the others: removing them loses a track
+      (other sound, language or subtitles).</p>`}
+    <div class="remux">
+      <div class="remux-player stack-tight">
+        <div class="row" role="group" aria-label="File to play">${g.files.map((f, i) => html`<button key=${i}
+          class=${'zoom' + (i === playing ? ' on' : '')} aria-pressed=${i === playing}
+          onClick=${(e) => { setPlaying(i); e.currentTarget.blur(); }}>#${i} ${f.name}</button>`)}</div>
+        <${Player} key=${playing} file=${g.files[playing]} />
+      </div>
+      <div class="remux-files stack-tight">${g.files.map((f, i) => html`<article key=${i} class=${'card' + (i === 0 ? ' keep' : '')}>
+        <div class="card-head"><b class="mono">#${i}</b><span class=${'badge ' + (i === 0 ? 'b-keep' : 'b-remove')}>${i === 0 ? 'KEEP' : 'REMOVE'}</span>
+          ${i === 0 && html`<span class="small muted">recommended</span>`}<span class="mono small push">${f.size}</span></div>
+        <div class="card-body"><div class="file">${f.name}</div><div class="small muted">${f.streams}</div></div>
+        ${i > 0 && html`<div class="row card-actions"><button class="btn btn-small" disabled=${sending}
+          onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button></div>`}
+      </article>`)}</div>
+    </div>
     <${Primary} question=${q} answer=${answer} sending=${sending} />
     <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+(-\d+)?$/.test(k)} />
   </div>`;
 }
 
+// A small picture of a group's kept file in the overview.
+function Thumb({ id, label }) {
+  const [failed, setFailed] = useState(false);
+  return !id || failed ? html`<span class="thumb no-thumb">no preview</span>`
+    : html`<img class="thumb" src=${`/api/preview/${encodeURIComponent(id)}?size=thumb`} alt=${label} loading="lazy"
+        onError=${() => setFailed(true)} />`;
+}
+
 function Overview({ question, answer, sending }) {
   const q = question;
+  const [filter, setFilter] = useState('all');
+  const open = (g) => g.status === 'pending' || g.status === 'skipped';
+  const shown = q.groups.filter((g) => filter === 'all' || (filter === 'open' ? open(g) : !open(g)));
+  const count = (st) => q.groups.filter((g) => g.status === st).length;
   return html`<div class="stack">
-    <ul class="groups">${q.groups.map((g) => {
+    <div class="row">
+      <span>${`${count('done')} decided · ${count('skipped')} skipped · ${count('ignored')} not duplicates · ${count('pending')} open`}</span>
+      <div class="segmented push" role="group" aria-label="Show">${[['all', 'All'], ['open', 'Open'], ['decided', 'Decided']].map(([id, label]) =>
+        html`<button key=${id} class=${filter === id ? 'on' : ''} aria-pressed=${filter === id}
+          onClick=${(e) => { setFilter(id); e.currentTarget.blur(); }}>${label}</button>`)}</div>
+    </div>
+    <ul class="grid">${shown.map((g) => {
       const [text, cls] = STATUS[g.status] || STATUS.pending;
-      return html`<li key=${g.key}><button class=${String(q.current + 1) === g.key ? 'current' : ''} disabled=${sending}
-        onClick=${() => answer(g.key)}>
-        <span class="mono">${g.key}</span><span class=${'badge ' + cls}>${text}</span><${Verdict} borderline=${g.borderline} />
-        <span class="muted small">${g.count} images · diff ${g.worst}/${g.limit}</span><span class="mono small">${g.keeper}</span>
+      return html`<li key=${g.key}><button class=${'tile-button' + (String(q.current + 1) === g.key ? ' current' : '')
+        + (open(g) ? '' : ' closed')} disabled=${sending} onClick=${() => answer(g.key)}>
+        <${Thumb} id=${g.preview} label=${g.keeper} />
+        <span class="row"><b class="mono">${g.key}</b><span class=${'badge ' + cls}>${text}</span>
+          ${String(q.current + 1) === g.key && html`<span class="small" style=${{ color: 'var(--keep)' }}>▶ current</span>`}</span>
+        <span class="file">${g.keeper}</span>
+        <span class=${'small ' + (g.borderline ? 'diff-hot' : 'muted')}>${g.count} images · worst ${g.worst}/${g.limit}${g.borderline ? ' · borderline' : ''}</span>
       </button></li>`;
     })}</ul>
     <${Primary} question=${q} answer=${answer} sending=${sending} />

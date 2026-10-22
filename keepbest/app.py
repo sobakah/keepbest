@@ -947,12 +947,14 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
     After a real run, media-optimizer is offered for the same folder if it is
     installed; when it exits, this menu comes back for a new run.
     """
-    # media-optimizer asks its questions in a terminal: not offered on the page yet.
-    optimizer = offer_optimizer and in_terminal() and handoff.available() is not None
+    optimizer = offer_optimizer and handoff.available() is not None
+    # On the page it can't ask its questions: it runs with its config's settings there.
+    label = ("Optimize this folder with media-optimizer" if in_terminal()
+             else "Optimize this folder with media-optimizer (its config's settings, no questions)")
     while True:
         groups = []
         if optimizer:
-            groups.append(("Next", [("m", "Optimize this folder with media-optimizer")]))
+            groups.append(("Next", [("m", label)]))
         groups.append(("Navigate", [("b", "Back to settings (scan again)"),
                                     ("c", "Change directory"), ("q", "Quit")]))
         answer = ask(EndScreen(prompt="Action: ", primary="Quit", menu=groups))
@@ -972,7 +974,13 @@ def run_optimizer(target: Path, settings: dict) -> None:
         info("It gets the same choice: only the main folder, no subfolders.")
     elif settings["excluded"]:
         info(f"It gets the same folder choice: {len(settings['excluded'])} folder(s) left out.")
-    code = handoff.run(target, settings["recursive"], settings["excluded"])
+    if in_terminal():
+        code = handoff.run(target, settings["recursive"], settings["excluded"])
+    else:  # the page: no questions, its output shown there
+        show("tool_start", name="media-optimizer", command=f"media-optimizer run -y {target}")
+        code = handoff.run(target, settings["recursive"], settings["excluded"],
+                           output=lambda line: show("tool_line", text=line))
+        show("tool_end", code=code)
     blank()
     if code == 127:
         error("media-optimizer could not be started.")

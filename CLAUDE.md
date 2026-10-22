@@ -1,7 +1,7 @@
 # keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
-Terminal app (no GUI), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
+A local browser page (since 2.0.0; the terminal screens remain behind `--terminal`), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
 Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
 Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
 
@@ -37,7 +37,8 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   `terminal.py`; a new message kind needs an entry in `terminal._MESSAGES`. `tests/test_front.py`
   runs the flow with a scripted front end and fails if anything reaches stdout directly. `cli.py`
   still prints its startup errors with `ui` directly.
-- **The page (`--web`, preview)**:
+- **The page** (the default since 2.0.0; `cli.use_page`: `--web`/`--terminal`, config `browser_page`,
+  the terminal without `DISPLAY`/`WAYLAND_DISPLAY` and with `--auto`):
   - `web.py` is the second front end, `WebFront`, with the HTTP server; `static/` holds the page
     (`app.js` with Preact+htm from `static/vendor/`, unchanged, licences in `LICENSES.txt`).
   - `serve(flow)` runs the flow in the **main thread**; the server and a watcher run in threads.
@@ -86,7 +87,8 @@ Both paths change when the Python version changes.
 
 - `tests/conftest.py`: autouse isolation (own HOME, XDG dirs, trash and `KEEPBEST_STATE_DIR`),
   `library` (build picture folders: `photo`, `variant`, `copy_of`), `run_cli(folder, *args,
-  keys=[...])` (runs the real CLI, typed answers via stdin), `summary(result)` (parses the final
+  keys=[...])` (runs the real CLI, typed answers via stdin; adds `--terminal` unless the test
+  passes `--web`/`--terminal`, since the page is the default), `summary(result)` (parses the final
   numbers), `fake_command` (stand-in programs on PATH; `.calls(count=…)` waits for background calls),
   `make_video` / `remux` (ffmpeg).
 - `tests/pictures.py`: deterministic photo-like pictures. Calibrated: re-encodes/resizes score ≤ 16,
@@ -248,26 +250,24 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed with the owner 2026-10-22, steps 1–3 done)
+## Web page (agreed 2026-10-22; the default since 2.0.0)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
-- The page becomes the default in **2.0.0**, once it can do everything the terminal can; until
-  then it sits behind `--web`. `--terminal` keeps today's screens. `--auto` and sessions without a
-  display stay in the terminal.
-- Order: separate logic from the terminal (**done 2026-10-22**, `front.py`; the terminal output
-  stayed byte-for-byte the same) → server and start screen with a folder picker, the folder tree, the
-  desktop entry (copied from lyrembed) and the lock (E5) (**done 2026-10-22**) → group review (**done**) → overview, resume, remux
-  groups → media-optimizer hand-off.
+- Done in 2.0.0: the front-end layer, the server and page, start screen, folder tree and picker,
+  desktop entry, lock, group review with pictures, overview grid, remux view with a player,
+  media-optimizer on the page with `-y` and an output box (`handoff.run(output=…)`; the pipe is
+  not read to its end once the child exited, so a stray grandchild can't block). The page is the
+  default; `--terminal` keeps the screens, and the terminal output never changed.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
-  `signal.signal()` and interrupt handling need the main thread.
-- media-optimizer keeps the terminal as its default. It gets a thin page behind `--web` (brief:
-  `~/Software/Claude/Projects/media-optimizer/WEB_PAGE_BRIEF.md`). keepbest hands the tab over
-  like cdimport → lyrembed (`--no-browser --return-url --return-name`), and runs an older
-  media-optimizer with `-y` and an output box. Closing its tab stops a run unless the user chose
-  the background; then a desktop notification reports the end (`notify-send`, else `gdbus`).
+  `signal.signal()` and interrupt handling need the main thread. Tests that reach `handoff` on the
+  page go through the real CLI (`cli_page` in `tests/test_web.py`).
+- **Still open (plan steps 6–7):** once media-optimizer has its page (behind `--web`, brief:
+  `~/Software/Claude/Projects/media-optimizer/WEB_PAGE_BRIEF.md`), hand the tab over like
+  cdimport → lyrembed (`--web --no-browser --return-url … --return-name keepbest`, detected via
+  `--help`), keeping the `-y` box for older versions. Then picktag may drop its terminal window.
 
-## Open tasks (target: release 1.4.0)
+## Open tasks (target: release 2.1.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
 media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
@@ -275,7 +275,8 @@ in the folder list; 1.2.0 (2026-10-16) passes the folder choice to media-optimiz
 and has the fixes from an outside review (16-bit greyscale, extra video streams, track order,
 protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`); 1.2.1 (2026-10-17) names the right
 command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no);
-1.3.0 (2026-10-18) adds the file journal for picktag and fixes the log crash on non-UTF-8 names. New changes go under
+1.3.0 (2026-10-18) adds the file journal for picktag and fixes the log crash on non-UTF-8 names; 2.0.0
+(2026-10-22) makes the browser page the default. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -302,6 +303,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
   old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.4.0 for behaviour changes, else 1.3.1) before
+- **Next release:** raise `__version__` (2.1.0 for behaviour changes, else 2.0.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

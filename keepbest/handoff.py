@@ -7,14 +7,18 @@ returns when it exits.
 """
 from __future__ import annotations
 
+import codecs
 import json
 import os
+import re
+import selectors
 import shutil
 import signal
 import subprocess
 from pathlib import Path
 
 COMMAND = "media-optimizer"
+_child: subprocess.Popen | None = None   # the media-optimizer running now, for interrupt()
 
 
 def available() -> str | None:
@@ -32,17 +36,28 @@ def folder_env(recursive: bool, excluded) -> dict[str, str]:
     return {"MO_SUBFOLDERS": "include", "MO_EXCLUDE_FOLDERS": json.dumps(sorted(excluded))}
 
 
-def run(target: Path, recursive: bool = True, excluded=()) -> int:
+def run(target: Path, recursive: bool = True, excluded=(), output=None) -> int:
     """Run media-optimizer on *target* in this terminal and return its exit code.
 
     MO_CALLER tells media-optimizer who started it; MO_HOLD=0 stops it from
     keeping the window open at the end, since keepbest continues in it. The
     folder choice of this run is passed on (folder_env).
+
+    With *output* (called with each line), for keepbest's page: media-optimizer
+    asks nothing (-y: its config's settings) and its output goes there instead
+    of to the terminal; interrupt() stops it as Ctrl+C would.
     """
+    global _child
     executable = available()
     if executable is None:
         return 127
     env = {**os.environ, "MO_CALLER": "keepbest", "MO_HOLD": "0", **folder_env(recursive, excluded)}
+    argv = [executable, "run", str(target)]
+    captured = {}
+    if output is not None:
+        argv.append("-y")
+        env["PYTHONUNBUFFERED"] = "1"  # lines as they come, not when a pipe's buffer is full
+        captured = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     # Ctrl+C and a closed terminal reach media-optimizer directly (same process
     # group); it stops its encoders cleanly. keepbest must neither stop nor kill
     # it then. A SIGTERM sent only to keepbest is passed on. The handlers are in
@@ -67,12 +82,53 @@ def run(target: Path, recursive: bool = True, excluded=()) -> int:
         signal.signal(getattr(signal, name), forward if name == "SIGTERM" else ignore)
     try:
         try:
-            child = subprocess.Popen([executable, "run", str(target)], env=env)
+            child = _child = subprocess.Popen(argv, env=env, **captured)
         except OSError:
             return 127
         for signum in pending:
             child.send_signal(signum)
+        if output is not None:
+            _pass_on(child, output)
         return child.wait()
     finally:
+        _child = None
         for name, handler in previous.items():
             signal.signal(getattr(signal, name), handler)
+
+
+def _pass_on(child: subprocess.Popen, output) -> None:
+    """Hand the child's output to *output* line by line until the child has
+    ended. A program it started that still holds the pipe (a stray encoder)
+    must not keep keepbest waiting, so the pipe is not read to its end."""
+    if os.name == "nt":  # select() takes no pipes there: read to the end
+        for raw in child.stdout:
+            output(raw.decode("utf-8", "replace").rstrip("\r\n"))
+        return
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    pending = ""
+    fd = child.stdout.fileno()
+    with selectors.DefaultSelector() as selector:
+        selector.register(fd, selectors.EVENT_READ)
+        while True:
+            if selector.select(timeout=0.2):
+                data = os.read(fd, 65536)
+                if not data:
+                    break
+                *lines, pending = re.split(r"\r?\n", pending + decoder.decode(data))
+                for line in lines:
+                    output(line)
+            elif child.poll() is not None:
+                break
+    pending += decoder.decode(b"", final=True)
+    if pending:
+        output(pending)
+    child.stdout.close()
+
+
+def interrupt() -> bool:
+    """Stop the running media-optimizer as Ctrl+C would; False when none runs."""
+    child = _child
+    if child is None or child.poll() is not None:
+        return False
+    child.send_signal(signal.SIGINT)
+    return True
