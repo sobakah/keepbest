@@ -1,7 +1,7 @@
 # keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
-A local browser page (since 2.0.0; the only way it asks since the terminal screens were removed after 2.0.0, for 2.1.0;
+A local browser page (since 2.0.0; since 2.1.0 the only way it asks, the terminal screens are gone;
 `--auto` runs in the terminal without questions), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
 Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
 Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
@@ -287,7 +287,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
   media-optimizer on the page with `-y` and an output box (`handoff.run(output=…)`; the pipe is
   not read to its end once the child exited, so a stray grandchild can't block). The page is the
   default; `--terminal` keeps the screens, and the terminal output never changed.
-- Done for 2.1.0 (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
+- Done in 2.1.0 (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
   hand-off to media-optimizer 2.4 (plan step 6), pictures off by default, Open/Show in folder,
   the "why" line, key badges only for Enter and numbers, the collapsed folder tree, one Quit.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
@@ -296,7 +296,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 - **Still open (plan step 7):** picktag may drop its terminal window (it only waits for the exit
   code; keepbest's terminal now only shows the address and a log).
 
-## Open tasks (target: release 2.1.0)
+## Open tasks (target: release 2.2.0)
 
 1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
 media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
@@ -305,7 +305,8 @@ and has the fixes from an outside review (16-bit greyscale, extra video streams,
 protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`); 1.2.1 (2026-10-17) names the right
 command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no);
 1.3.0 (2026-10-18) adds the file journal for picktag and fixes the log crash on non-UTF-8 names; 2.0.0
-(2026-10-22) makes the browser page the default. New changes go under
+(2026-10-22) makes the browser page the default; 2.1.0 (2026-10-22) removes the terminal screens and hands
+the tab to media-optimizer's page. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -332,6 +333,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
   old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (2.1.0 for behaviour changes, else 2.0.1) before
+- **Next release:** raise `__version__` (2.2.0 for behaviour changes, else 2.1.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

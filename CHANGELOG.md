@@ -3,9 +3,9 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.1.0] — 2026-10-22
 
-**Upgrading:** keepbest asks its questions only on its page now: the terminal screens are gone, and `--terminal` says so. The terminal keeps a log of the run; `--auto` is unchanged. Remove `"browser_page"` from `config.json` (it is ignored, with a warning), and set `"viewer"` to `auto`, `identity` or `imagecompare` if it was `kitty` or `timg` (they fall back to `auto`). An app-menu entry written by 2.0.0 keeps working.
+**Upgrading:** `pipx upgrade keepbest`. keepbest asks its questions only on its page now: the terminal screens are gone, and `--terminal` says so. The terminal keeps a log of the run; `--auto` is unchanged. Remove `"browser_page"` from `config.json` (it is ignored, with a warning), and set `"viewer"` to `auto`, `identity` or `imagecompare` if it was `kitty` or `timg` (they fall back to `auto`). An app-menu entry written by 2.0.0 keeps working.
 
 ### Added
 
@@ -371,6 +371,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
+[2.1.0]: https://github.com/sobakah/keepbest/releases/tag/2.1.0
 [2.0.0]: https://github.com/sobakah/keepbest/releases/tag/2.0.0
 [1.3.0]: https://github.com/sobakah/keepbest/releases/tag/1.3.0
 [1.2.1]: https://github.com/sobakah/keepbest/releases/tag/1.2.1
