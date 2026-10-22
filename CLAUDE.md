@@ -58,6 +58,8 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     else rendered at full size; own CSP), `/api/reveal` (`viewer.show_in_folder`: FileManager1
     ShowItems over gdbus, else xdg-open of the folder). A file's `file` id is only given while it is
     on disk; the log's tables of a real run give it to the kept file only (`dry` in the show call).
+    In a group's table Open shows the file below its row (`InlinePicture`, or `Player` for a video).
+    The folder question carries `start` (the current folder), where the picker opens after a reload.
   - Each grouped image carries `beaten`: the `image_utils.deciding_criterion` (the first part of
     `score_image` in which the kept file ranks above it), for the "why" line and bold cells.
   - Pictures (and the remux player) are off until switched on; then on for the page's lifetime.
@@ -82,7 +84,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 303 tests, ~95 s (see below for which Python)
+python3 -m pytest                 # 305 tests, ~95 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

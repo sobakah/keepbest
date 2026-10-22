@@ -163,10 +163,11 @@ def protected_message(path: Path) -> str:
 
 
 def resolve_directory(initial: Path | None, index: FolderIndex,
-                      allow_cancel: bool = False) -> Path | None:
+                      allow_cancel: bool = False, start: Path | None = None) -> Path | None:
     """Find a usable folder, prompting until one is given (lrckit behaviour).
 
     With *allow_cancel* an empty answer returns None instead of quitting.
+    *start*: the folder the picker opens (the current one when changing).
     """
     current = initial
     while True:
@@ -187,7 +188,7 @@ def resolve_directory(initial: Path | None, index: FolderIndex,
             else:
                 error(f"\nPath is not a directory: {resolved}")
 
-        raw = ask_path("Picture folder (empty to cancel): " if allow_cancel else "Picture folder: ")
+        raw = ask_path("Picture folder (empty to cancel): " if allow_cancel else "Picture folder: ", start)
 
         cleaned = raw.strip().strip("'\" ")
         if not cleaned or cleaned.lower() == "q":
@@ -887,7 +888,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
         store = SessionStore(target) if use_sessions else None
         action, saved = start_screen(target, config, settings, index, store)
         if action == "change":
-            changed = resolve_directory(None, index, allow_cancel=True)
+            changed = resolve_directory(None, index, allow_cancel=True, start=target)
             if changed is None:
                 info("Keeping the current folder.")
             else:
@@ -929,7 +930,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
         if choice is None:
             choice = end_menu(target, run_settings, index, offer_optimizer=real_run)
         if choice == "change":
-            changed = resolve_directory(None, index, allow_cancel=True)
+            changed = resolve_directory(None, index, allow_cancel=True, start=target)
             if changed is not None:
                 target = changed
                 settings["excluded"] = set()

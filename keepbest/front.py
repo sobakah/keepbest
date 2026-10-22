@@ -32,8 +32,9 @@ class Front:
         """A yes/no question; *tone* "warn" or "danger" colours it."""
         raise NotImplementedError
 
-    def ask_path(self, prompt: str) -> str:
-        """A folder path, as typed (unstripped)."""
+    def ask_path(self, prompt: str, start: Path | None = None) -> str:
+        """A folder path, as typed (unstripped). *start*: the current folder,
+        where the page's folder picker opens."""
         raise NotImplementedError
 
     def progress(self, label: str, total: int):
@@ -119,8 +120,8 @@ def confirm(question: str, default: bool = False, tone: str = "") -> bool:
     return current().confirm(question, default, tone)
 
 
-def ask_path(prompt: str) -> str:
-    return current().ask_path(prompt)
+def ask_path(prompt: str, start: Path | None = None) -> str:
+    return current().ask_path(prompt, start)
 
 
 def progress(label: str, total: int):

@@ -166,10 +166,12 @@ def visual_group(group, rel, preview=None) -> dict:
 
 
 def exact_group(group, rel, file_id=None) -> dict:
-    """An exact or remux group for the page; *file_id* gives a video's id for the player."""
+    """An exact or remux group for the page; *file_id* gives a video's id for the player
+    and the id a file still on disk is opened by (a picture's preview, a video's player)."""
     return {"kind": group.kind, "tracks": group.tracks, "status": group.status,
             "files": [{"name": rel(f["path"]), "size": format_size(f["size"]), "streams": f.get("streams", ""),
                        "media": file_id(f["path"]) if file_id else None, "type": _video_type(f["path"]),
+                       "video": Path(f["path"]).suffix.lower() in VIDEO_EXTENSIONS,
                        "file": _present(file_id, f["path"])}
                       for f in group.files]}
 
@@ -534,8 +536,9 @@ class WebFront(Front):
         self._add({"kind": "answer", "prompt": question, "text": "Yes" if answer else "No"})
         return answer
 
-    def ask_path(self, prompt: str) -> str:
-        return self._ask("path", {"prompt": prompt.strip().rstrip(":")})
+    def ask_path(self, prompt: str, start: Path | None = None) -> str:
+        # start: where the picker opens; the page forgets its last folder when it reloads
+        return self._ask("path", {"prompt": prompt.strip().rstrip(":"), "start": str(start) if start else ""})
 
     def answer(self, qid: int, value: object) -> None:
         """The page's answer to question *qid*, checked against what it asked."""

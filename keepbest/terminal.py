@@ -192,7 +192,7 @@ class TerminalFront(Front):
     def confirm(self, question: str, default: bool = False, tone: str = "") -> bool:
         raise NeedsPage(f"asked in the terminal: {question!r}")
 
-    def ask_path(self, prompt: str) -> str:
+    def ask_path(self, prompt: str, start=None) -> str:
         raise NeedsPage(f"asked in the terminal: {prompt!r}")
 
     def progress(self, label: str, total: int):

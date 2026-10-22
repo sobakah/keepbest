@@ -63,7 +63,7 @@ keepbest opens a page in your browser (see [The page](#the-page)) with a **start
 | `7` | Include videos: on/off |
 | `r` | Include subfolders |
 | `f` | Choose subfolders (with `r` on) |
-| `c` | Change folder (a list of folders to choose from, or type a path) |
+| `c` | Change folder (a list of folders to choose from, starting at the current one, or type a path) |
 
 **Choosing subfolders (`f`):** a tree of all subfolders with images or videos, all selected by default. It opens with the top folders only; ▸ shows the ones below, and a closed folder says how many below it are switched off. A checkbox switches that folder; if folders below it would change too, you are asked whether to switch them along (Enter: yes). *All* (`a`) and *None* (`n`) switch all subfolders. The **main folder** has its own checkbox (`m`), so it can't be left out by accident; the start screen shows the choice, e.g. `main folder + 2 of 4 subfolders`.
 
@@ -137,7 +137,7 @@ The end screen offers to scan again with other settings (`b`), change the folder
 
 ## Viewers
 
-Each file of a group has *Open* (in a group of visually identical images the picture opens below its row, and a click on it shows it at full size in a new tab; elsewhere a new tab; pictures the browser can't show are rendered by keepbest) and *Show in folder* (your file manager, with the file selected). `v` opens all images of a group at once in an app, chosen by setting `5` or `"viewer"` in the config:
+Each file of a group has *Open* (in a group's table the picture opens below its row, and a click on it shows it at full size in a new tab, and a video plays there; in the overview a new tab; pictures the browser can't show are rendered by keepbest) and *Show in folder* (your file manager, with the file selected). `v` opens all images of a group at once in an app, chosen by setting `5` or `"viewer"` in the config:
 
 | Viewer | What you get |
 |---|---|

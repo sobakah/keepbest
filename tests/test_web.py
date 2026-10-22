@@ -422,7 +422,7 @@ def test_without_a_folder_the_page_asks_for_one(library, serve, tmp_path):
     visual_pair(library)
     page, result = serve(None)
     q = page.question()
-    assert q["kind"] == "path"
+    assert q["kind"] == "path" and q["start"] == ""               # the picker opens the pictures folder
     listing = page.get("/api/folders?path=" + urllib.request.quote(str(tmp_path)))
     names = [d["name"] for d in listing["dirs"]]
     assert "pictures" in names and "home" in names
@@ -436,6 +436,35 @@ def test_without_a_folder_the_page_asks_for_one(library, serve, tmp_path):
     assert start["screen"] == "StartScreen" and start["target"] == str(library.path)
     page.answer(start, "q")
     assert finish(page, result) == 0
+
+
+def test_changing_the_folder_starts_in_the_current_one(library, serve, tmp_path):
+    """The picker opens the folder being worked on, also on a page that was
+    reloaded (after media-optimizer's page had the tab) and forgot the last one."""
+    visual_pair(library)
+    other = tmp_path / "other"
+    other.mkdir()
+    page, result = serve(library.path)
+    start, change = page.walk("c", str(other))                       # no pictures there: asked again
+    assert change["kind"] == "path" and change["start"] == str(library.path)
+    again = page.question(change["id"])
+    assert again["kind"] == "path" and again["start"] == str(library.path)
+    page.answer(again, "")                                           # keep the current folder
+    start = page.question(again["id"])
+    assert start["screen"] == "StartScreen"
+    page.answer(start, "q")
+    assert finish(page, result) == 0
+
+
+def test_identical_files_say_whether_they_are_videos(tmp_path):
+    """The page plays a video below its row and shows a picture there."""
+    from keepbest.core_logic import ExactGroup
+    files = []
+    for name in ("a.png", "b.png", "c.MP4"):
+        (tmp_path / name).write_bytes(b"x")
+        files.append({"path": tmp_path / name, "size": 1})
+    group = web.exact_group(ExactGroup(files=files), lambda path: path.name, lambda path: "id-" + path.name)
+    assert [(f["video"], f["file"]) for f in group["files"]] == [(False, "id-a.png"), (False, "id-b.png"), (True, "id-c.MP4")]
 
 
 def test_the_folder_picker_lists_folders_only(tmp_path):

@@ -74,8 +74,8 @@ const keyTitle = (k) => (k === '' ? 'Key: Enter' : k ? `Key: ${k}` : undefined);
 
 // Buttons for a file that is still on disk: open it in a new tab (pictures the
 // browser can't show are rendered), or show it in its folder. In a group's
-// table (onToggle) Open shows the picture below its row instead; on a card,
-// which shows it already, there is no Open (noOpen).
+// table (onToggle) Open shows the picture, or plays the video, below its row
+// instead; on a card, which shows it already, there is no Open (noOpen).
 function FileActions({ id, video = false, open = false, onToggle = null, noOpen = false }) {
   const [note, setNote] = useState('');
   if (!id) return null;
@@ -87,7 +87,8 @@ function FileActions({ id, video = false, open = false, onToggle = null, noOpen 
   return html`<span class="file-actions">
     ${noOpen ? null : onToggle
       ? html`<button class="btn btn-small" aria-pressed=${open} onClick=${toggle}
-          title=${open ? 'Hide the picture' : 'Show the picture below'}>${open ? 'Hide' : 'Open'}</button>`
+          title=${video ? (open ? 'Hide the player' : 'Play it below') : (open ? 'Hide the picture' : 'Show the picture below')}>${
+            open ? 'Hide' : 'Open'}</button>`
       : html`<a class="btn btn-small" href=${`/api/file/${encodeURIComponent(id)}`} target="_blank" rel="noopener"
           title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}>Open</a>`}
     <button class="btn btn-small" onClick=${reveal} title="Open its folder in the file manager">Show in folder</button>
@@ -132,18 +133,23 @@ function InlinePicture({ image }) {
     <img class="inline-picture" src=${previewSrc(image.preview, false)} alt=${image.name} onError=${() => setFailed(true)} /></a>`;
 }
 
-function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
-  // The kept file's cells that decided against another file are bold.
-  const won = new Set(reasons(group, keepIndex).map((r) => CRITERION_CELLS[r.criterion]));
-  const cell = (i, name, cls = '') => (i === keepIndex && won.has(name) ? `${cls} win`.trim() : cls);
-  // Rows whose picture is open below them.
+// A table's rows whose file is open below them: [is row i open, toggle row i].
+function useOpenRows() {
   const [opened, setOpened] = useState(() => new Set());
   const toggle = (i) => setOpened((now) => {
     const next = new Set(now);
     if (!next.delete(i)) next.add(i);
     return next;
   });
-  const inline = (i) => ({ open: opened.has(i), onToggle: group.images[i].preview ? () => toggle(i) : null });
+  return [(i) => opened.has(i), toggle];
+}
+
+function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
+  // The kept file's cells that decided against another file are bold.
+  const won = new Set(reasons(group, keepIndex).map((r) => CRITERION_CELLS[r.criterion]));
+  const cell = (i, name, cls = '') => (i === keepIndex && won.has(name) ? `${cls} win`.trim() : cls);
+  const [isOpen, toggle] = useOpenRows();
+  const inline = (i) => ({ open: isOpen(i), onToggle: group.images[i].preview ? () => toggle(i) : null });
   const actionsOf = actions || ((i, opener) => html`<${FileActions} id=${group.images[i].file} ...${opener} />`);
   return html`<div class="table-box"><table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Format</th><th>Type</th><th class="num">Resolution</th>
@@ -161,14 +167,17 @@ function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
         <td class=${'num' + (hot ? ' diff-hot' : '')}>${image.diff === null ? '—' : image.diff}</td>
         <td class="actions"><div class="cell-actions">${actionsOf(i, inline(i))}</div></td>
       </tr>
-      ${opened.has(i) && image.file && html`<tr class="picture-row" key=${'picture' + i}>
+      ${isOpen(i) && image.file && html`<tr class="picture-row" key=${'picture' + i}>
         <td></td><td colspan="9"><${InlinePicture} image=${image} /></td></tr>`}`;
     })}</tbody>
   </table></div>`;
 }
 
+// Identical files and remuxed videos; Open shows the picture or plays the video below its row.
 function ExactTable({ group, keepIndex = 0 }) {
   const remux = group.kind === 'remux';
+  const [isOpen, toggle] = useOpenRows();
+  const columns = remux ? 6 : 4;
   return html`<div class="table-box"><table>
     <thead><tr><th>#</th><th>Action</th><th>File</th>${remux && html`<th class="num">Size</th><th>Streams</th>`}
       <th></th></tr></thead>
@@ -178,8 +187,13 @@ function ExactTable({ group, keepIndex = 0 }) {
         <td class="mono">${i}</td><td><span class=${'badge ' + (kept ? 'b-keep' : 'b-remove')}>${kept ? 'KEEP' : 'REMOVE'}</span></td>
         <td class="file">${file.name}</td>
         ${remux && html`<td class="num">${file.size}</td><td class="small muted">${file.streams}</td>`}
-        <td class="actions"><div class="cell-actions"><${FileActions} id=${file.file} video=${remux} /></div></td>
-      </tr>`;
+        <td class="actions"><div class="cell-actions"><${FileActions} id=${file.file} video=${remux || file.video}
+          open=${isOpen(i)} onToggle=${() => toggle(i)} /></div></td>
+      </tr>
+      ${isOpen(i) && file.file && html`<tr class="picture-row" key=${'open' + i}><td></td><td colspan=${columns}>${
+        remux || file.video
+          ? html`<${Player} file=${{ ...file, media: file.file }} hint="Show in folder opens it in your file manager." />`
+          : html`<${InlinePicture} image=${{ name: file.name, preview: file.file, file: file.file }} />`}</td></tr>`}`;
     })}</tbody>
   </table></div>`;
 }
@@ -445,7 +459,8 @@ function FolderPicker({ question, answer, sending }) {
       setError(err.message);
     }
   };
-  useEffect(() => { open(lastFolder); }, []);
+  // the last folder listed here, else the current one (the page forgets after a reload)
+  useEffect(() => { open(lastFolder || question.start || ''); }, []);
   const choose = (path) => answer(path);
   return html`<div class="picker">
     <form onSubmit=${(e) => { e.preventDefault(); open(typed); }}>
@@ -663,12 +678,12 @@ function GroupScreen({ question, answer, sending }) {
 }
 
 // A video as the browser can play it; one that it can't (HEVC in MPEG-TS, ...) says so.
-function Player({ file }) {
+function Player({ file, hint = 'The details below still show what the file holds.' }) {
   const [failed, setFailed] = useState(false);
   if (!file.media) return null;
   return failed
     ? html`<div class="player no-play"><b>This browser can't play ${file.name}</b>
-        <span class="small">${file.streams}. The details below still show what the file holds.</span></div>`
+        <span class="small">${file.streams ? `${file.streams}. ` : ''}${hint}</span></div>`
     : html`<video class="player" key=${file.media} controls preload="metadata" src=${`/api/media/${encodeURIComponent(file.media)}`}
         onError=${() => setFailed(true)}></video>`;
 }

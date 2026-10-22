@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **Open** on identical copies and remuxed videos works like on visually identical images: a picture opens below its row, and a video plays there (where the browser can play it), instead of in a new tab.
+
+### Fixed
+
+- **Change directory** opens the folder list in the current folder again after media-optimizer's page had the tab. The page forgot it when it was loaded anew and started in the pictures folder; it now also starts in the current folder when keepbest was started with one.
+
 ## [2.1.1] — 2026-10-22
 
 **Upgrading:** `pipx upgrade keepbest`.

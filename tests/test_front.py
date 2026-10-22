@@ -34,7 +34,7 @@ class Scripted(Front):
         self.asked.append(question)
         return self.answers.pop(0)
 
-    def ask_path(self, prompt):
+    def ask_path(self, prompt, start=None):
         self.asked.append(prompt)
         return self.answers.pop(0)
 
