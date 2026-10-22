@@ -294,3 +294,8 @@ button.twisty:hover { background: var(--raised); }
 /* a form shown while its next state is worked out */
 .question { transition: opacity .15s ease; }
 .question.stale { opacity: .7; }
+
+/* a picture opened in its row of a group's table */
+.picture-row td { padding-top: 0; }
+.inline-picture { display: block; max-width: 100%; max-height: 70vh; border-radius: 8px; border: 1px solid var(--border);
+                  background: #0A0B0D; cursor: zoom-in; }

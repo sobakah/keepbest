@@ -151,7 +151,7 @@ def visual_group(group, rel, preview=None) -> dict:
         "images": [{"name": rel(meta["path"]), "format": meta.get("format"), "type": _lossless(meta),
                     "width": meta.get("width"), "height": meta.get("height"), "size": format_size(meta["size"]),
                     "bpp": round(meta["bpp"], 2) if meta.get("bpp") is not None else None, "diff": diff,
-                    "spot": meta.get("spot"), "preview": preview(meta["path"]) if preview else None,
+                    "spot": meta.get("spot"), "preview": _present(preview, meta["path"]),
                     "file": _present(preview, meta["path"]),
                     "beaten": deciding_criterion(keeper, meta) if keeper is not None and i != kept else None,
                     "jxlPreferred": meta.get("format") == "JXL" and bool(meta.get("lossless_rank"))

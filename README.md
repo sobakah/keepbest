@@ -137,7 +137,7 @@ The end screen offers to scan again with other settings (`b`), change the folder
 
 ## Viewers
 
-Each file of a group has *Open* (a new tab, at full size; pictures the browser can't show are rendered by keepbest) and *Show in folder* (your file manager, with the file selected). `v` opens all images of a group at once in an app, chosen by setting `5` or `"viewer"` in the config:
+Each file of a group has *Open* (in a group of visually identical images the picture opens below its row, and a click on it shows it at full size in a new tab; elsewhere a new tab; pictures the browser can't show are rendered by keepbest) and *Show in folder* (your file manager, with the file selected). `v` opens all images of a group at once in an app, chosen by setting `5` or `"viewer"` in the config:
 
 | Viewer | What you get |
 |---|---|

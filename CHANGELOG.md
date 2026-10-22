@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **Open** in a group of visually identical images shows the picture right below its row instead of in a new tab (*Hide* closes it; a click on the picture still opens it at full size in a tab). Several can be open at once. The cards shown with *Show pictures* no longer have *Open*, since they show the picture already. Exact copies, remuxed videos and the overview still open a new tab.
+
 ## [2.1.0] — 2026-10-22
 
 **Upgrading:** `pipx upgrade keepbest`. keepbest asks its questions only on its page now: the terminal screens are gone, and `--terminal` says so. The terminal keeps a log of the run; `--auto` is unchanged. Remove `"browser_page"` from `config.json` (it is ignored, with a warning), and set `"viewer"` to `auto`, `identity` or `imagecompare` if it was `kitty` or `timg` (they fall back to `auto`). An app-menu entry written by 2.0.0 keeps working.

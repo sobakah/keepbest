@@ -73,17 +73,23 @@ function Label({ text, k }) {
 const keyTitle = (k) => (k === '' ? 'Key: Enter' : k ? `Key: ${k}` : undefined);
 
 // Buttons for a file that is still on disk: open it in a new tab (pictures the
-// browser can't show are rendered), or show it in its folder.
-function FileActions({ id, video = false }) {
+// browser can't show are rendered), or show it in its folder. In a group's
+// table (onToggle) Open shows the picture below its row instead; on a card,
+// which shows it already, there is no Open (noOpen).
+function FileActions({ id, video = false, open = false, onToggle = null, noOpen = false }) {
   const [note, setNote] = useState('');
   if (!id) return null;
   const reveal = async (e) => {
     e.currentTarget.blur();
     try { await api('/reveal', { id }); setNote(''); } catch (err) { setNote(err.message); }
   };
+  const toggle = (e) => { e.currentTarget.blur(); onToggle(); };
   return html`<span class="file-actions">
-    <a class="btn btn-small" href=${`/api/file/${encodeURIComponent(id)}`} target="_blank" rel="noopener"
-      title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}>Open</a>
+    ${noOpen ? null : onToggle
+      ? html`<button class="btn btn-small" aria-pressed=${open} onClick=${toggle}
+          title=${open ? 'Hide the picture' : 'Show the picture below'}>${open ? 'Hide' : 'Open'}</button>`
+      : html`<a class="btn btn-small" href=${`/api/file/${encodeURIComponent(id)}`} target="_blank" rel="noopener"
+          title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}>Open</a>`}
     <button class="btn btn-small" onClick=${reveal} title="Open its folder in the file manager">Show in folder</button>
     ${note && html`<span class="small k-error">${note}</span>`}
   </span>`;
@@ -118,11 +124,27 @@ function Why({ group, keepIndex, decided }) {
 }
 
 // --- the log ----------------------------------------------------------------------
+// A picture opened in its table row; a click shows it at full size in a new tab.
+function InlinePicture({ image }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return html`<span class="small muted">No preview: the file is gone or unreadable.</span>`;
+  return html`<a href=${`/api/file/${encodeURIComponent(image.file)}`} target="_blank" rel="noopener" title="Full size in a new tab">
+    <img class="inline-picture" src=${previewSrc(image.preview, false)} alt=${image.name} onError=${() => setFailed(true)} /></a>`;
+}
+
 function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
   // The kept file's cells that decided against another file are bold.
   const won = new Set(reasons(group, keepIndex).map((r) => CRITERION_CELLS[r.criterion]));
   const cell = (i, name, cls = '') => (i === keepIndex && won.has(name) ? `${cls} win`.trim() : cls);
-  const actionsOf = actions || ((i) => html`<${FileActions} id=${group.images[i].file} />`);
+  // Rows whose picture is open below them.
+  const [opened, setOpened] = useState(() => new Set());
+  const toggle = (i) => setOpened((now) => {
+    const next = new Set(now);
+    if (!next.delete(i)) next.add(i);
+    return next;
+  });
+  const inline = (i) => ({ open: opened.has(i), onToggle: group.images[i].preview ? () => toggle(i) : null });
+  const actionsOf = actions || ((i, opener) => html`<${FileActions} id=${group.images[i].file} ...${opener} />`);
   return html`<div class="table-box"><table>
     <thead><tr><th>#</th><th>Action</th><th>File</th><th>Format</th><th>Type</th><th class="num">Resolution</th>
       <th class="num">Size</th><th class="num">BPP</th><th class="num">Diff</th><th></th></tr></thead>
@@ -137,8 +159,10 @@ function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
         <td class=${cell(i, 'resolution', 'num')}>${image.width}×${image.height}</td><td class="num">${image.size}</td>
         <td class=${cell(i, 'bpp', 'num')}>${image.bpp ?? ''}</td>
         <td class=${'num' + (hot ? ' diff-hot' : '')}>${image.diff === null ? '—' : image.diff}</td>
-        <td class="actions"><div class="cell-actions">${actionsOf(i)}</div></td>
-      </tr>`;
+        <td class="actions"><div class="cell-actions">${actionsOf(i, inline(i))}</div></td>
+      </tr>
+      ${opened.has(i) && image.file && html`<tr class="picture-row" key=${'picture' + i}>
+        <td></td><td colspan="9"><${InlinePicture} image=${image} /></td></tr>`}`;
     })}</tbody>
   </table></div>`;
 }
@@ -565,7 +589,7 @@ function GroupScreen({ question, answer, sending }) {
         <div class="file">${image.name}</div>
         <div class="small muted">${image.format} · ${image.type} · ${image.width}×${image.height} · ${image.size}</div>
       </div>
-      <div class="row card-actions">${choices(i)}<${FileActions} id=${image.file} /></div>
+      <div class="row card-actions">${choices(i)}<${FileActions} id=${image.file} noOpen=${true} /></div>
     </article>`;
   };
   // Keeping another file and marking one as no duplicate: on its card, or in its table row.
@@ -600,7 +624,7 @@ function GroupScreen({ question, answer, sending }) {
     </div>
 
     ${!pictures ? html`<${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'}
-        actions=${(i) => html`${choices(i)}<${FileActions} id=${g.images[i].file} />`} />`
+        actions=${(i, opener) => html`${choices(i)}<${FileActions} id=${g.images[i].file} ...${opener} />`} />`
       : layout === 'side'
       ? html`<div class="cards">${g.images.map(card)}</div>`
       : html`<div class="flip">

@@ -254,6 +254,7 @@ def test_only_files_still_on_disk_can_be_opened(library, serve, dry):
     handled = page.question(overview["id"])
     assert handled["screen"] == "HandledScreen"
     assert [bool(i["file"]) for i in handled["group"]["images"]] == [True, dry]
+    assert [bool(i["preview"]) for i in handled["group"]["images"]] == [True, dry]   # no request for a gone file
     (table,) = page.events("exact_table")
     assert [bool(f["file"]) for f in table["group"]["files"]] == [True, dry]
     finish(page, result)
