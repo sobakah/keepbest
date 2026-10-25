@@ -467,6 +467,17 @@ def test_identical_files_say_whether_they_are_videos(tmp_path):
     assert [(f["video"], f["file"]) for f in group["files"]] == [(False, "id-a.png"), (False, "id-b.png"), (True, "id-c.MP4")]
 
 
+def test_a_removed_video_gets_no_player(tmp_path):
+    from keepbest.core_logic import ExactGroup
+    files = []
+    for name in ("a.mp4", "b.mkv"):
+        (tmp_path / name).write_bytes(b"x")
+        files.append({"path": tmp_path / name, "size": 1})
+    (tmp_path / "b.mkv").unlink()
+    group = web.exact_group(ExactGroup(kind="remux", files=files), lambda path: path.name, lambda path: "id-" + path.name)
+    assert [f["media"] for f in group["files"]] == ["id-a.mp4", None]
+
+
 def test_the_folder_picker_lists_folders_only(tmp_path):
     folder = tmp_path / "pictures"
     for name in ("b", "A", ".hidden"):

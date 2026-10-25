@@ -128,7 +128,8 @@ function Why({ group, keepIndex, decided }) {
 // A picture opened in its table row; a click shows it at full size in a new tab.
 function InlinePicture({ image }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return html`<span class="small muted">No preview: the file is gone or unreadable.</span>`;
+  if (failed) return html`<span class="small muted">No preview here. <a href=${`/api/file/${encodeURIComponent(image.file)}`}
+    target="_blank" rel="noopener">Try it in a new tab</a>.</span>`;
   return html`<a href=${`/api/file/${encodeURIComponent(image.file)}`} target="_blank" rel="noopener" title="Full size in a new tab">
     <img class="inline-picture" src=${previewSrc(image.preview, false)} alt=${image.name} onError=${() => setFailed(true)} /></a>`;
 }
@@ -190,9 +191,9 @@ function ExactTable({ group, keepIndex = 0 }) {
         <td class="actions"><div class="cell-actions"><${FileActions} id=${file.file} video=${remux || file.video}
           open=${isOpen(i)} onToggle=${() => toggle(i)} /></div></td>
       </tr>
-      ${isOpen(i) && file.file && html`<tr class="picture-row" key=${'open' + i}><td></td><td colspan=${columns}>${
+      ${isOpen(i) && file.file && html`<tr class="picture-row" key=${'open' + i}><td></td><td colspan=${columns - 1}>${
         remux || file.video
-          ? html`<${Player} file=${{ ...file, media: file.file }} hint="Show in folder opens it in your file manager." />`
+          ? html`<${Player} file=${file} hint="Show in folder opens it in your file manager." />`
           : html`<${InlinePicture} image=${{ name: file.name, preview: file.file, file: file.file }} />`}</td></tr>`}`;
     })}</tbody>
   </table></div>`;
@@ -444,6 +445,7 @@ function FolderTree({ question, answer, sending }) {
 
 // The browser can't hand out folder paths, so the server lists folders to choose from.
 let lastFolder = '';
+let lastStart = null;
 function FolderPicker({ question, answer, sending }) {
   const [listing, setListing] = useState(null);
   const [typed, setTyped] = useState('');
@@ -459,9 +461,14 @@ function FolderPicker({ question, answer, sending }) {
       setError(err.message);
     }
   };
-  // the last folder listed here, else the current one (the page forgets after a reload)
-  useEffect(() => { open(lastFolder || question.start || ''); }, []);
+  // The current folder; the last one listed only when the same question comes back
+  // (a refused folder). The page forgets lastFolder after a reload.
+  useEffect(() => {
+    if (question.start !== lastStart) { lastFolder = ''; lastStart = question.start; }
+    open(lastFolder || question.start || '');
+  }, []);
   const choose = (path) => answer(path);
+  const keep = () => { lastFolder = ''; answer(''); };
   return html`<div class="picker">
     <form onSubmit=${(e) => { e.preventDefault(); open(typed); }}>
       <label class="small muted" for="folder-path" style=${{ flexBasis: '100%' }}>Folder</label>
@@ -483,7 +490,7 @@ function FolderPicker({ question, answer, sending }) {
         <button class="btn btn-primary" disabled=${sending || listing.protected} onClick=${() => choose(listing.path)}>
           Scan this folder</button>
         ${listing.protected && html`<span class="small muted">The home folder, the folders above it and system folders are not scanned.</span>`}
-        ${question.prompt.includes('empty to cancel') && html`<button class="btn" disabled=${sending} onClick=${() => answer('')}>Keep the current folder</button>`}
+        ${question.prompt.includes('empty to cancel') && html`<button class="btn" disabled=${sending} onClick=${keep}>Keep the current folder</button>`}
       </div>
     </div>`}
   </div>`;

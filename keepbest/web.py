@@ -166,11 +166,11 @@ def visual_group(group, rel, preview=None) -> dict:
 
 
 def exact_group(group, rel, file_id=None) -> dict:
-    """An exact or remux group for the page; *file_id* gives a video's id for the player
-    and the id a file still on disk is opened by (a picture's preview, a video's player)."""
+    """An exact or remux group for the page; *file_id* gives the id a file still on disk
+    is played (`media`) and opened by (`file`; a picture's preview too)."""
     return {"kind": group.kind, "tracks": group.tracks, "status": group.status,
             "files": [{"name": rel(f["path"]), "size": format_size(f["size"]), "streams": f.get("streams", ""),
-                       "media": file_id(f["path"]) if file_id else None, "type": _video_type(f["path"]),
+                       "media": _present(file_id, f["path"]), "type": _video_type(f["path"]),
                        "video": Path(f["path"]).suffix.lower() in VIDEO_EXTENSIONS,
                        "file": _present(file_id, f["path"])}
                       for f in group.files]}

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- The row that opens below an identical copy or a remuxed video had one cell too many, which pushed the table out of line.
+- **Change directory** opened the folder last browsed in the picker (after "Keep the current folder", or after a folder change) instead of the current one. After a refused folder it still opens where you were.
+- A picture without a preview (an unreadable file) offers to try it in a new tab, as Open did before 2.1.2.
+
 ## [2.1.2] — 2026-10-22
 
 **Upgrading:** `pipx upgrade keepbest`.
