@@ -3,7 +3,9 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.1.4] — 2026-10-26
+
+**Upgrading:** `pipx upgrade keepbest`. Sessions saved by older versions still load.
 
 ### Fixed
 
@@ -415,6 +417,7 @@ All settings can also be set in `config.json`; `config.example.json` lists every
 - Animated images are only checked for exact copies.
 - Developed and tested on Linux. macOS and Windows are supported by the code but have not been tested yet.
 
+[2.1.4]: https://github.com/sobakah/keepbest/releases/tag/2.1.4
 [2.1.3]: https://github.com/sobakah/keepbest/releases/tag/2.1.3
 [2.1.2]: https://github.com/sobakah/keepbest/releases/tag/2.1.2
 [2.1.1]: https://github.com/sobakah/keepbest/releases/tag/2.1.1

@@ -316,7 +316,8 @@ command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end s
 (2026-10-22) makes the browser page the default; 2.1.0 (2026-10-22) removes the terminal screens and hands
 the tab to media-optimizer's page; 2.1.1 (2026-10-22) opens a group's picture below its row; 2.1.2 (2026-10-22) does so for identical
 files and videos too and starts the folder picker in the current folder; 2.1.3 (2026-10-25) fixes the open row's width,
-the picker's start after a cancel and the new-tab link for unreadable pictures. New changes go under
+the picker's start after a cancel and the new-tab link for unreadable pictures; 2.1.4 (2026-10-26) has the fixes from an outside
+review (permanent No after another keeper, dry-run renames, remuxes without duration, ...). New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -342,6 +343,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
   old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (2.2.0 for behaviour changes, else 2.1.4) before
+- **Next release:** raise `__version__` (2.2.0 for behaviour changes, else 2.1.5) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.
