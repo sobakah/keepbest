@@ -150,6 +150,8 @@ def truncate(text: str, width: int, keep_end: bool = False) -> str:
         kept.append(char)
         used += cost
     if keep_end:
+        while kept and display_width(kept[-1]) == 0:  # an accent whose letter was cut off
+            kept.pop()
         return "…" + "".join(reversed(kept))
     return "".join(kept) + "…"
 

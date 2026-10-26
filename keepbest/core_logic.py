@@ -71,6 +71,7 @@ class RunContext:
         self.finished = False
         self.ignores = None       # IgnoreList of pairs marked "not duplicates"
         self.planned: dict[Path, Path] = {}   # dry runs: renames a real run would make
+        self.dropping: set[Path] = set()      # dry runs: files a real run would remove
         self.stats: Stats | None = None   # totals of the whole session, saved with it
         self._last_save = 0.0
         self._pending = False     # a throttled save is still due
@@ -189,6 +190,7 @@ def execute_deletion(keep: Path, others: list[tuple[Path, int]], delete_mode: st
         try:
             if delete_mode == "dry_run":
                 outcome("○", "Would delete", "note", rel(path))
+                ctx.dropping.add(path)
             elif delete_mode == "trash":
                 send2trash(path)
                 outcome("✗", "Trashed", "bad", rel(path))
@@ -225,19 +227,20 @@ def rename_kept(keep: Path, group_paths: list[Path], delete_mode: str, stats: St
     target = rename_target(keep, group_paths)
     if target is None or not keep.exists():
         return keep
-    being_removed = {p for p in group_paths if p != keep}
-    taken = target.exists() or target.is_symlink()  # a dangling symlink is in the way too
     if delete_mode == "dry_run":
         if keep in ctx.planned:  # already renamed by an earlier stage of this dry run
             return keep
-        if taken and target not in being_removed:
+        if target in ctx.planned.values():
+            outcome("!", "Name taken", "warn", f"another file would be renamed to {target.name}, "
+                                               f"{keep.name} would keep its name")
+        elif not _name_free(target, group_paths, ctx.dropping, ctx.planned):
             outcome("!", "Name taken", "warn", f"{target.name} exists, {keep.name} would keep its name")
         else:
             outcome("○", "Would rename", "note", f"{rel(keep)} → {target.name}")
             stats.renamed += 1
             ctx.planned[keep] = target
         return keep
-    if taken:
+    if target.exists() or target.is_symlink():  # a dangling symlink is in the way too
         outcome("!", "Not renamed", "warn", f"{target.name} already exists")
         return keep
     try:
@@ -252,6 +255,31 @@ def rename_kept(keep: Path, group_paths: list[Path], delete_mode: str, stats: St
     ctx.journal.renamed(keep, target, "copy_number")
     stats.renamed += 1
     return target
+
+
+def _name_free(target: Path, group_paths: list[Path], dropping: set[Path], planned: dict[Path, Path]) -> bool:
+    """Whether a real run would find *target* free: no file has that name (a dangling
+    symlink counts), or that file is removed by then (*dropping*, or a copy in the
+    group itself), and no earlier rename (*planned*) takes it."""
+    if target in planned.values():
+        return False
+    return not (target.exists() or target.is_symlink()) or target in group_paths or target in dropping
+
+
+def replay_dry_run(exact_groups: list["ExactGroup"], groups: list["Group"],
+                   rename: bool) -> tuple[set[Path], dict[Path, Path]]:
+    """The files a dry run's decisions remove and the renames they make, taken in
+    the order a real run makes them: Stage 1 and 2 groups, then Stage 3."""
+    dropping, planned = set(), {}
+    decided = [(e.paths, e.paths[0], rename) for e in exact_groups if e.status == "done"]
+    decided += [(g.paths, g.images[g.kept or 0]["path"], g.rename) for g in groups if g.status == "done"]
+    for paths, keep, renaming in decided:
+        dropping.update(p for p in paths if p != keep)
+        target = rename_target(keep, paths) if renaming else None
+        # one file can be the keeper of a Stage 1 and a Stage 2 group: renamed once
+        if target is not None and keep not in planned and _name_free(target, paths, dropping, planned):
+            planned[keep] = target
+    return dropping, planned
 
 
 # --- Stage 1: identical files -------------------------------------------------
@@ -337,8 +365,17 @@ def find_exact_duplicates(files: list[Path], config: dict, stats: Stats, rel,
         if len(paths) == 1:
             remaining.append(paths[0])
             continue
+        stats_by_path = {}
+        for p in paths:
+            try:
+                stats_by_path[p] = p.stat()
+            except OSError as exc:  # gone or unreadable since it was hashed
+                error(f"Cannot read {rel(p)}: {exc}")
+        paths = list(stats_by_path)
+        if len(paths) < 2:
+            remaining.extend(paths)
+            continue
         # Keep a name without "(1)" if there is one, otherwise the oldest copy.
-        stats_by_path = {p: p.stat() for p in paths}
         paths.sort(key=lambda p: (has_copy_number(p), stats_by_path[p].st_mtime, str(p)))
         groups.append(ExactGroup([{"path": p, "size": stats_by_path[p].st_size,
                                    "mtime_ns": stats_by_path[p].st_mtime_ns} for p in paths]))
@@ -529,7 +566,7 @@ def _decide_remux(group: ExactGroup, number: int, total: int, config: dict, conf
 # --- Stage 3: finding groups -------------------------------------------------
 # "spot": where the image differs most from the group's #0 (left, top, size as
 # fractions; image_utils.difference_spot), for the page. Older sessions have none.
-_SAVED_FIELDS = ("width", "height", "resolution", "format", "format_rank", "lossless",
+_SAVED_FIELDS = ("width", "height", "resolution", "format", "format_rank", "lossless", "lossless_rank",
                  "bpp", "age", "size", "mtime_ns", "numbered", "frames", "spot")
 
 
@@ -598,11 +635,16 @@ def _snapshot(group: Group) -> dict:
     return {"images": [dict(m) for m in group.images], "diffs": list(group.diffs), "rename": group.rename}
 
 
-def undo_decision(group: Group, stats: Stats) -> None:
+def undo_decision(group: Group, stats: Stats, ctx: RunContext | None = None) -> None:
     """Take back a dry run's decision: the group is open again, with the images it
     had before (also those a chosen keeper had taken out), and the totals no
-    longer count it."""
+    longer count it, nor *ctx* its removals and rename."""
     undo = group.undo
+    if ctx is not None:
+        kept = group.kept or 0
+        ctx.dropping.difference_update(m["path"] for i, m in enumerate(group.images) if i != kept)
+        if undo["stats"].get("renamed"):
+            ctx.planned.pop(group.images[kept]["path"], None)
     for name, amount in undo["stats"].items():
         setattr(stats, name, getattr(stats, name) - amount)
     group.images = [dict(m) for m in undo["images"]]
@@ -1032,6 +1074,14 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
         if config["delete_mode"] == "permanent" and not confirm(
                 f"Permanently delete {count - 1} file(s)? This cannot be undone.", tone="danger"):
             info("Nothing deleted.")
+            if reason is not None:  # another keeper regrouped it: back to the group as found
+                group.images = [dict(m) for m in before["images"]]
+                group.diffs = list(before["diffs"])
+                group.rename = before["rename"]
+                count = len(group.images)
+                others = "1" if count == 2 else f"1-{count - 1}"
+                renamable = any(rename_target(p, group.paths) for p in group.paths)
+                ctx.save()
             continue
         was_skipped = group.status == "skipped"
         _resolve(group, keep_index, config, stats, rel, ctx, automatic=False, reason=reason, before=before)
@@ -1146,7 +1196,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
 
         revisit = False
         if navigation == "undo":
-            undo_decision(group, stats)
+            undo_decision(group, stats, ctx)
             reopened.add(index)
             ctx.save(groups, index)
             info("Decision undone - choose again.")
@@ -1255,6 +1305,8 @@ def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel
         if group.is_open:
             group.borderline_above = group.limit * float(config["uncertain_ratio"])
             group.rename = ctx.rename
+    if ctx.dry:  # what the decisions so far remove and rename, for the renames still to come
+        ctx.dropping, ctx.planned = replay_dry_run(ctx.exact_groups, groups, ctx.rename)
     open_groups = [i for i, g in enumerate(groups) if g.is_open]
     if not open_groups:
         info("Nothing left to review in the saved session.")
@@ -1415,34 +1467,11 @@ def review_dry_run_again(exact_groups: list[ExactGroup], groups: list[Group], co
     return review_groups(groups, config, confirm_mode, stats, rel, ctx)
 
 
-def _would_rename(keep: Path, group_paths: list[Path]) -> Path | None:
-    """The new name rename_kept would give *keep*, or None (no copy number, or the
-    name is taken by a file that isn't removed)."""
-    target = rename_target(keep, group_paths)
-    if target is None:
-        return None
-    if (target.exists() or target.is_symlink()) and target not in group_paths:
-        return None
-    return target
-
-
 def planned_changes(exact_groups: list[ExactGroup], groups: list[Group], rename: bool) -> tuple[int, int]:
     """(files a dry run would remove, files it would rename)."""
-    decided_exact = [e for e in exact_groups if e.status == "done"]
-    remove = sum(len(e.files) - 1 for e in decided_exact)
+    remove = sum(len(e.files) - 1 for e in exact_groups if e.status == "done")
     remove += sum(g.removed for g in groups if g.status == "done")
-    planned = {}  # one file can be the keeper of a Stage 1 and a Stage 2 group
-    for e in decided_exact:
-        target = _would_rename(e.paths[0], e.paths) if rename else None
-        if target is not None:
-            planned.setdefault(e.paths[0], target)
-    for g in groups:
-        if g.status == "done" and g.rename:
-            keep = g.images[g.kept or 0]["path"]
-            target = _would_rename(keep, g.paths)
-            if target is not None:
-                planned.setdefault(keep, target)
-    return remove, len(planned)
+    return remove, len(replay_dry_run(exact_groups, groups, rename)[1])
 
 
 def dry_run_from_session(data: dict) -> tuple[list[ExactGroup], list[Group]]:

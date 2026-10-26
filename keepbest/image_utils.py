@@ -107,8 +107,8 @@ def _to_8_bit(img):
     scores far below the limit. So the values are scaled from the smallest usual
     depth that holds them; float pictures from 0-1 when they stay in that range."""
     if img.mode == "F":
-        _, high = img.getextrema()
-        _check_finite(high)
+        low, high = img.getextrema()
+        _check_finite(low, high)
         if high <= 1.0:
             return img.point(lambda v: v * 255).convert("L")
     else:
@@ -391,7 +391,10 @@ def score_image(meta):
     with "prefer_jxl"), then format preference, then a name without
     a copy number ("photo.jpg" beats "photo (1).jpg"), then bits-per-pixel (less
     compressed, meaningful within one format), then oldest file."""
-    return (meta['resolution'], meta.get('lossless_rank', meta['lossless'] is True), meta['format_rank'],
+    lossless = meta.get('lossless_rank')
+    if lossless is None:  # a session saved before 2.1.4 (or an image saved again from one)
+        lossless = meta['lossless'] is True
+    return (meta['resolution'], lossless, meta['format_rank'],
             not meta['numbered'],
             meta['bpp'], -meta['age'])
 

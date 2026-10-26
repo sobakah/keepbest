@@ -101,6 +101,32 @@ def test_a_taken_name_is_not_counted_as_a_rename(library, run_cli):
     assert "rename 1" not in asked(result, "AfterDryRunScreen")[0]["primary"]
 
 
+def test_a_name_an_earlier_stage_frees_is_counted_as_a_rename(library, run_cli):
+    """Stage 1 removes photo.png (a copy of a.png); Stage 3 then renames photo (1).png to it."""
+    library.photo("a.png", 2)
+    library.copy_of("a.png", "photo.png")
+    library.photo("photo (1).png", 1)
+    library.variant("photo (1).png", "photo (2).jpg", quality=90)
+    dry = run_cli(library.path, keys=["4", "", "q"])
+    assert "Name taken" not in dry.stdout and summary(dry)["renamed"] == 1
+    assert asked(run_cli(library.path, keys=["q"]), "StartScreen")[0]["panel"]["to_rename"] == 1
+    real = run_cli(library.path, "--auto")
+    assert summary(real)["renamed"] == 1 and library.files() == ["a.png", "photo.png"]
+
+
+def test_two_renames_to_one_name_are_counted_once(library, run_cli):
+    """Both groups would become photo.png; a real run renames the first one only."""
+    library.photo("photo (1).png", 1)
+    library.copy_of("photo (1).png", "photo (2).png")
+    library.photo("photo (3).png", 2)
+    library.copy_of("photo (3).png", "photo (4).png")
+    dry = run_cli(library.path, "--stages", "1", keys=["4", "", "q"])
+    assert summary(dry)["renamed"] == 1
+    assert asked(run_cli(library.path, "--stages", "1", keys=["q"]), "StartScreen")[0]["panel"]["to_rename"] == 1
+    real = run_cli(library.path, "--stages", "1", "--auto")
+    assert summary(real)["renamed"] == 1 and library.files() == ["photo (3).png", "photo.png"]
+
+
 def test_the_saved_session_counts_identical_copies_as_groups(library, run_cli):
     numbered_copies(library)
     run_cli(library.path, "--stages", "1", keys=["4", "", "q"])

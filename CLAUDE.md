@@ -84,7 +84,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 306 tests, ~95 s (see below for which Python)
+python3 -m pytest                 # 318 tests, ~95 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -169,7 +169,9 @@ Both paths change when the Python version changes.
   automatic decisions then delete without further questions. `--auto` asks nothing (open point).
 - Stage 2 hashes every other track by content too (`stream_hashes`): further real video streams
   (`extra_videos`), audio, subtitles and data (timecode, telemetry); AAC normalised with
-  `aac_adtstoasc`, so MPEG-TS remuxes match. Automatic only when all tracks are identical and in
+  `aac_adtstoasc`, so MPEG-TS remuxes match. Only a crash (not an interrupt: 255 or
+  SIGINT/SIGTERM/SIGHUP, see `video._INTERRUPTED`) lets the track-less second pass run. A file
+  without a duration in its header gets one from its packets (`_measured_duration`). Automatic only when all tracks are identical and in
   the same order; a copy containing every track of the others in their order (`covering_copy`) is
   recommended; the same tracks in another order (`tracks_reordered`) are asked about. Without
   questions a group is only resolved when a covering copy exists, otherwise left alone and counted
@@ -177,7 +179,11 @@ Both paths change when the Python version changes.
   dry run again asks about them; decided ones carry `decision` for the log.
 - Carrying out a dry run maps Stage 1 renames into the later remux and visual groups; in the dry
   run itself, `ctx.planned` (renames a real run would make) ranks Stage 2/3 like a real run and
-  counts each rename once. Reviewing a dry run again restores each visual group from `Group.undo`.
+  counts each rename once; with `ctx.dropping` (files it would remove) a name an earlier group frees
+  counts as free and one an earlier rename takes as taken (`_name_free`). `replay_dry_run` rebuilds
+  both on resume and for `planned_changes`; `undo_decision` takes the group's share out again.
+  Reviewing a dry run again restores each visual group from `Group.undo`.
+- Declining the permanent-mode `[y/N]` after choosing another keeper restores the group as found.
 - When nothing of a group could be removed, there is no rename and (real runs) the group stays open.
 - Interrupts during Stage 2 stop ffprobe/ffmpeg at once (`video.stop_all` via `_threaded`); a
   stopped ffmpeg is never retried.
@@ -318,8 +324,7 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   contradicts "changes nothing" – change the README wording or store marks elsewhere (see E3).
 - **Quick fixes:** printing a file name that isn't valid UTF-8 crashes on Python before 3.15
   (no UTF-8 mode: stdout is `strict`; checked with `PYTHONUTF8=0 LC_ALL=en_US.UTF-8`), so
-  `test_a_name_that_is_not_utf_8_round_trips` sets `PYTHONIOENCODING`; unhandled
-  `p.stat()` in `find_exact_duplicates` when a file vanishes; README describes `n`/`x` differently
+  `test_a_name_that_is_not_utf_8_round_trips` sets `PYTHONIOENCODING`; README describes `n`/`x` differently
   though both discard the session; don't group 0-byte files; warn on `--exclude` without `-r`;
   friendlier goodbye than "Program terminated."; summary
   "Visually identical images" (adjust `summary()` regex in `tests/conftest.py`); `kitty` viewer

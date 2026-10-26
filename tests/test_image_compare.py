@@ -131,8 +131,9 @@ def test_a_downscaled_16_bit_copy_matches(library):
     assert diff(a, library / "b.png") <= LIMIT
 
 
-def test_float_pictures_with_infinite_values_are_reported(library):
-    Image.frombytes("F", (4, 4), struct.pack("<16f", *([0.5] * 15 + [float("inf")]))).save(library / "inf.tif")
+@pytest.mark.parametrize("value", [float("inf"), float("-inf")])
+def test_float_pictures_with_infinite_values_are_reported(library, value):
+    Image.frombytes("F", (4, 4), struct.pack("<16f", *([0.5] * 15 + [value]))).save(library / "inf.tif")
     result = analyze_image(library / "inf.tif", 8, {})
     assert "not finite" in result["error"]
 
@@ -247,6 +248,20 @@ def test_undo_brings_back_the_images_a_chosen_keeper_took_out(library):
     assert (stats.similar_deleted, stats.space_saved, stats.scanned) == (0, 0, 3)
 
 
+def test_deciding_again_after_an_undo_counts_the_rename_again(library):
+    from keepbest.core_logic import RunContext, Stats, _resolve, undo_decision
+    library.photo("photo (1).png", 1)
+    library.variant("photo (1).png", "photo (2).jpg", quality=90)
+    group = found_group(library, ["photo (1).png", "photo (2).jpg"], [2])
+    stats, ctx = Stats(scanned=2), RunContext(rename=True)
+    dry = {"delete_mode": "dry_run"}
+    _resolve(group, 0, dry, stats, str, ctx, automatic=False)
+    assert stats.renamed == 1
+    undo_decision(group, stats, ctx)
+    _resolve(group, 0, dry, stats, str, ctx, automatic=False)
+    assert (stats.renamed, stats.similar_deleted) == (1, 1)
+
+
 # --- where a group differs most (for the page) ------------------------------------------
 @pytest.mark.parametrize("edit, area", [
     (pictures.with_patch, (0.1, 0.1, 0.22, 0.2)),              # the dark rectangle
@@ -302,3 +317,23 @@ def test_the_deciding_criterion_follows_the_ranking_order():
     assert deciding_criterion(base, {**base, "resolution": 200}) is None       # chosen by hand
     assert deciding_criterion(base, dict(base)) is None
     assert deciding_criterion({"resolution": 1}, base) is None                  # an old session's fields
+
+
+def test_a_saved_session_keeps_the_jpeg_xl_preference():
+    """With prefer_jxl a JPEG XL file ranks as lossless; a resumed session still knows."""
+    from pathlib import Path
+    from keepbest.core_logic import Group
+    from keepbest.image_utils import deciding_criterion
+    common = {"resolution": 100, "numbered": False, "age": 0, "width": 10, "height": 10, "size": 1, "mtime_ns": 0}
+    jxl = {**common, "path": Path("a.jxl"), "format": "JXL", "lossless": None, "lossless_rank": True,
+           "format_rank": 0, "bpp": 1.0}
+    jpeg = {**common, "path": Path("a.jpg"), "format": "JPEG", "lossless": False, "lossless_rank": False,
+            "format_rank": 0, "bpp": 2.0}
+    group = Group(images=[jxl, jpeg], diffs=[None, 3], limit=20, borderline_above=16)
+    assert deciding_criterion(*group.images) == "lossless"
+    loaded = Group.from_dict(group.to_dict())
+    assert deciding_criterion(*loaded.images) == "lossless"
+    old = group.to_dict()                                      # a session saved before the field
+    for image in old["images"]:
+        image.pop("lossless_rank", None)
+    assert deciding_criterion(*Group.from_dict(old).images) is None

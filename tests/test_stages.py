@@ -156,6 +156,18 @@ def test_permanent_mode_asks_once_before_starting(mixed, run_cli, config_file):
     assert "a copy.png" not in " ".join(mixed.files())
 
 
+def test_declining_a_permanent_deletion_restores_the_group(library, run_cli, config_file):
+    """Keeping b.png takes c.png out of the group; saying No to the deletion must
+    bring the group back as it was found, so Enter then keeps a.png and removes both."""
+    config_file({"delete_mode": "permanent"})
+    library.photo("a.png", 1, size=(640, 480))
+    library.variant("a.png", "b.png", change=lambda im: pictures.brighter(pictures.downscaled(im), 1.06))
+    library.variant("a.png", "c.png", change=lambda im: pictures.brighter(pictures.downscaled(im), 0.94))
+    result = run_cli(library.path, "-i", keys=["", "y", "1", "n", "", "y", ""])
+    assert "Nothing deleted." in result.stdout and not result.typos
+    assert library.files() == ["a.png"]
+
+
 @pytest.mark.skipif(not __import__("keepbest.image_utils").image_utils.JXL_SUPPORTED,
                     reason="pillow-jxl-plugin not installed")
 @pytest.mark.parametrize("prefer_jxl, kept", [(False, "a.png"), (True, "a.jxl")])
@@ -311,3 +323,22 @@ def test_a_pipx_install_is_told_to_inject_the_plugin(monkeypatch):
     from keepbest.core_logic import jxl_install_hint
     monkeypatch.setattr(sys, "prefix", "/home/u/.local/share/pipx/venvs/keepbest")
     assert "pipx inject keepbest pillow-jxl-plugin" in jxl_install_hint()[0]
+
+
+def test_a_file_that_vanishes_while_hashing_is_left_out(library, monkeypatch):
+    from keepbest import core_logic
+    from keepbest.core_logic import RunContext, Stats, find_exact_duplicates
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "b.png")
+    library.copy_of("a.png", "c.png")
+    real = core_logic.sha256_file
+
+    def hash_then_vanish(path):
+        digest = real(path)
+        if path.name == "c.png":
+            path.unlink()                                           # gone before the group is made
+        return digest
+    monkeypatch.setattr(core_logic, "sha256_file", hash_then_vanish)
+    files = sorted(library.path.iterdir())
+    _, groups = find_exact_duplicates(files, {"delete_mode": "dry_run"}, Stats(), lambda p: p.name, RunContext())
+    assert [[f["path"].name for f in g.files] for g in groups] == [["a.png", "b.png"]]

@@ -21,3 +21,12 @@ def test_tables_have_no_trailing_spaces(capsys, monkeypatch):
                    [[("▶", ""), ("kept.png", ui.StyleUI.BOLD)], [" ", "other.png"]])
     lines = capsys.readouterr().out.splitlines()
     assert lines and all(line == line.rstrip() for line in lines)
+
+
+def test_cutting_from_the_left_leaves_no_accent_without_its_letter():
+    """macOS names are decomposed: É is E plus a combining accent."""
+    import unicodedata
+    name = unicodedata.normalize("NFD", "ÉÉÉÉÉé.jpg")
+    for width in range(5, 10):                                   # all shorter than the name
+        shortened = ui.truncate(name, width, keep_end=True)
+        assert shortened[0] == "…" and not unicodedata.combining(shortened[1]), (width, shortened)

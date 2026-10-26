@@ -33,6 +33,16 @@ def test_save_and_load(tmp_path):
     assert store.load()["groups"] == [{"status": "pending"}]
 
 
+def test_a_folder_name_that_is_not_utf_8_has_a_session(tmp_path):
+    import hashlib
+    folder = tmp_path / os.fsdecode(b"Bilder \xff")
+    store = SessionStore(folder)
+    store.save({"groups": [{"status": "pending"}], "exact_groups": []})
+    assert store.load()["groups"] == [{"status": "pending"}]
+    # a valid name keeps the key it always had, so existing sessions are found
+    assert SessionStore(tmp_path).path.stem == hashlib.sha1(str(tmp_path).encode("utf-8")).hexdigest()[:16]
+
+
 def test_a_group_keeps_its_squares_and_older_sessions_load_without(tmp_path):
     g = group(5, 7)
     g.images[1]["spot"], g.images[2]["spot"] = (0.25, 0.5, 0.015625), (0.75, 0.125, 0.015625)

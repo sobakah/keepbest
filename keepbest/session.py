@@ -142,7 +142,7 @@ class SessionStore:
     """
 
     def __init__(self, target: Path):
-        key = hashlib.sha1(str(target).encode("utf-8")).hexdigest()[:16]
+        key = hashlib.sha1(os.fsencode(target)).hexdigest()[:16]  # any bytes the name holds
         self.path = sessions_dir() / f"{key}.json"
         # Before 0.2.0, checkouts also kept their sessions in the state directory.
         self._legacy = state_dir() / "sessions" / f"{key}.json"

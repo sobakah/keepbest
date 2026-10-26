@@ -217,3 +217,27 @@ def test_the_page_is_not_gone_while_the_tab_is_on_media_optimizers(monkeypatch):
     assert not page.away
     page.show("tool_start", {"name": "media-optimizer", "command": "media-optimizer run -y x"})
     assert not page.away                                        # its output box: the tab stays here
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="reads the pipe to its end there")
+def test_the_last_lines_are_not_lost_when_the_child_ends_between_two_looks(monkeypatch):
+    """The wait times out, then the child writes its last line and ends before
+    keepbest checks whether it is still running."""
+    import selectors
+    import subprocess
+    from keepbest import handoff
+    child = subprocess.Popen(["sh", "-c", "echo last"], stdout=subprocess.PIPE)
+    child.wait()
+
+    class TimesOutOnce(selectors.DefaultSelector):
+        waited = False
+
+        def select(self, timeout=None):
+            if timeout and not self.waited:  # the line arrives just after this wait
+                self.waited = True
+                return []
+            return super().select(timeout)
+    monkeypatch.setattr(handoff.selectors, "DefaultSelector", TimesOutOnce)
+    lines = []
+    handoff._pass_on(child, lines.append)
+    assert lines == ["last"]

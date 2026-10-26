@@ -203,3 +203,23 @@ def test_a_signal_stops_the_hashing_at_once(library, fake_command, config_file, 
     assert time.time() - sent < 5
     assert len(started.read_text().split()) == 2                    # no second, track-less pass
     assert fake.calls(count=0) == []                                # every ffmpeg was ended early
+
+
+def test_a_crash_on_the_tracks_falls_back_to_the_video_stream(tmp_path, fake_command):
+    """ffmpeg dying of a crash (not an interrupt) on an odd track: the second pass,
+    without the other tracks, still hashes the picture data."""
+    from keepbest import video
+    fake_command("ffmpeg", script='case "$*" in *"0:a?"*) kill -SEGV $$;; esac\necho "0,v,SHA256=abc"')
+    clip = tmp_path / "clip.mkv"
+    clip.write_bytes(b"x")
+    assert video.stream_hashes({"path": clip, "codec": "mpeg4", "audio": []}) == ("abc", None)
+
+
+def test_a_remux_without_a_duration_in_its_header_is_found(library, run_cli):
+    """Matroska written to a pipe (a stream recording) has no duration in its header."""
+    clip = make_video(library / "clip.mp4", codec="mpeg4")
+    with open(library / "recorded.mkv", "wb") as out:
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(clip), "-map", "0", "-c", "copy",
+                        "-f", "matroska", "-"], stdout=out, check=True)
+    counts = summary(run_cli(library.path, "--auto", "--dry-run"))
+    assert counts["remux"] == 1

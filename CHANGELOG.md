@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Choosing another file to keep in permanent mode, then answering No to the deletion, left the group rebuilt around that file: images that didn't match it had dropped out. The group now comes back as it was found.
+- A resumed session no longer forgets `prefer_jxl`, so the page still says why a JPEG XL file was kept.
+- A float TIFF with negative infinite values is reported as unreadable instead of silently left out of the comparison.
+- A folder whose name isn't valid UTF-8 no longer crashes saving the session.
+- A file that disappears while identical files are being hashed no longer stops the scan.
+- Dry runs count renames as a real run makes them: a name an earlier stage frees counts as free, two groups wanting the same name count once, and deciding a group again after undoing it counts its rename again.
+- A remux is found when ffmpeg crashes on one of its other tracks, and when its container has no duration in the header (Matroska written to a pipe, for example).
+- The output box for media-optimizer before 2.4 no longer loses its last lines when the program ends between two reads.
+- Shortening a path in the terminal log no longer leaves an accent without its letter.
+
 ## [2.1.3] — 2026-10-25
 
 **Upgrading:** `pipx upgrade keepbest`.

@@ -11,7 +11,9 @@ sound or an extra camera angle are never taken for identical.
 from __future__ import annotations
 
 import json
+import math
 import shutil
+import signal
 import subprocess
 import threading
 from collections import Counter
@@ -44,6 +46,9 @@ class Stopped(Exception):
     """A tool was stopped by stop_all or a signal: no point in trying again."""
 
 
+_INTERRUPTED = {255} | {-getattr(signal, name) for name in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, name)}
+
+
 def _run(argv: list[str], timeout: float) -> subprocess.CompletedProcess:
     """subprocess.run that stop_all can end. Raises Stopped, OSError or TimeoutExpired."""
     with _lock:  # checked under the lock, so nothing starts after stop_all
@@ -61,8 +66,9 @@ def _run(argv: list[str], timeout: float) -> subprocess.CompletedProcess:
     finally:
         with _lock:
             _running.discard(proc)
-    # Killed by a signal (negative), or ffmpeg ending on Ctrl+C / SIGTERM (255).
-    if _stopping.is_set() or proc.returncode < 0 or proc.returncode == 255:
+    # Ended by stop_all, or by Ctrl+C / SIGTERM / SIGHUP: ffmpeg exits with 255 then, or
+    # dies of the signal. Any other end (a crash on a damaged file) is a failure.
+    if _stopping.is_set() or proc.returncode in _INTERRUPTED:
         raise Stopped
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
@@ -116,6 +122,8 @@ def probe(path: Path) -> dict | None:
         duration = float((data.get("format") or {}).get("duration") or video.get("duration") or 0)
     except ValueError:
         duration = 0.0
+    if not (math.isfinite(duration) and duration > 0):  # the header doesn't say
+        duration = _measured_duration(path, video_index, stat.st_size)
     return {
         "path": path,
         "size": stat.st_size,
@@ -177,6 +185,28 @@ def _hash_streams(meta: dict, tracks: bool) -> dict | None:
         if len(parts) == 3 and parts[2].startswith("SHA256="):
             hashes[parts[0]] = (parts[1], parts[2][len("SHA256="):].strip())
     return hashes
+
+
+def _measured_duration(path: Path, video_index: int, size: int) -> float:
+    """The video stream's length from its packets' timestamps, for a file whose header
+    has none (Matroska written to a pipe, an interrupted recording). Reads the
+    file but decodes nothing; 0.0 if that fails too."""
+    try:
+        result = _run(["ffprobe", "-v", "error", "-select_streams", f"v:{video_index}",
+                       "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", str(path)],
+                      timeout=120 + size / (5 * 1024 * 1024))
+    except (OSError, subprocess.TimeoutExpired, Stopped):
+        return 0.0
+    end = 0.0
+    for line in result.stdout.splitlines():  # "pts_time,duration_time" per packet
+        start, _, length = line.partition(",")
+        try:
+            packet_end = float(start) + (float(length) if length.strip() not in ("", "N/A") else 0.0)
+        except ValueError:
+            continue
+        if math.isfinite(packet_end):
+            end = max(end, packet_end)
+    return end
 
 
 def stream_hashes(meta: dict) -> tuple[str, tuple | None] | None:

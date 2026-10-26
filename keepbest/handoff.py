@@ -128,14 +128,16 @@ def _pass_on(child: subprocess.Popen, output) -> None:
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_READ)
         while True:
-            if selector.select(timeout=0.2):
+            # Checked before looking: what it wrote before it ended is in the pipe by then.
+            ended = child.poll() is not None
+            if selector.select(timeout=0 if ended else 0.2):
                 data = os.read(fd, 65536)
                 if not data:
                     break
                 *lines, pending = re.split(r"\r?\n", pending + decoder.decode(data))
                 for line in lines:
                     output(line)
-            elif child.poll() is not None:
+            elif ended:
                 break
     pending += decoder.decode(b"", final=True)
     if pending:
