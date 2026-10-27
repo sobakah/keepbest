@@ -52,7 +52,7 @@ def test_a_group_keeps_its_squares_and_older_sessions_load_without(tmp_path):
     assert [m.get("spot") for m in loaded.images] == [None, [0.25, 0.5, 0.015625], [0.75, 0.125, 0.015625]]
     old = g.to_dict()
     for image in old["images"]:
-        del image["spot"]                                    # saved by keepbest 0.6.0
+        del image["spot"]                                    # saved by an older keepbest
     assert [m.get("spot") for m in Group.from_dict(old).images] == [None, None, None]
 
 
@@ -127,7 +127,7 @@ def test_a_looser_limit_changes_nothing():
 def test_statistics_continue_from_the_session():
     stats = stats_from_session({"stats": {"scanned": 51, "exact_deleted": 1, "similar_deleted": 7}}, 0)
     assert (stats.scanned, stats.exact_deleted, stats.similar_deleted) == (51, 1, 7)
-    assert stats_from_session({}, 12).scanned == 12              # sessions from before 0.3.0
+    assert stats_from_session({}, 12).scanned == 12              # older sessions
 
 
 def test_automatic_progress_is_saved_at_most_once_a_second():

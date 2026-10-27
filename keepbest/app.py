@@ -28,7 +28,7 @@ ROOT = "."
 
 # Choices per setting, in the order the setting key cycles through them.
 STAGE_OPTIONS = {"1,2,3": "all", "1,2": "identical copies (1+2)", "3": "visual only (3)"}
-_LEGACY_STAGES = {"both": "1,2,3", "1": "1,2", "2": "3"}  # values stored by sessions before 0.4.0
+_LEGACY_STAGES = {"both": "1,2,3", "1": "1,2", "2": "3"}  # values stored by older sessions
 
 
 def stage_options(current: str) -> dict:

@@ -61,8 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help='show pairs marked "not duplicates" again, for this run')
 
     page = parser.add_argument_group("browser page")
-    # The page is the only way keepbest asks since 1.0.0: --web stays for app-menu
-    # entries and scripts written for 2.0, --terminal explains where the screens went.
+    # The page is the only way keepbest asks: --web stays for app-menu
+    # entries and scripts that pass it, --terminal explains where the questions are.
     page.add_argument("--web", action="store_true", help=argparse.SUPPRESS)
     page.add_argument("--terminal", action="store_true", help=argparse.SUPPRESS)
     page.add_argument("--no-browser", action="store_true",
@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.web and args.auto:
         parser.error("--web and --auto don't go together: --auto asks nothing, so there is no page to show")
     if args.terminal:
-        parser.error(f"the terminal screens were removed in {NAME} 1.0.0: {NAME} asks on its page in the "
+        parser.error(f"there are no terminal screens: {NAME} asks on its page in the "
                      "browser (--no-browser only prints its address), or asks nothing with --auto")
     configure_logging(args.verbose)
 

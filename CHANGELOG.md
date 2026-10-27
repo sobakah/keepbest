@@ -7,15 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 The first stable release. keepbest finds duplicate images and videos in a folder and removes the redundant copies, keeping the best one. It asks its questions on a local page in the browser; `--auto` runs in the terminal without questions.
 
-The versions published as 1.0.0 to 2.1.4 between 2026-10-08 and 2026-10-26 were development versions. Their tags and releases were removed; the last one with terminal screens (1.3.0) is kept as pre-release 0.6.0, and everything since is part of this release. The git history still names the old numbers.
-
-**Upgrading:** from any earlier keepbest, reinstall once, since `pipx upgrade` won't go from 2.1.4 down to 1.0.0:
-
-```bash
-pipx install --force git+https://github.com/sobakah/keepbest.git
-```
-
-Config, log, saved sessions and "not duplicates" marks keep working. Coming from 0.6.0 or another version with terminal screens: `--terminal` is gone, remove `"browser_page"` from `config.json` (ignored with a warning), and set `"viewer"` to `auto`, `identity` or `imagecompare` if it was `kitty` or `timg`. Journal lines written before this release carry the old number in `tool_version`. Coming from img_dedupe: see *Coming from img_dedupe?* in the README.
+**Installing:** `pipx install git+https://github.com/sobakah/keepbest.git`; with JPEG XL support `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`. Needs Python 3.9 or newer; ffmpeg for remuxed videos.
 
 ### What it does
 
@@ -29,24 +21,9 @@ Config, log, saved sessions and "not duplicates" marks keep working. Coming from
 - **Works with other tools.** A file journal (`journal.jsonl`) tells programs like a tagger which file was removed for which kept one and which was renamed. [media-optimizer](https://github.com/sobakah/media-optimizer) can run from the end screen on the same folders; version 2.4 and newer takes over the tab and leads back.
 - **One keepbest per folder**, and an app-menu entry (`--install-desktop-entry`, Linux) with "Open with keepbest" for folders.
 
-### Changes since 0.6.0
-
-- **Added:** the page and everything on it listed above; the app-menu entry; the lock against two keepbest on one folder; options `--no-browser` and `--web` (accepted, changes nothing).
-- **Removed:** the terminal screens (`--terminal`, `"browser_page"`) and the terminal viewers `kitty` and `timg`.
-- **Fixed:** permanent mode's No after choosing another file to keep left the group rebuilt around that file; dry runs counted some renames wrong; a remux was missed when ffmpeg crashed on another track or the container had no duration in its header; a file that vanished while being hashed stopped the scan; a folder name that isn't valid UTF-8 crashed saving the session; float TIFFs with negative infinite values were silently left out; a resumed session forgot `prefer_jxl`; Ctrl+C in the terminal didn't end keepbest while the page waited.
-
 ## [0.6.0] — 2026-10-18
 
-*Pre-release; published as keepbest 1.3.0, which this version reports when installed. It sums up the development versions published as keepbest 1.0.0 to 1.3.0. The last version with terminal screens.*
-
-**Renamed from img_dedupe to keepbest.** The command, package, repository (`github.com/sobakah/keepbest`; the old address forwards there), config and state folders and the marks file (`.keepbest_ignore.json`) carry the new name. The first start moves `~/.config/img_dedupe/` and `~/.local/state/img_dedupe/` over; existing folders under the new name are never overwritten, and `.img_dedupe_ignore.json` and `IMG_DEDUPE_STATE_DIR` keep working. Release tags have no `v`.
-
-**Upgrading from img_dedupe:** `pipx upgrade` can't follow a rename (it stops with *inconsistent name* and changes nothing). Switch once:
-
-```bash
-pipx uninstall img-dedupe
-pipx install git+https://github.com/sobakah/keepbest.git
-```
+*Pre-release, kept for the record: keepbest asking its questions on screens in the terminal.*
 
 ### Added
 
@@ -56,6 +33,7 @@ pipx install git+https://github.com/sobakah/keepbest.git
 
 ### Changed
 
+- Renamed from img_dedupe to keepbest; the first start moves the old config and state folders over.
 - The folder list counts images and videos apart, and switching a folder asks before it takes its subfolders along.
 - Every track of a video counts in Stage 2, in order; copies with the same tracks in another order are asked about.
 - "Not duplicates" marks separate two images, not a group. MPO and multi-page TIFFs take part in Stage 3 but are only kept.
@@ -70,7 +48,7 @@ pipx install git+https://github.com/sobakah/keepbest.git
 
 ## [0.5.1] — 2026-10-05
 
-*Pre-release; published as img_dedupe 1.4.1. It sums up the img_dedupe pre-releases 0.1.0 to 0.5.1 (first published as 1.0 to 1.4.1, 2026-09-23 to 2026-10-05).*
+*Pre-release, kept for the record, under the project's first name.*
 
 img_dedupe finds duplicate images and videos in a folder and removes the redundant copies, keeping the best one, on screens in the terminal.
 

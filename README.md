@@ -18,7 +18,7 @@ You need Python 3.9 or newer and [pipx](https://pipx.pypa.io/) (on Fedora: `sudo
 pipx install git+https://github.com/sobakah/keepbest.git
 ```
 
-With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`, or add it to an existing install with `pipx inject keepbest pillow-jxl-plugin` (a plain `pip install` doesn't reach pipx's environment). For a new Python version the plugin may have no ready-made package yet; pip then builds it, which needs a C++ compiler and cmake (on Fedora: `sudo dnf install gcc-c++ cmake`). To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases: 0.5.1 (img_dedupe) and 0.6.0 (the last with terminal screens). If you installed keepbest before 2026-10-27 (development versions numbered 1.0.0 to 2.1.4), reinstall once with `pipx install --force git+https://github.com/sobakah/keepbest.git`, since `pipx upgrade` won't go from 2.1.4 down to 1.0.0.
+With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`, or add it to an existing install with `pipx inject keepbest pillow-jxl-plugin` (a plain `pip install` doesn't reach pipx's environment). For a new Python version the plugin may have no ready-made package yet; pip then builds it, which needs a C++ compiler and cmake (on Fedora: `sudo dnf install gcc-c++ cmake`). To install a specific release, add it to the URL: `...keepbest.git@1.0.0`.
 
 **For videos**, also install ffmpeg (a system package): on Fedora `sudo dnf install ffmpeg-free`, or `ffmpeg` from RPM Fusion. Without it, identical video copies are still found, but not remuxes.
 
@@ -30,15 +30,6 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 | Add it to the app menu (Linux) | `keepbest --install-desktop-entry` (see [The page](#the-page)) |
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
-
-**Coming from img_dedupe?** keepbest is its new name (since 0.6.0). `pipx upgrade` can't follow a rename, so switch once:
-
-```bash
-pipx uninstall img-dedupe
-pipx install git+https://github.com/sobakah/keepbest.git
-```
-
-On its first start, keepbest moves your config, log and saved sessions from the old `img_dedupe` folders to the new ones and says so. "Not duplicates" marks in your picture folders are taken over the next time you use that folder.
 
 ## First run
 

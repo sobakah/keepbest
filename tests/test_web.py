@@ -623,7 +623,7 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
 
 def test_the_terminal_screens_are_gone(library, run_cli):
     result = run_cli(library.path, "--terminal")
-    assert result.returncode == 2 and "removed in keepbest 1.0.0" in result.stderr
+    assert result.returncode == 2 and "there are no terminal screens" in result.stderr
 
 
 def test_without_a_display_the_page_only_prints_its_address(library, config_file, fake_command):

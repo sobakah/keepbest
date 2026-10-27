@@ -1,4 +1,4 @@
-"""One-time move of the files kept under the old name (img_dedupe, up to 0.5.1).
+"""One-time move of the files kept under the old name (img_dedupe).
 
 The config folder and the state folder (log and saved sessions) are renamed to
 the new name, and the log file inside them too, the first time keepbest starts.

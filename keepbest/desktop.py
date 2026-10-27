@@ -20,8 +20,8 @@ from .config import NAME
 
 ICON_SOURCE = Path(__file__).with_name("static") / "icon.svg"
 ENTRY_NAME = f"{NAME}.desktop"
-# Nothing extra: since 1.0.0 keepbest always asks on its page (entries
-# written by development versions still pass --web, which is accepted and changes nothing).
+# Nothing extra: keepbest always asks on its page (older entries
+# pass --web, which is accepted and changes nothing).
 PAGE_ARGUMENTS: list[str] = []
 
 # Characters that make an Exec argument need quotes (Desktop Entry spec,

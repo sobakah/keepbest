@@ -1,9 +1,9 @@
 # keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
-A local browser page (since 1.0.0 the only way it asks, the terminal screens are gone;
+A local browser page (the only way it asks;
 `--auto` runs in the terminal without questions), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
-Owner: sobakah (GitHub `sobakah/keepbest`, private for now; called img_dedupe up to 0.5.1). Developed on
+Owner: sobakah (GitHub `sobakah/keepbest`, private for now; first called img_dedupe). Developed on
 Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
 
 ## Layout – important
@@ -251,25 +251,12 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   the GitHub release: `gh release create X.Y.Z --title "keepbest X.Y.Z" --notes-file <that
   version's section of CHANGELOG.md, without heading>`. Without a version bump
   `pipx upgrade` doesn't pick up changes.
-- **Numbering restarted on 2026-10-27:** the development versions published as 1.0.0–2.1.4
-  (2026-10-08 to 2026-10-26) lost their tags and releases; 1.3.0's commit is pre-release `0.6.0`
-  (it reports 1.3.0 when installed), `0.5.1` (the last img_dedupe) stays, the other 0.x are gone,
-  and the state of 2.1.4 became **1.0.0**. Commits were kept, so old commit subjects and the
-  "Done in 2.0.0/2.1.0" notes below use the old numbers. Backup of all tags and release notes:
-  `~/Software/Claude/Projects/keepbest-backup-2026-10-27/`.
 - Since 1.0.0 the history is never rewritten (no rebase, no force-push of `main`); a mistake in
   a release is fixed with a new version. If the owner wants a release folded into the previous one,
   do it like media-optimizer: a new commit sets the version back and merges the CHANGELOG
-  sections, the older tag is moved to it and the newer tag and release are deleted. (Before 1.0.0, releases 1.0–1.4.1 were renumbered as
-  pre-releases 0.1.0–0.5.1 and the history was rebuilt with one commit per release; a backup of
-  the old history and releases is in `~/Software/Claude/Projects/img_dedupe-backup-2026-10-08/`.
-  The same day, a keepbest 1.1.0 (the rename) was folded into a new 1.0.0 together with the move
-  to the lyrembed layout, and all tags lost their `v`; backup in
-  `~/Software/Claude/Projects/keepbest-backup-2026-10-08/`. On 2026-10-10, 1.2.0 was folded into
-  1.1.0 that way, an hour after both were published; backup in
-  `~/Software/Claude/Projects/keepbest-backup-2026-10-10/`. On 2026-10-17 the typo fixes were added
-  to 1.2.1 hours after its release: the tag `1.2.1` moved from `ae6907a` to the commit with them,
-  the release notes were updated; no version bump, so existing installs need `pipx reinstall`.)
+  sections, the older tag is moved to it and the newer tag and release are deleted.
+  Old release numbers are not mentioned anywhere in the repo: the release history starts at
+  1.0.0, pre-releases 0.5.1 and 0.6.0 are kept for the record only.
 - Shell: the owner uses **fish** on Fedora. Commands meant for the owner to paste (loops,
   `&&` chains, `$(...)`) must be written for fish (`for x in …; …; end`, `; and`, `(…)`).
   Examples in the README are for all users and stay in bash. Don't rely on tools only some
@@ -292,16 +279,16 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed 2026-10-22; old numbers: the default since 2.0.0, the only way to ask since 2.1.0)
+## Web page (agreed 2026-10-22)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
-- Done in 2.0.0: the front-end layer, the server and page, start screen, folder tree and picker,
+- Done: the front-end layer, the server and page, start screen, folder tree and picker,
   desktop entry, lock, group review with pictures, overview grid, remux view with a player,
   media-optimizer on the page with `-y` and an output box (`handoff.run(output=…)`; the pipe is
   not read to its end once the child exited, so a stray grandchild can't block). The page is the
-  default; `--terminal` keeps the screens, and the terminal output never changed.
-- Done in 2.1.0 (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
+  default, and the terminal output never changed.
+- Done (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
   hand-off to media-optimizer 2.4 (plan step 6), pictures off by default, Open/Show in folder,
   the "why" line, key badges only for Enter and numbers, the collapsed folder tree, one Quit.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
@@ -312,9 +299,8 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 
 ## Open tasks (target: release 1.1.0)
 
-Pre-releases: 0.5.1 (img_dedupe, terminal screens) and 0.6.0 (keepbest with terminal screens,
-published as 1.3.0, 2026-10-18). 1.0.0 (2026-10-27) is the first stable release: the page only, the
-media-optimizer tab hand-off, the journal; it is what was developed as 1.0.0–2.1.4. New changes go under
+1.0.0 (2026-10-27) is the first release; 0.5.1 (img_dedupe) and 0.6.0 (terminal screens) are
+pre-releases kept for the record. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
