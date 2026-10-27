@@ -18,7 +18,7 @@ You need Python 3.9 or newer and [pipx](https://pipx.pypa.io/) (on Fedora: `sudo
 pipx install git+https://github.com/sobakah/keepbest.git
 ```
 
-With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`, or add it to an existing install with `pipx inject keepbest pillow-jxl-plugin` (a plain `pip install` doesn't reach pipx's environment). For a new Python version the plugin may have no ready-made package yet; pip then builds it, which needs a C++ compiler and cmake (on Fedora: `sudo dnf install gcc-c++ cmake`). To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases (0.1.0 to 0.5.1).
+With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`, or add it to an existing install with `pipx inject keepbest pillow-jxl-plugin` (a plain `pip install` doesn't reach pipx's environment). For a new Python version the plugin may have no ready-made package yet; pip then builds it, which needs a C++ compiler and cmake (on Fedora: `sudo dnf install gcc-c++ cmake`). To install a specific release, add it to the URL: `...keepbest.git@1.0.0`. Releases before 1.0.0 are pre-releases: 0.5.1 (img_dedupe) and 0.6.0 (the last with terminal screens). If you installed keepbest before 2026-10-27 (development versions numbered 1.0.0 to 2.1.4), reinstall once with `pipx install --force git+https://github.com/sobakah/keepbest.git`, since `pipx upgrade` won't go from 2.1.4 down to 1.0.0.
 
 **For videos**, also install ffmpeg (a system package): on Fedora `sudo dnf install ffmpeg-free`, or `ffmpeg` from RPM Fusion. Without it, identical video copies are still found, but not remuxes.
 
@@ -31,7 +31,7 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
 
-**Coming from img_dedupe?** keepbest is its new name (since 1.0.0). `pipx upgrade` can't follow a rename, so switch once:
+**Coming from img_dedupe?** keepbest is its new name (since 0.6.0). `pipx upgrade` can't follow a rename, so switch once:
 
 ```bash
 pipx uninstall img-dedupe
@@ -251,8 +251,8 @@ Every line has `v` (format version, 1), `tool` (`keepbest`), `tool_version`, `ru
 Paths are absolute. File names that aren't valid UTF-8 appear as `\udcXX` escapes, and `os.fsencode` in Python gives back the exact bytes. Events are in the order things happened: a kept file may be renamed or, in a later stage, removed in favour of a larger copy by a later event of the same run. Failed actions are not journalled.
 
 ```
-{"v":1,"tool":"keepbest","tool_version":"1.3.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"removed","path":"/pics/photo (2).png","size":5320,"mtime_ns":1792327502000000000,"how":"trash","reason":"duplicate","kept":"/pics/photo (1).png","match":"exact"}
-{"v":1,"tool":"keepbest","tool_version":"1.3.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"renamed","src":"/pics/photo (1).png","dest":"/pics/photo.png","size":5320,"mtime_ns":1792327502000000000,"reason":"copy_number"}
+{"v":1,"tool":"keepbest","tool_version":"1.0.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"removed","path":"/pics/photo (2).png","size":5320,"mtime_ns":1792327502000000000,"how":"trash","reason":"duplicate","kept":"/pics/photo (1).png","match":"exact"}
+{"v":1,"tool":"keepbest","tool_version":"1.0.0","run":"261018-141502-4242-9f3c","ts":"2026-10-18T14:15:02+02:00","event":"renamed","src":"/pics/photo (1).png","dest":"/pics/photo.png","size":5320,"mtime_ns":1792327502000000000,"reason":"copy_number"}
 ```
 
 ## Other ways to run it
@@ -299,7 +299,7 @@ The tests belong to the repository, not to the installed program: pipx installs 
 pipx inject keepbest pytest
 git clone https://github.com/sobakah/keepbest.git
 cd keepbest
-git checkout 1.2.1       # optional: the version you have installed (see keepbest --version)
+git checkout 1.0.0       # optional: the version you have installed (see keepbest --version)
 "$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest
 ```
 
@@ -332,12 +332,12 @@ def test_a_backup_copy_is_found(library, run_cli):
 
 ## Releasing a new version
 
-Versions have three parts: a new feature or changed behaviour raises the middle number (1.3.0), a pure fix the last one (1.2.2). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
+Versions have three parts: a new feature or changed behaviour raises the middle number (1.1.0), a pure fix the last one (1.0.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
 
 ```bash
-git tag -a 1.3.0 -m "keepbest 1.3.0"
+git tag -a 1.1.0 -m "keepbest 1.1.0"
 git push && git push --tags
-gh release create 1.3.0 --title "keepbest 1.3.0" --notes-file notes.md   # that version's changelog section
+gh release create 1.1.0 --title "keepbest 1.1.0" --notes-file notes.md   # that version's changelog section
 ```
 
 Without the version bump, `pipx upgrade keepbest` doesn't see the new release. Never move or delete a published tag; release a fix as a new version instead.

@@ -8,9 +8,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "2.1.4"
+__version__ = "1.0.0"
 NAME = "keepbest"
-OLD_NAME = "img_dedupe"           # the name before 1.0.0; its folders are moved over (migrate.py)
+OLD_NAME = "img_dedupe"           # the name up to 0.5.1; its folders are moved over (migrate.py)
 PROJECT_URL = "https://github.com/sobakah/keepbest"
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -50,11 +50,11 @@ VALID_CHOICES = {
     "strictness": ("strict", "normal", "loose"),
     "color": ("auto", "always", "never"),
 }
-# "browser_page" chose between the page and the terminal screens, which 2.1.0 removed.
+# "browser_page" chose between the page and the terminal screens, which 1.0.0 removed.
 DEPRECATED_KEYS = {"threshold", "hash_algo", "browser_page"}
 # Choices that were removed: the value falls back to the default with this reason.
-REMOVED_CHOICES = {("viewer", "kitty"): "the terminal viewers were removed in 2.1.0",
-                   ("viewer", "timg"): "the terminal viewers were removed in 2.1.0"}
+REMOVED_CHOICES = {("viewer", "kitty"): "the terminal viewers were removed in 1.0.0",
+                   ("viewer", "timg"): "the terminal viewers were removed in 1.0.0"}
 
 # Numeric settings: (type, minimum, maximum). Invalid values fall back to the default,
 # instead of silently breaking the comparison later on.

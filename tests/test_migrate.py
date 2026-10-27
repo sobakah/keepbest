@@ -78,7 +78,7 @@ def test_old_marks_are_read_and_replaced_by_the_new_file(library):
     a, b, c = (library.photo(f"{n}.png", i) for i, n in enumerate("abc", 1))
     meta = {p: {"path": p, "size": p.stat().st_size, "mtime_ns": p.stat().st_mtime_ns} for p in (a, b, c)}
     IgnoreList(library.path).add(meta[a], meta[b])
-    (library / ".keepbest_ignore.json").rename(library / ".img_dedupe_ignore.json")   # as before 1.0.0
+    (library / ".keepbest_ignore.json").rename(library / ".img_dedupe_ignore.json")   # as img_dedupe did
     marks = IgnoreList(library.path)
     assert marks.contains(meta[a], meta[b])                  # read from the old file
     marks.add(meta[a], meta[c])

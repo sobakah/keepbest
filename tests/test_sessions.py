@@ -52,7 +52,7 @@ def test_a_group_keeps_its_squares_and_older_sessions_load_without(tmp_path):
     assert [m.get("spot") for m in loaded.images] == [None, [0.25, 0.5, 0.015625], [0.75, 0.125, 0.015625]]
     old = g.to_dict()
     for image in old["images"]:
-        del image["spot"]                                    # saved by keepbest 1.3.0
+        del image["spot"]                                    # saved by keepbest 0.6.0
     assert [m.get("spot") for m in Group.from_dict(old).images] == [None, None, None]
 
 

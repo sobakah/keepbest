@@ -1,7 +1,7 @@
 """Terminal presentation: colours, tables and progress.
 
 Follows the same conventions as lrckit's ui module: plain ANSI styling via
-StyleUI, banners, [BADGE] tags and transient status lines. Since 2.1.0 the
+StyleUI, banners, [BADGE] tags and transient status lines. Since 1.0.0 the
 terminal only shows messages (--auto, startup errors and the log of a run on
 the page); the questions are the page's.
 No third-party dependencies.

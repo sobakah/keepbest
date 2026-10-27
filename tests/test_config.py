@@ -46,7 +46,7 @@ def test_invalid_choice_warns_and_keeps_the_default(tmp_path):
 def test_a_removed_terminal_viewer_falls_back_to_auto(tmp_path, viewer):
     config, warnings = load(tmp_path, {"viewer": viewer})
     assert config["viewer"] == "auto"
-    assert any("no longer available" in w and "2.1.0" in w for w in warnings)
+    assert any("no longer available" in w and "1.0.0" in w for w in warnings)
 
 
 def test_browser_page_is_no_longer_used(tmp_path):

@@ -392,7 +392,7 @@ def score_image(meta):
     a copy number ("photo.jpg" beats "photo (1).jpg"), then bits-per-pixel (less
     compressed, meaningful within one format), then oldest file."""
     lossless = meta.get('lossless_rank')
-    if lossless is None:  # a session saved before 2.1.4 (or an image saved again from one)
+    if lossless is None:  # a session saved before 1.0.0 (or an image saved again from one)
         lossless = meta['lossless'] is True
     return (meta['resolution'], lossless, meta['format_rank'],
             not meta['numbered'],

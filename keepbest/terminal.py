@@ -176,7 +176,7 @@ _MESSAGES = {
 
 
 class NeedsPage(RuntimeError):
-    """A question outside the page: since 2.1.0 only the page asks."""
+    """A question outside the page: since 1.0.0 only the page asks."""
 
 
 class TerminalFront(Front):

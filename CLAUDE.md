@@ -1,9 +1,9 @@
 # keepbest – notes for Claude Code
 
 Finds duplicate images and videos and removes redundant copies, keeping the best one.
-A local browser page (since 2.0.0; since 2.1.0 the only way it asks, the terminal screens are gone;
+A local browser page (since 1.0.0 the only way it asks, the terminal screens are gone;
 `--auto` runs in the terminal without questions), Python 3.9+, dependencies Pillow and send2trash; ffmpeg/ffprobe optional (videos).
-Owner: sobakah (GitHub `sobakah/keepbest`, public; called img_dedupe before 1.0.0). Developed on
+Owner: sobakah (GitHub `sobakah/keepbest`, private for now; called img_dedupe up to 0.5.1). Developed on
 Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/Git-Repos/keepbest`.
 
 ## Layout – important
@@ -251,6 +251,12 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   the GitHub release: `gh release create X.Y.Z --title "keepbest X.Y.Z" --notes-file <that
   version's section of CHANGELOG.md, without heading>`. Without a version bump
   `pipx upgrade` doesn't pick up changes.
+- **Numbering restarted on 2026-10-27:** the development versions published as 1.0.0–2.1.4
+  (2026-10-08 to 2026-10-26) lost their tags and releases; 1.3.0's commit is pre-release `0.6.0`
+  (it reports 1.3.0 when installed), `0.5.1` (the last img_dedupe) stays, the other 0.x are gone,
+  and the state of 2.1.4 became **1.0.0**. Commits were kept, so old commit subjects and the
+  "Done in 2.0.0/2.1.0" notes below use the old numbers. Backup of all tags and release notes:
+  `~/Software/Claude/Projects/keepbest-backup-2026-10-27/`.
 - Since 1.0.0 the history is never rewritten (no rebase, no force-push of `main`); a mistake in
   a release is fixed with a new version. If the owner wants a release folded into the previous one,
   do it like media-optimizer: a new commit sets the version back and merges the CHANGELOG
@@ -286,7 +292,7 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
-## Web page (agreed 2026-10-22; the default since 2.0.0, the only way to ask since 2.1.0)
+## Web page (agreed 2026-10-22; old numbers: the default since 2.0.0, the only way to ask since 2.1.0)
 
 Plan: `~/Software/Claude/Projects/keepbest/WEB_UI_PLAN.md` (it wins over `WEB_UI_PROPOSAL.md`
 next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
@@ -304,20 +310,11 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 - **Still open (plan step 7):** picktag may drop its terminal window (it only waits for the exit
   code; keepbest's terminal now only shows the address and a log).
 
-## Open tasks (target: release 2.2.0)
+## Open tasks (target: release 1.1.0)
 
-1.0.0 is the first stable release and the first under the name keepbest; 1.1.0 added the
-media-optimizer hand-off on the end screen, the image/video counts and the subfolder question
-in the folder list; 1.2.0 (2026-10-16) passes the folder choice to media-optimizer (needs its 2.2)
-and has the fixes from an outside review (16-bit greyscale, extra video streams, track order,
-protected folders, marks, MPO/TIFF, dry-run carry-out, `i0`); 1.2.1 (2026-10-17) names the right
-command for the JPEG XL plugin (`pipx inject`) and asks again after typos (end screen, yes/no);
-1.3.0 (2026-10-18) adds the file journal for picktag and fixes the log crash on non-UTF-8 names; 2.0.0
-(2026-10-22) makes the browser page the default; 2.1.0 (2026-10-22) removes the terminal screens and hands
-the tab to media-optimizer's page; 2.1.1 (2026-10-22) opens a group's picture below its row; 2.1.2 (2026-10-22) does so for identical
-files and videos too and starts the folder picker in the current folder; 2.1.3 (2026-10-25) fixes the open row's width,
-the picker's start after a cancel and the new-tab link for unreadable pictures; 2.1.4 (2026-10-26) has the fixes from an outside
-review (permanent No after another keeper, dry-run renames, remuxes without duration, ...). New changes go under
+Pre-releases: 0.5.1 (img_dedupe, terminal screens) and 0.6.0 (keepbest with terminal screens,
+published as 1.3.0, 2026-10-18). 1.0.0 (2026-10-27) is the first stable release: the page only, the
+media-optimizer tab hand-off, the journal; it is what was developed as 1.0.0–2.1.4. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -343,6 +340,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
   old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (2.2.0 for behaviour changes, else 2.1.5) before
+- **Next release:** raise `__version__` (1.1.0 for behaviour changes, else 1.0.1) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.

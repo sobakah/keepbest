@@ -163,7 +163,7 @@ ADDRESS = re.compile(r"keepbest is running at (http://127\.0\.0\.1:\d+/\?token=[
 
 
 def _typed(question: dict, key: str):
-    """A key as typed in the terminal before 2.1.0, as the page's answer to *question*;
+    """A key as typed in the terminal before 1.0.0, as the page's answer to *question*;
     None when the page has no such answer (a typo)."""
     if question["kind"] == "confirm":
         key = key.strip().lower()
