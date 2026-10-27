@@ -23,6 +23,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   (normalising, hashing, pixel comparison), `video.py` (ffprobe, stream hash), `session.py`
   (log, saved sessions, "not duplicates" marks), `config.py` (defaults, validation, version),
   `journal.py` (the file journal, see below), `front.py` / `terminal.py` / `ui.py` (see below),
+  `selfupdate.py` (a newer keepbest, see the page),
   `viewer.py` (comparison apps for `v`, `show_in_folder`), `handoff.py` (runs media-optimizer
   from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0` and the run's
   folder choice as `MO_SUBFOLDERS`/`MO_EXCLUDE_FOLDERS` (JSON; same model: an excluded folder loses
@@ -77,6 +78,17 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     fractions of the upright picture; saved in sessions, None in older ones). `regroup_around`
     and `_check_decided` move it along with the scores. View buttons blur after a click, so
     Enter always reaches the flow.
+  - **Updates** (`selfupdate.py`, as in picktag): the newest `x.y.z` tag by `git ls-remote` (the repo
+    is private; git has pipx's access, never prompts), at most once a day, the newest found kept in
+    `state_dir()/update_check.json`; `KEEPBEST_UPDATE_REPO` replaces the repo (tests: a missing
+    one by default, `conftest.releases` makes one). `serve(check_updates=…)` checks in a thread and
+    `WebFront.offer_update` puts it in the state; `/api/update` installs only at `UPDATE_SCREENS`
+    or the folder question (a new version under a running one would mix lazy imports and
+    `static/`), answers wait meanwhile. Success: `Restart` (a `Cancelled`) stops the flow, serve
+    closes the server and `exec`s `restart_argv()` with `KEEPBEST_RESTART_PAGE` = "port token", so
+    the new process keeps the pid (picktag waits on it) and the tab's address; the page reloads
+    when `boot` changes. pipx: `upgrade` for an install from the repo, `install --force` with the new
+    tag plus `inject` again for a pinned one, nothing for `pipx pin`. `--auto` prints the command.
   - `desktop.py` is the app-menu entry (from lyrembed; `Exec=… --web %f`). `running.py` is the
     lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
     in `resolve_directory` and with `--auto`. It does nothing on Windows.
@@ -84,7 +96,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 318 tests, ~95 s (see below for which Python)
+python3 -m pytest                 # 338 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

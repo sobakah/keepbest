@@ -31,6 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "save_sessions": True,        # save review progress so it can be resumed (not for dry runs)
     "log_file": None,             # null = project folder or state dir (see README), false = off, or a path
     "journal_file": None,         # null = journal.jsonl in the state dir, false = off, or a path
+    "check_for_updates": True,    # look for a newer keepbest once a day (git asks GitHub)
     "format_ranks": {
         "JXL": 6, "WEBP": 5, "AVIF": 4, "PNG": 3, "TIFF": 3,
         "JPEG": 2, "GIF": 1, "BMP": 0
@@ -119,7 +120,7 @@ def _merge(user_config: dict, path: Path, warnings: list[str]) -> dict:
             kind, low, high = NUMERIC_RANGES[key]
             what = "a whole number" if kind is int else "a number"
             warnings.append(f"'{key}' must be {what} from {low} to {high}, using {DEFAULT_CONFIG[key]!r}.")
-        elif key in ("rename_numbered", "save_sessions", "include_videos", "prefer_jxl") \
+        elif key in ("rename_numbered", "save_sessions", "include_videos", "prefer_jxl", "check_for_updates") \
                 and not isinstance(value, bool):
             warnings.append(f"'{key}' must be true or false, using {DEFAULT_CONFIG[key]!r}.")
         elif key in ("log_file", "journal_file") and not (value is None or value is False or isinstance(value, str)):

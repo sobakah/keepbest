@@ -851,6 +851,51 @@ function Question({ question, onAnswer, stale = false }) {
     <h2 class="prompt">${title}</h2>${body}</section>`;
 }
 
+// A newer keepbest, in one line under the top bar: the command, and with pipx a
+// button that installs it; then keepbest starts again on the same address and
+// this page loads itself again.
+function UpdateNotice({ update, onError }) {
+  const [hidden, setHidden] = useState(false);
+  const [sending, setSending] = useState(false);
+  if (!update || (hidden && update.state === 'available')) return null;
+  const { version, state } = update;
+  const install = async () => {
+    setSending(true);
+    try { await api('/update', {}); } catch (err) { onError(err.message); }
+    setSending(false);
+  };
+  if (state === 'installing' || state === 'restarting') {
+    return html`<div class="update row" role="status"><span class="spinner" aria-hidden="true"></span>
+      ${state === 'installing'
+        ? `Installing keepbest ${version}; this takes a minute or two, then keepbest starts again.`
+        : `keepbest ${version} is installed and starts again…`}</div>`;
+  }
+  if (state === 'installed') {
+    return html`<div class="update" role="status">keepbest ${version} is installed. Start keepbest again to use it.</div>`;
+  }
+  const failed = state === 'failed';
+  const where = 'Possible on the start screen, the end screen or the folder question, not during a run';
+  return html`<div class="update stack-tight" role="status">
+    <div class="row">
+      ${failed
+        ? html`<span class="k-error">The update to keepbest ${version} didn't work (exit code ${update.code}).</span>`
+        : html`<span><b>keepbest ${version} is available</b> <span class="muted">(this is ${update.current})</span></span>`}
+      ${update.installable && html`<button class="btn btn-small" disabled=${!update.ready || sending}
+        title=${update.ready ? 'Install it with pipx, then keepbest starts again here' : where}
+        onClick=${install}>${failed ? 'Try again' : 'Update'}</button>`}
+      <a class="small" href=${update.notes} target="_blank" rel="noopener noreferrer">What's new</a>
+      ${!failed && html`<button class="btn btn-small" onClick=${() => setHidden(true)}>Not now</button>`}
+      ${update.installable && !update.ready && html`<span class="small muted">Update: on the start or end screen</span>`}
+    </div>
+    ${failed && html`<pre class="update-command">${update.output}</pre>
+      <p class="small muted">All of pipx's output is in update.log in keepbest's state folder.</p>`}
+    <details class="small" open=${failed}>
+      <summary>${update.installable ? 'The command, to run it in a terminal' : 'How to update'}</summary>
+      <pre class="update-command">${update.command}</pre>
+    </details>
+  </div>`;
+}
+
 function App() {
   const [events, setEvents] = useState([]);
   const [question, setQuestion] = useState(null);
@@ -858,6 +903,7 @@ function App() {
   const [error, setError] = useState('');
   const [closed, setClosed] = useState(false);
   const [folder, setFolder] = useState('');
+  const [update, setUpdate] = useState(null);
   const stick = useRef(true);
   const lastHeight = useRef(0);
   const ownScroll = useRef(false);
@@ -871,11 +917,19 @@ function App() {
   useEffect(() => {
     let alive = true;
     let rev = 0;
+    let boot = null;
+    let restarting = false;
     (async () => {
       while (alive) {
         try {
-          const state = await api(`/state?since=${rev}`);
+          // Updated: the old keepbest goes away, the new one answers on the same address.
+          const state = await api(`/state?since=${restarting ? 0 : rev}`);
+          if (boot && state.boot !== boot) { location.reload(); return; }
+          boot = state.boot;
           rev = state.rev;
+          restarting = !!state.update && state.update.state === 'restarting';
+          setUpdate(state.update);
+          if (restarting) { await new Promise((r) => setTimeout(r, 300)); continue; }
           // media-optimizer's page takes the tab: go there once; coming back,
           // the same run is not followed again (without sessionStorage, never
           // automatically, so it can't send the tab back and forth).
@@ -904,6 +958,7 @@ function App() {
           setError('');
           if (state.finished !== null && !state.question) await new Promise((r) => setTimeout(r, 2000));
         } catch (err) {
+          if (restarting) { await new Promise((r) => setTimeout(r, 300)); continue; }
           setError(err.message);
           await new Promise((r) => setTimeout(r, 2000));
         }
@@ -989,7 +1044,7 @@ function App() {
   const order = STEPS.map(([id]) => id);
 
   return html`
-    <header class="topbar">
+    <div class="top"><header class="topbar">
       <span class="brand"><img src="/static/icon.svg" alt="" width="26" height="26" /> keepbest</span>
       ${folder && html`<span class="folder">${folder}</span>`}
       <ol class="steps" aria-label="Progress">
@@ -1001,6 +1056,7 @@ function App() {
       </ol>
       ${finished === null && html`<button class="btn btn-small" title="Key: q" onClick=${quit}><${Label} text="Quit" k="q" /></button>`}
     </header>
+    <${UpdateNotice} update=${update} onError=${setError} /></div>
     <main>
       ${sections.map((s, i) => html`<section class=${'section' + (i < sections.length - 1 ? ' old' : '')} key=${i}>
         ${s.title && html`<h2>${s.title}</h2>`}

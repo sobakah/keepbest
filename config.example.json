@@ -16,6 +16,7 @@
     "save_sessions": true,
     "log_file": null,
     "journal_file": null,
+    "check_for_updates": true,
     "format_ranks": {
         "JXL": 6,
         "WEBP": 5,

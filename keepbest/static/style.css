@@ -80,8 +80,15 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border: 1px s
 
 /* header */
 .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 24px; background: var(--bar);
-          border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+          border-bottom: 1px solid var(--border); }
+.top { position: sticky; top: 0; z-index: 5; }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-weight: 600; font-size: 18px; }
+.update { padding: 8px 24px; background: var(--keep-bg); border-bottom: 1px solid #3C5A7A; color: var(--keep-ink);
+          font-size: 14px; max-height: 50vh; overflow-y: auto; }
+.update a { color: var(--keep); }
+.update summary { cursor: pointer; color: var(--muted); }
+.update-command { margin: 6px 0 0; padding: 6px 10px; background: var(--bg); border-radius: 6px; color: var(--soft);
+  font-family: var(--mono); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .folder { font-family: var(--mono); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
 .steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 0 auto; padding: 0; font-size: 13px; }
 .step { padding: 4px 10px; border-radius: 999px; color: var(--muted); border: 1px solid var(--border); }
@@ -188,7 +195,7 @@ tr.kept td.file { color: var(--ink); font-weight: 600; }
 .overlay .box { max-width: 460px; padding: 22px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-strong); }
 
 @media (max-width: 640px) {
-  .topbar { padding: 10px 16px; }
+  .topbar, .update { padding: 10px 16px; }
   .steps { margin-left: 0; }
   .setting .label { flex-basis: 100%; }
   .note { padding-left: 0; }

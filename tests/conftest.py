@@ -50,7 +50,20 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))  # the trash lives here
     monkeypatch.setenv("KEEPBEST_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("NO_COLOR", "1")
+    # The update check asks a repository that isn't there, never GitHub (tests/test_updates.py makes one).
+    monkeypatch.setenv("KEEPBEST_UPDATE_REPO", str(tmp_path / "no-releases"))
     return tmp_path
+
+
+def releases(folder: Path, *tags: str) -> str:
+    """A git repository with these release tags, for the update check (KEEPBEST_UPDATE_REPO)."""
+    git = ["git", "-C", str(folder), "-c", "user.name=test", "-c", "user.email=test@example.invalid"]
+    folder.mkdir(parents=True, exist_ok=True)
+    subprocess.run([*git, "init", "-q"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "release"], check=True)
+    for tag in tags:
+        subprocess.run([*git, "tag", tag], check=True)
+    return f"file://{folder}"
 
 
 # --- building picture folders ------------------------------------------------

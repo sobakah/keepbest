@@ -33,7 +33,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from . import front as front_mod
-from .config import NAME
+from . import selfupdate
+from .config import NAME, PROJECT_URL, __version__
 from .core_logic import format_size
 from .front import (AfterDryRunScreen, DecisionScreen, EndScreen, FolderRow, FolderScreen, Front, HandledScreen,
                     Note, OverviewScreen, RemuxScreen, SettingRow, StartScreen)
@@ -86,6 +87,13 @@ _BROWSER_IMAGES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/p
                    ".webp": "image/webp", ".avif": "image/avif", ".bmp": "image/bmp"}
 # Longest side of a rendered picture opened on its own: in practice the full size.
 FULL_SIZE = 16384
+# Where an update can be installed: before a scan or after one, never in the middle
+# (a new version under a running one would mix the two). Also the folder question.
+UPDATE_SCREENS = ("StartScreen", "EndScreen")
+# After an update: the address the new keepbest takes over ("port token"), so the tab stays.
+RESTART_ENV = "KEEPBEST_RESTART_PAGE"
+# How long the page gets to see that keepbest starts again.
+RESTART_GRACE = 1.0
 
 
 def cookie_name(port: int) -> str:
@@ -95,6 +103,11 @@ def cookie_name(port: int) -> str:
 class Cancelled(KeyboardInterrupt):
     """The page was closed, or quit, while the flow waited for an answer: the
     flow stops as on Ctrl+C at that question (progress saved, summary)."""
+
+
+class Restart(Cancelled):
+    """A newer keepbest was installed: the flow stops at its open question and
+    serve() starts the new one in this process's place."""
 
 
 class ApiError(Exception):
@@ -348,6 +361,9 @@ class WebFront(Front):
         self._next_question = 0
         self.finished: int | None = None
         self.gone = False
+        self.boot = secrets.token_urlsafe(6)  # a new one after an update: the page loads itself again
+        self.update: dict | None = None       # a newer keepbest (offer_update)
+        self._update_commands: list | None = None
         # Start screen: a choice the page picked directly, reached by pressing
         # the row's key until it shows (the flow only knows "next choice").
         self._target: tuple[str, int] | None = None
@@ -438,6 +454,61 @@ class WebFront(Front):
         return _Status(self, text)
 
     # questions
+    # a newer keepbest
+    def offer_update(self, version: str, how: selfupdate.Install) -> None:
+        with self._cond:
+            self.update = {"version": version, "current": __version__, "command": how.command,
+                           "installable": bool(how.commands), "kind": how.kind, "state": "available",
+                           "notes": f"{PROJECT_URL}/releases/tag/{version}", "output": ""}
+            self._update_commands = how.commands
+            self._bump()
+
+    def _update_ready(self) -> bool:
+        """Whether the open question is one where an update may be installed."""
+        q = self.question
+        return q is not None and (q["kind"] == "path" or q.get("screen") in UPDATE_SCREENS)
+
+    def start_update(self) -> None:
+        """Install the newer keepbest (in a thread); questions wait meanwhile.
+        Then the flow stops with Restart, or the page shows what went wrong."""
+        with self._cond:
+            update = self.update
+            if update is None or not self._update_commands:
+                raise ApiError(409, "There is no update to install here.")
+            if update["state"] not in ("available", "failed"):
+                raise ApiError(409, "The update is already being installed.")
+            if not self._update_ready():
+                raise ApiError(409, f"{NAME} can be updated on the start screen, the end screen "
+                                    "or the folder question, not during a run.")
+            update.update(state="installing", output="")
+            self._bump()
+        commands = self._update_commands
+        if self.echo:
+            _say(f"Updating {NAME} to {update['version']}: {' ; '.join(update['command'].splitlines())}")
+
+        def run() -> None:
+            from .session import state_dir
+            code, tail = selfupdate.install(commands, state_dir() / "update.log")
+            self._installed(code, tail)
+
+        threading.Thread(target=run, name=f"{NAME}-update", daemon=True).start()
+
+    def _installed(self, code: int, tail: str) -> None:
+        with self._cond:
+            update = self.update
+            if code != 0:
+                update.update(state="failed", output=tail, code=code)
+            elif self.question is not None and not self.gone:
+                update["state"] = "restarting"
+                self._answers[self.question["id"]] = Restart()
+            else:  # the page went away meanwhile: the next start is the new version
+                update["state"] = "installed"
+            self._bump()
+            self._cond.notify_all()
+        if self.echo:
+            _say(f"{NAME} {update['version']} is installed." if code == 0 else
+                 f"The update failed (exit code {code}):\n{tail}")
+
     def _ask(self, kind: str, payload: dict, screen=None) -> object:
         with self._cond:
             if self.gone:
@@ -546,6 +617,8 @@ class WebFront(Front):
             question = self.question
             if question is None or question["id"] != qid:
                 raise ApiError(409, "That question is no longer open.")
+            if self.update is not None and self.update["state"] in ("installing", "restarting"):
+                raise ApiError(409, f"{NAME} is being updated; it starts again in a moment.")
             kind = question["kind"]
             if kind == "screen":
                 value = self._screen_answer(question, value)
@@ -595,8 +668,9 @@ class WebFront(Front):
     # the page's view
     def snapshot(self, since: int) -> dict:
         with self._cond:
+            update = dict(self.update, ready=self._update_ready()) if self.update is not None else None
             return {"rev": self._rev, "events": [e for e in self.events if e["rev"] > since],
-                    "question": self.question, "finished": self.finished}
+                    "question": self.question, "finished": self.finished, "boot": self.boot, "update": update}
 
     def wait_for_change(self, since: int, timeout: float) -> None:
         """Return once something newer than *since* exists, or after *timeout*."""
@@ -900,6 +974,9 @@ class _Handler(BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/stop-tool":
             from . import handoff
             return {"stopped": handoff.interrupt()}
+        if method == "POST" and path == "/api/update":
+            web.start_update()
+            return {"ok": True}
         if method == "POST" and path == "/api/quit":
             if web.finished is None and not web.cancel():
                 raise ApiError(409, f"{NAME} is busy; it stops at its next question.")
@@ -920,22 +997,45 @@ def _exit_code(exc: SystemExit) -> int:
     return exc.code if isinstance(exc.code, int) else 1
 
 
-def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: bool = True) -> int:
+def _check_for_update(web: WebFront) -> None:
+    version = selfupdate.available()
+    if version is not None:
+        web.offer_update(version, selfupdate.how_installed(version))
+
+
+def _server(web: WebFront, port: int) -> tuple[_Server, bool]:
+    """The page's server; after an update on the address the old keepbest had
+    (True), so its tab carries on. Taken meanwhile: a new address."""
+    restarted = os.environ.pop(RESTART_ENV, "")
+    old_port, _, old_token = restarted.partition(" ")
+    if old_port.isdigit() and old_token:
+        try:
+            return _Server(web, old_token, int(old_port)), True
+        except OSError:
+            pass
+    return _Server(web, secrets.token_urlsafe(24), port), False
+
+
+def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: bool = True,
+          check_updates: bool = False) -> int:
     """Run *flow* (no arguments, returns an exit code) with the page as its
     front end, in this thread; returns its exit code. With *echo* the
-    terminal gets a log of the messages."""
+    terminal gets a log of the messages; with *check_updates* the page offers
+    a newer keepbest, and after installing it this process becomes the new one."""
     from . import running
 
-    token = secrets.token_urlsafe(24)
     web = WebFront(echo=echo)
-    server = _Server(web, token, port)
+    server, restarted = _server(web, port)
+    token = server.token
+    if restarted:  # the tab is still open
+        open_browser = False
     url = f"http://127.0.0.1:{server.port}/?token={token}"
     web.page_url = f"http://127.0.0.1:{server.port}/"  # the cookie is set by then
     running.set_address(url)
     threading.Thread(target=server.serve_forever, name=f"{NAME}-web", daemon=True).start()
     announce(f"{NAME} is running at {url}")
     opened = open_browser and webbrowser.open(url)
-    if not opened:
+    if not opened and not restarted:  # after an update the tab is still open
         announce("Open that address in your browser.")
         if os.environ.get("SSH_CONNECTION"):
             announce(f"Over SSH, forward the port first: ssh -L {server.port}:127.0.0.1:{server.port} <this computer>")
@@ -951,8 +1051,11 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
             web.page_gone()
 
     threading.Thread(target=watch, name=f"{NAME}-watch", daemon=True).start()
+    if check_updates:
+        threading.Thread(target=_check_for_update, args=(web,), name=f"{NAME}-update-check", daemon=True).start()
     code = 130
     interrupted = False
+    restart = False
     try:
         while not server.visited.wait(0.5):
             if server.stop.is_set():
@@ -962,6 +1065,8 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
             code = flow()
         except SystemExit as exc:
             code = _exit_code(exc)
+        except Restart:
+            code, restart = 0, True
         except Cancelled:
             code = 130
             announce("The page was closed: stopped at the open question. Saved progress is kept.")
@@ -974,11 +1079,13 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
             traceback.print_exc()
         finally:
             front_mod.use(None)
-            web.finish(code)
+            if not restart:
+                web.finish(code)
         # Let the page show the end until it is closed or gone; stopped from
         # the terminal, only for a moment, so the page still learns of it.
-        end = time.monotonic() + INTERRUPT_GRACE if interrupted else None
-        while not server.stop.wait(0.2 if interrupted else 1.0):
+        # Updated, the page shows that keepbest starts again, then waits for the new one.
+        end = time.monotonic() + (RESTART_GRACE if restart else INTERRUPT_GRACE) if interrupted or restart else None
+        while not server.stop.wait(0.2 if end is not None else 1.0):
             if web.gone or (server.page_gone() and not web.away) or (end is not None and time.monotonic() > end):
                 break
     except KeyboardInterrupt:
@@ -987,4 +1094,9 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
         server.shutdown()
         server.server_close()
         running.set_address(None)
+    if restart:
+        running.release()
+        announce(f"Starting {NAME} {web.update['version']}.")
+        os.environ[RESTART_ENV] = f"{server.port} {token}"
+        selfupdate.restart(selfupdate.restart_argv())
     return code

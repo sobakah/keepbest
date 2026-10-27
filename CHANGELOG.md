@@ -20,6 +20,7 @@ The first stable release. keepbest finds duplicate images and videos in a folder
 - **Interruptible.** Progress is saved as you go, so a review can be resumed, and a finished dry run can be carried out later without scanning again. Closing the page or Ctrl+C stops at the next question.
 - **Works with other tools.** A file journal (`journal.jsonl`) tells programs like a tagger which file was removed for which kept one and which was renamed. [media-optimizer](https://github.com/sobakah/media-optimizer) can run from the end screen on the same folders; version 2.4 and newer takes over the tab and leads back.
 - **One keepbest per folder**, and an app-menu entry (`--install-desktop-entry`, Linux) with "Open with keepbest" for folders.
+- **Keeps itself up to date.** Once a day keepbest looks for a newer release (setting `check_for_updates`; it asks through git, with the same access as `pipx install`). The page shows the command and a link to what's new; installed with pipx, *Update* installs it on the start or end screen and keepbest starts again in the same tab. `--auto` prints the command.
 
 ## [0.6.0] — 2026-10-18
 

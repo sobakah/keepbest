@@ -8,9 +8,10 @@ import logging
 import os
 import signal
 import sys
+import threading
 from pathlib import Path
 
-from . import ui
+from . import selfupdate, ui
 from .config import NAME, __version__, load_config
 from .migrate import migrate_old_locations
 
@@ -187,12 +188,40 @@ def main(argv: list[str] | None = None) -> int:
         from . import web
         initial = Path(args.path) if args.path else None  # from the app menu: the page asks
         return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude),
-                         open_browser=not args.no_browser and graphical_session())
+                         open_browser=not args.no_browser and graphical_session(),
+                         check_updates=config["check_for_updates"])
+    update = _UpdateCheck() if config["check_for_updates"] else None
     try:
-        return app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude)
+        code = app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude)
     except KeyboardInterrupt:
         print("\n\nProgram aborted by user.")
         return 130
+    if update is not None:
+        update.report()
+    return code
+
+
+class _UpdateCheck:
+    """--auto asks nothing: a newer keepbest gets a line with the command at the end."""
+
+    WAIT = 5.0  # at most this long after the run, for a check that hasn't answered yet
+
+    def __init__(self) -> None:
+        self.found: str | None = None
+        self.thread = threading.Thread(target=self._check, name=f"{NAME}-update-check", daemon=True)
+        self.thread.start()
+
+    def _check(self) -> None:
+        self.found = selfupdate.available()
+
+    def report(self) -> None:
+        self.thread.join(self.WAIT)
+        if self.found is not None:
+            how = selfupdate.how_installed(self.found)
+            print()
+            ui.info(f"{NAME} {self.found} is available (this is {__version__}). To update:")
+            for line in how.command.splitlines():
+                print(f"  {line}")
 
 
 if __name__ == "__main__":  # pragma: no cover
