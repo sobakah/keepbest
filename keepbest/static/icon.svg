@@ -1,9 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="#1F2A36"/>
-  <rect x="38" y="24" width="62" height="50" rx="8" fill="none" stroke="#5B6B7C" stroke-width="5"/>
-  <rect x="24" y="40" width="66" height="54" rx="8" fill="#6CB2FF"/>
-  <path d="M30 86l18-20 12 12 8-8 16 16z" fill="#1F2A36"/>
-  <circle cx="72" cy="56" r="6" fill="#1F2A36"/>
-  <circle cx="92" cy="94" r="18" fill="#F2A65A"/>
-  <path d="M83 94l6 6 12-13" fill="none" stroke="#1F2A36" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#99c1f1"/>
+    </linearGradient>
+    <linearGradient id="faded" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c0bfbc"/>
+      <stop offset="1" stop-color="#deddda"/>
+    </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffa348"/>
+      <stop offset="1" stop-color="#e66100"/>
+    </linearGradient>
+    <clipPath id="back">
+      <rect x="40" y="16" width="76" height="62" rx="8"/>
+    </clipPath>
+    <clipPath id="front">
+      <rect x="16" y="38" width="80" height="66" rx="8"/>
+    </clipPath>
+  </defs>
+  <!-- the copy behind -->
+  <rect x="38" y="16" width="84" height="70" rx="11" fill="#77767b" opacity="0.3"/>
+  <rect x="36" y="12" width="84" height="70" rx="11" fill="#f6f5f4"/>
+  <g clip-path="url(#back)">
+    <rect x="40" y="16" width="76" height="62" fill="url(#faded)"/>
+    <path d="M40 70 L62 48 L78 62 L88 54 L116 74 L116 78 L40 78 Z" fill="#9a9996"/>
+  </g>
+  <!-- the picture kept -->
+  <rect x="14" y="40" width="88" height="74" rx="11" fill="#1c71d8" opacity="0.35"/>
+  <rect x="12" y="34" width="88" height="74" rx="11" fill="#ffffff"/>
+  <g clip-path="url(#front)">
+    <rect x="16" y="38" width="80" height="66" fill="url(#sky)"/>
+    <circle cx="74" cy="56" r="8" fill="#f9f06b"/>
+    <path d="M16 92 L40 66 L56 82 L66 73 L96 98 L96 104 L16 104 Z" fill="#33d17a"/>
+    <path d="M16 104 L16 96 L34 82 L56 104 Z" fill="#26a269"/>
+  </g>
+  <!-- the check -->
+  <circle cx="96" cy="99" r="22" fill="#c64600" opacity="0.4"/>
+  <circle cx="94" cy="96" r="22" fill="#ffffff"/>
+  <circle cx="94" cy="96" r="18" fill="url(#badge)"/>
+  <path d="M85 96.5 L91.5 103 L104 89.5" fill="none" stroke="#ffffff" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

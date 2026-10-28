@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- A brighter, flatter icon in the style of picktag's: framed pictures in GNOME colours instead of the dark tile.
+
 ## [1.0.0] — 2026-10-27
 
 The first stable release. keepbest finds duplicate images and videos in a folder and removes the redundant copies, keeping the best one. It asks its questions on a local page in the browser; `--auto` runs in the terminal without questions.
