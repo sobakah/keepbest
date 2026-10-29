@@ -646,9 +646,10 @@ class WebFront(Front):
         return value
 
     def cancel(self) -> bool:
-        """Stop the flow at the open question; False when none is open."""
+        """Stop the flow at the open question; False when none is open. A question
+        already answered keeps its answer: the flow goes on with it."""
         with self._cond:
-            if self.question is None:
+            if self.question is None or self.question["id"] in self._answers:
                 return False
             self._answers[self.question["id"]] = Cancelled()
             self._cond.notify_all()

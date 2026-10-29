@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- An answer given just before the page was closed counts. Choosing *don't save progress* and closing the tab at once could stop keepbest at that question instead, and keep the progress.
 - The summary's tiles all have the same height. A label on two lines ("Identical images removed" on a wide page) made its row taller than the others and moved its number up.
 
 ## [1.0.1] — 2026-10-29

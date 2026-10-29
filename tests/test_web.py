@@ -402,6 +402,29 @@ def test_remuxed_videos_on_the_page(library, serve):
     assert finish(page, result) == 0
 
 
+def test_an_answer_given_just_before_the_page_closes_counts():
+    """Closing the page right after answering ("don't save progress", then the
+    tab closed) stops the flow at its next question, not at the one answered."""
+    front_end, got = web.WebFront(echo=False), {}
+
+    def flow():
+        try:
+            got["answer"] = front_end.confirm("Save progress?", default=True)
+        except web.Cancelled:
+            got["answer"] = "stopped"
+    thread = threading.Thread(target=flow)
+    thread.start()
+    while front_end.question is None:
+        time.sleep(0.01)
+    with front_end._cond:   # the flow can only pick the answer up once the page is gone
+        front_end.answer(front_end.question["id"], False)
+        front_end.page_gone()
+    thread.join(timeout=10)
+    assert got["answer"] is False
+    with pytest.raises(web.Cancelled):
+        front_end.confirm("The next question?")
+
+
 def test_every_step_of_stage_3_counts_on_the_page(library, serve):
     """Comparing the pixels of many candidate pairs takes long: it has a counter
     of its own, which ends at the number of candidate pairs."""
