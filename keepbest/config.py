@@ -31,7 +31,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "save_sessions": True,        # save review progress so it can be resumed (not for dry runs)
     "log_file": None,             # null = project folder or state dir (see README), false = off, or a path
     "journal_file": None,         # null = journal.jsonl in the state dir, false = off, or a path
-    "check_for_updates": True,    # look for a newer keepbest once a day (git asks GitHub)
+    "check_for_updates": True,    # look for a newer keepbest at every start (git asks GitHub)
     "format_ranks": {
         "JXL": 6, "WEBP": 5, "AVIF": 4, "PNG": 3, "TIFF": 3,
         "JPEG": 2, "GIF": 1, "BMP": 0

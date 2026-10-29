@@ -154,7 +154,7 @@ keepbest shows a page in your browser: it prints a local address and opens it, a
 
 ### Updates
 
-Once a day keepbest looks for a newer release (it asks GitHub through git, so it has the same access as `pipx install`, and never asks for a password). When there is one, the page says so, with the command that updates it and a link to what's new. Installed with pipx, *Update* runs that command on the start screen, the end screen or the folder question, never during a run; keepbest then starts again in the same tab, with the options it was started with. An install pinned to a release (`...keepbest.git@1.0.0`) moves to the new release and stays pinned; packages you injected, like `pillow-jxl-plugin`, are injected again. Other installs (a project folder, `pip`) get the command only. `--auto` prints the command at the end of its run. pipx's output is kept in `update.log` in the state folder. `"check_for_updates": false` turns this off.
+At every start keepbest looks for a newer release, in the background, so the start doesn't wait (it asks GitHub through git, so it has the same access as `pipx install`, and never asks for a password; offline, the release found last time counts). When there is one, the page says so, with the command that updates it and a link to what's new. Installed with pipx, *Update* runs that command on the start screen, the end screen or the folder question, never during a run; keepbest then starts again in the same tab, with the options it was started with. An install pinned to a release (`...keepbest.git@1.0.0`) moves to the new release and stays pinned; packages you injected, like `pillow-jxl-plugin`, are injected again. Other installs (a project folder, `pip`) get the command only. `--auto` prints the command at the end of its run. pipx's output is kept in `update.log` in the state folder. `"check_for_updates": false` turns this off.
 
 ## Command-line options
 
@@ -195,7 +195,7 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 | `save_sessions` | `true` | save progress so it can be resumed |
 | `log_file` | `null` | `null` = default place, `false` = no log, or a file path |
 | `journal_file` | `null` | `null` = default place, `false` = no [journal](#the-file-journal), or a file path |
-| `check_for_updates` | `true` | look for a newer keepbest once a day ([Updates](#updates)) |
+| `check_for_updates` | `true` | look for a newer keepbest at every start ([Updates](#updates)) |
 | `color` | `auto` | `auto`, `always`, `never` |
 | `format_ranks` | JXL > WEBP > AVIF > PNG/TIFF > JPEG > GIF > BMP | preferred formats when choosing the copy to keep; names are not case-sensitive, `JPG` means JPEG and `TIF` TIFF, MPO ranks like JPEG unless given its own rank |
 | `uncertain_ratio`, `compare_size`, `max_aspect_diff`, `hash_size`, `hash_max_distance` | `0.8`, `512`, `0.02`, `8`, `28` | fine-tuning, see below |

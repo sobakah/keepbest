@@ -85,8 +85,9 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     and `_check_decided` move it along with the scores. View buttons blur after a click, so
     Enter always reaches the flow.
   - **Updates** (`selfupdate.py`, as in picktag): the newest `x.y.z` tag by `git ls-remote` (the repo
-    is private; git has pipx's access, never prompts), at most once a day, the newest found kept in
-    `state_dir()/update_check.json`; `KEEPBEST_UPDATE_REPO` replaces the repo (tests: a missing
+    is private; git has pipx's access, never prompts), at every start in a thread (the page's
+    `serve(check_updates=…)`, `--auto`'s `cli._UpdateCheck`), the newest found kept in
+    `state_dir()/update_check.json` for an offline start; `KEEPBEST_UPDATE_REPO` replaces the repo (tests: a missing
     one by default, `conftest.releases` makes one). `serve(check_updates=…)` checks in a thread and
     `WebFront.offer_update` puts it in the state; `/api/update` installs only at `UPDATE_SCREENS`
     or the folder question (a new version under a running one would mix lazy imports and

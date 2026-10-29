@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **keepbest looks for a newer version at every start**, in the background, instead of once a day, so a new release shows at the next start. Offline, the release found last time counts.
+
 ## [1.1.0] — 2026-10-29
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page.

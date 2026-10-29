@@ -1,4 +1,4 @@
-"""A newer keepbest: the check (git tags, once a day), the command for each
+"""A newer keepbest: the check (git tags, at every start), the command for each
 kind of install, installing it from the page and starting again in the same
 process and tab. The releases are a local repository, never GitHub."""
 
@@ -53,16 +53,17 @@ def test_a_repository_that_cant_be_read_is_an_error(tmp_path):
         selfupdate.latest(releases(tmp_path / "none"))
 
 
-def test_github_is_asked_once_a_day_and_the_answer_kept(newer_release, monkeypatch):
+def test_github_is_asked_at_every_start_and_the_answer_kept(newer_release, monkeypatch):
+    """A release made a minute ago shows at the next start; the answer is kept
+    for a start when GitHub can't be reached."""
     asked = []
     real = selfupdate.latest
     monkeypatch.setattr(selfupdate, "latest", lambda: asked.append(1) or real())
-    now = time.time()
-    assert selfupdate.available(now) == NEWER
-    assert selfupdate.available(now + 3600) == NEWER        # remembered, not asked again
-    assert len(asked) == 1
-    assert selfupdate.available(now + 25 * 3600) == NEWER
-    assert len(asked) == 2
+    assert selfupdate.available() == NEWER
+    assert selfupdate.available() == NEWER
+    assert len(asked) == 2                                  # asked again, not taken from the last time
+    monkeypatch.setenv(selfupdate.REPO_ENV, "/nowhere")
+    assert selfupdate.available() == NEWER                  # offline: the release found last time
 
 
 def test_a_failed_check_is_quiet_and_tried_again(tmp_path, monkeypatch):

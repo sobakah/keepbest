@@ -2,8 +2,9 @@
 
 The repository is private, so the check asks git (``git ls-remote``), which
 uses the same access as ``pipx install`` (``gh auth setup-git``); it never
-prompts for a password. At most once a day; the newest version found is
-remembered in the state folder, so the notice stays until keepbest is updated.
+prompts for a password. At every start, in a thread, so the start doesn't wait;
+the newest version found is remembered in the state folder, for a start when
+GitHub can't be reached.
 A pipx install is updated by pipx: ``pipx upgrade`` for an install from the
 repository, ``pipx install --force`` with the new tag for one pinned to a
 release (it stays pinned; injected packages, like pillow-jxl-plugin, are
@@ -29,7 +30,6 @@ from .config import NAME, PROJECT_URL, __version__
 REPO = f"{PROJECT_URL}.git"
 # Another repository to ask (a local one in the tests, so they never reach GitHub).
 REPO_ENV = "KEEPBEST_UPDATE_REPO"
-CHECK_EVERY_S = 24 * 3600
 STATE_FILE = "update_check.json"
 _TAG = re.compile(r"refs/tags/(\d+)\.(\d+)\.(\d+)$")
 
@@ -94,32 +94,23 @@ def _load_state() -> dict:
     return state if isinstance(state, dict) else {}
 
 
-def due(state: dict, now: float | None = None) -> bool:
-    """A check at most once a day."""
-    last = state.get("checked")
-    now = time.time() if now is None else now
-    return not isinstance(last, (int, float)) or not 0 <= now - last < CHECK_EVERY_S
-
-
-def available(now: float | None = None) -> str | None:
-    """A newer release than this keepbest, or None: asked once a day, else
-    the one found last time. A failed check stays quiet and is tried again
-    at the next start."""
+def available() -> str | None:
+    """A newer release than this keepbest, or None. GitHub is asked at every start
+    (callers run this in a thread, so the start doesn't wait for it); when it
+    can't be reached, the release found last time counts."""
     state = _load_state()
     found = state.get("latest") if isinstance(state.get("latest"), str) else None
-    if due(state, now):
+    try:
+        found = latest()
+    except UpdateError:
+        pass
+    else:
         try:
-            found = latest()
-        except UpdateError:
+            path = _state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"checked": time.time(), "latest": found}), encoding="utf-8")
+        except OSError:
             pass
-        else:
-            try:
-                path = _state_path()
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps({"checked": time.time() if now is None else now, "latest": found}),
-                                encoding="utf-8")
-            except OSError:
-                pass
     return found if newer(found) else None
 
 
