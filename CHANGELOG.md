@@ -3,23 +3,28 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.0] — 2026-10-29
+
+Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page.
+
+**Saved dry runs work differently now.** Coming back to a folder with a finished dry run, Enter *opens* it, as a dry run, instead of carrying it out. Carrying it out is the button *Carry it out* (`a`), and it always asks first, No by default. *Review its groups again for real* is gone.
+
+### Added
+
+- **The space keepbest and media-optimizer freed, added up.** Back from media-optimizer (1.1.0 and newer), its box has a tile *Freed together* next to *Space saved*, and the line below it says how much each freed.
+- **A dry run's decisions can change.** Open a decided group from the overview and keep another file with its *Keep* button, or skip the group instead. The *Undo* button is gone; `u` still works.
 
 ### Changed
 
+- **Coming back to a saved dry run opens it, as a dry run.** Enter on the start screen used to carry it out at once, and *Review its groups again* (*Review the groups again* right after a dry run) was a real run in which every decision moved files to the trash. Now Enter opens the dry run's groups overview, where every group can be looked at and its decision changed without touching anything. Carrying it out is a button of its own (`a`; Enter right after a dry run) that always asks first, No by default, in trash mode too. Remuxes skipped in a dry run are left alone when it is carried out.
+- **Each file has its own *Keep* button**, next to its picture and in its row of the details (also without pictures, and for remuxed videos), instead of a *Keep this one* button with its number on each card and a big *Keep* button below the group. The recommended file is framed in both places; Enter keeps it, as before.
+- **Groups belong to the overview.** Each group starts with *‹ Groups overview › Group 3 of 12*, and a group opened from the overview leads back to it once decided, skipped or looked at, with the next group not asked yet as *Continue*.
 - **Comparing pixels is 5 to 6 times faster** on a computer with many cores, with the same results: pictures are compared in parallel, and each one is blurred once instead of once per comparison.
 - **Every step of stage 3 counts.** With tens of thousands of pictures, keepbest could look frozen for many minutes after "Comparing pixels" had reached 100 %: that counter only loaded the pictures, and finding the candidate pairs and comparing their pixels showed nothing. Now each step has its own counter: *Finding candidates*, *Loading pictures* and *Comparing pixels*, which counts the candidate pairs and ends at the number shown afterwards.
 
-- **The space keepbest and media-optimizer freed, added up.** Back from media-optimizer, its box has a tile *Freed together* next to *Space saved*, and the line below it says how much each freed.
-
-- **Each file has its own *Keep* button**, next to its picture and in its row of the details (also without pictures, and for remuxed videos), instead of a *Keep this one* button with its number on each card and a big *Keep* button below the group. The recommended file is framed in both places; Enter keeps it, as before.
-- **A dry run's decision changes with another file's *Keep***: open the decided group from the overview and keep another file, or skip the group instead. The *Undo* button is gone; `u` still works.
-- **Groups belong to the overview.** Each group starts with *‹ Groups overview › Group 3 of 12*, and a group opened from the overview leads back to it once decided, skipped or looked at, with the next group not asked yet as *Continue*.
-- **Coming back to a saved dry run opens it, as a dry run.** Enter on the start screen used to carry it out at once, and *Review its groups again* (and *Review the groups again* right after a dry run) was a real run in which every decision moved files to the trash. Now Enter opens the dry run's groups overview, where every group can be looked at and its decision changed without touching anything; carrying it out is a button of its own (`a`; Enter right after a dry run) that always asks first, No by default, in trash mode too. Going through the groups again for real is gone; remuxes skipped in a dry run are left alone when it is carried out.
-
 ### Fixed
 
-- Switching a folder that has subfolders no longer makes the folder tree disappear: the question whether the folders below it change too appears over the tree, which stays visible, dimmed, until its new state is there.
+- Switching a folder that has subfolders no longer makes the folder tree disappear: the question whether the folders below it change too appears over the tree, which stays visible, dimmed, until its new state is there. The same goes for the start screen's *Discard the saved session?*.
 - An answer given just before the page was closed counts. Choosing *don't save progress* and closing the tab at once could stop keepbest at that question instead, and keep the progress.
 - The summary's tiles all have the same height. A label on two lines ("Identical images removed" on a wide page) made its row taller than the others and moved its number up.
 
@@ -92,6 +97,7 @@ img_dedupe finds duplicate images and videos in a folder and removes the redunda
 - **Safety:** trash by default, dry runs saved and carried out later, permanent mode asks first, files checked against the disk before a saved session goes on, sessions survive Ctrl+C and crashes.
 - **Stages** numbered 1 identical files, 2 remuxed videos, 3 visually identical images (`--stages`).
 
+[1.1.0]: https://github.com/sobakah/keepbest/releases/tag/1.1.0
 [1.0.1]: https://github.com/sobakah/keepbest/releases/tag/1.0.1
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
 [0.6.0]: https://github.com/sobakah/keepbest/releases/tag/0.6.0
