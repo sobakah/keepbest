@@ -3,7 +3,9 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.1] — 2026-10-29
+
+Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page. From this version on, a new release is offered at the next start.
 
 ### Changed
 
@@ -103,6 +105,7 @@ img_dedupe finds duplicate images and videos in a folder and removes the redunda
 - **Safety:** trash by default, dry runs saved and carried out later, permanent mode asks first, files checked against the disk before a saved session goes on, sessions survive Ctrl+C and crashes.
 - **Stages** numbered 1 identical files, 2 remuxed videos, 3 visually identical images (`--stages`).
 
+[1.1.1]: https://github.com/sobakah/keepbest/releases/tag/1.1.1
 [1.1.0]: https://github.com/sobakah/keepbest/releases/tag/1.1.0
 [1.0.1]: https://github.com/sobakah/keepbest/releases/tag/1.0.1
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
