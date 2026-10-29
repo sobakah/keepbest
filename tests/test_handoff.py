@@ -262,6 +262,7 @@ def _writes_results(results: dict) -> str:
 def test_its_results_are_shown_next_to_keepbests(one_copy, run_cli, optimizer):
     """One that writes its results gets a file for them; its numbers come back
     on the page and in the log, with the space both freed together."""
+    from keepbest import handoff
     command = optimizer(help_text=RESULTS_HELP,
                         script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'\n"
                                + _writes_results(RESULTS))
@@ -271,11 +272,18 @@ def test_its_results_are_shown_next_to_keepbests(one_copy, run_cli, optimizer):
     assert call[-2] == "--results" and call[-1].endswith("results.json")
     assert not __import__("os").path.exists(call[-1]), "the file goes with keepbest's temp folder"
     (tool,) = [e for e in result.events if e["kind"] == "tool"]
-    assert tool["results"]["tiles"] == [["Converted", 3], ["Space saved", "2.0 KB"], ["Skipped", 0], ["Failed", 1]]
+    (summary,) = [e for e in result.events if e["kind"] == "summary"]
+    freed = summary["stats"]["space_saved"]
+    assert tool["results"]["tiles"] == [["Converted", 3], ["Space saved", "2.0 KB"],
+                                        ["Freed together", handoff.format_size(freed + 2048)],
+                                        ["Skipped", 0], ["Failed", 1]]
     assert tool["results"]["stages"] == ["Images: 3 converted, 1 failed, 5.0 KB → 3.0 KB",
                                          "GIFs: done in the run it resumed"]
-    assert "Together with the" in tool["results"]["together"] and "less in this folder" in result.stdout
-    assert "media-optimizer: Converted 3 · Space saved 2.0 KB · Skipped 0 · Failed 1" in result.stdout
+    assert tool["results"]["together"] == (f"{handoff.format_size(freed)} by keepbest + 2.0 KB by media-optimizer: "
+                                           f"{handoff.format_size(freed + 2048)} less in this folder.")
+    assert tool["results"]["together"] in result.stdout
+    assert ("media-optimizer: Converted 3 · Space saved 2.0 KB · Freed together "
+            f"{handoff.format_size(freed + 2048)} · Skipped 0 · Failed 1") in result.stdout
 
 
 def test_an_older_one_gets_no_results_file(one_copy, run_cli, optimizer):
@@ -315,5 +323,6 @@ def test_the_summary_of_a_preview_and_of_a_stopped_run():
                                                   {"title": "Videos", "state": "waiting", "outcomes": {}}]}
     assert handoff.summary(stopped)["stages"] == ["Images: 3 converted, 1 failed, 5.0 KB → 3.0 KB (stopped here)",
                                                   "Videos: not reached"]
-    assert handoff.summary(RESULTS)["together"] is None, "keepbest freed nothing"
+    alone = handoff.summary(RESULTS)
+    assert alone["together"] is None and "Freed together" not in dict(alone["tiles"]), "keepbest freed nothing"
     assert handoff.summary(None) is None

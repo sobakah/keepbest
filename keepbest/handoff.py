@@ -151,7 +151,7 @@ def _count(stage: dict, *outcomes: str) -> int:
 def summary(results: dict | None, freed: int = 0) -> dict | None:
     """media-optimizer's numbers as keepbest shows them: tiles as in keepbest's
     own summary, a line per stage, and with *freed* (what keepbest's run freed)
-    the space both freed together."""
+    the space both freed together: a tile, and a line saying who freed what."""
     if not results:
         return None
     stages = [s for s in results["stages"] if isinstance(s, dict)]
@@ -162,6 +162,11 @@ def summary(results: dict | None, freed: int = 0) -> dict | None:
               sum(_count(s, "dry") for s in stages) if dry else int(results.get("converted") or 0))]
     if before:
         tiles.append(("Space saved" if saved >= 0 else "Space added", format_size(abs(saved))))
+    together = None
+    if freed > 0 and saved > 0 and not dry:
+        tiles.append(("Freed together", format_size(freed + saved)))
+        together = (f"{format_size(freed)} by keepbest + {format_size(saved)} by media-optimizer: "
+                    f"{format_size(freed + saved)} less in this folder.")
     tiles += [("Skipped", sum(_count(s, "skipped", "cached") for s in stages)),
               ("Failed", int(results.get("failed") or 0))]
     lines = []
@@ -181,10 +186,6 @@ def summary(results: dict | None, freed: int = 0) -> dict | None:
                 parts.append(f"{format_size(s['before'])} → {format_size(s.get('after') or 0)}")
             lines.append(f"{title}: {', '.join(parts) or 'nothing to do'}"
                          + (" (stopped here)" if s.get("state") == "running" else ""))
-    together = None
-    if freed > 0 and saved > 0 and not dry:
-        together = (f"Together with the {format_size(freed)} keepbest freed: "
-                    f"{format_size(freed + saved)} less in this folder.")
     return {"tiles": tiles, "stages": lines, "together": together, "dry": dry, "code": results.get("code")}
 
 
