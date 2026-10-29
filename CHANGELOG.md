@@ -3,11 +3,18 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.0.1] — 2026-10-29
+
+Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page. To see media-optimizer's numbers, update it to 1.1.0 too (`pipx upgrade media-optimizer`).
+
+### Added
+
+- **media-optimizer's numbers next to keepbest's.** Back from media-optimizer (1.1.0 and newer), its box shows what it did: converted, space saved, skipped and failed as tiles like keepbest's summary, a line per stage, and the space keepbest and media-optimizer freed together. Until now keepbest only said that it had run. Closed without a run, keepbest says so.
 
 ### Changed
 
 - A brighter, flatter icon in the style of picktag's: framed pictures in GNOME colours instead of the dark tile.
+- media-optimizer is a step of its own: a section *Next · media-optimizer* after the summary and a step in the top bar. Once a run without its own page has ended, its output is folded away below its numbers.
 
 ## [1.0.0] — 2026-10-27
 
@@ -24,7 +31,7 @@ The first stable release. keepbest finds duplicate images and videos in a folder
 - **A page to decide on.** A start screen with every setting and a folder tree to choose subfolders; each group with its pictures side by side or flipping between them, one zoom for all, and the spot where they differ most outlined; remuxed videos playable; an overview of all groups; *Open* and *Show in folder* for every file. Without a graphical session keepbest prints the page's address.
 - **You decide what is borderline:** keep another file (the others are compared with it afresh), skip a group, mark images as not duplicates, or undo a decision in a dry run.
 - **Interruptible.** Progress is saved as you go, so a review can be resumed, and a finished dry run can be carried out later without scanning again. Closing the page or Ctrl+C stops at the next question.
-- **Works with other tools.** A file journal (`journal.jsonl`) tells programs like a tagger which file was removed for which kept one and which was renamed. [media-optimizer](https://github.com/sobakah/media-optimizer) can run from the end screen on the same folders; version 2.4 and newer takes over the tab and leads back.
+- **Works with other tools.** A file journal (`journal.jsonl`) tells programs like a tagger which file was removed for which kept one and which was renamed. [media-optimizer](https://github.com/sobakah/media-optimizer) can run from the end screen on the same folders; version 0.8 and newer takes over the tab and leads back.
 - **One keepbest per folder**, and an app-menu entry (`--install-desktop-entry`, Linux) with "Open with keepbest" for folders.
 - **Keeps itself up to date.** Once a day keepbest looks for a newer release (setting `check_for_updates`; it asks through git, with the same access as `pipx install`). The page shows the command and a link to what's new; installed with pipx, *Update* installs it on the start or end screen and keepbest starts again in the same tab. `--auto` prints the command.
 
@@ -34,7 +41,7 @@ The first stable release. keepbest finds duplicate images and videos in a folder
 
 ### Added
 
-- **Run media-optimizer afterwards** from the end screen, on the same folders as the run (needs media-optimizer 2.2).
+- **Run media-optimizer afterwards** from the end screen, on the same folders as the run (needs media-optimizer 0.6).
 - **A file journal for other programs** (`journal.jsonl` in the state folder, setting `journal_file`).
 - **`i0`:** only the recommended image is different; the others are compared with each other afresh.
 
@@ -65,6 +72,7 @@ img_dedupe finds duplicate images and videos in a folder and removes the redunda
 - **Safety:** trash by default, dry runs saved and carried out later, permanent mode asks first, files checked against the disk before a saved session goes on, sessions survive Ctrl+C and crashes.
 - **Stages** numbered 1 identical files, 2 remuxed videos, 3 visually identical images (`--stages`).
 
+[1.0.1]: https://github.com/sobakah/keepbest/releases/tag/1.0.1
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
 [0.6.0]: https://github.com/sobakah/keepbest/releases/tag/0.6.0
 [0.5.1]: https://github.com/sobakah/keepbest/releases/tag/0.5.1

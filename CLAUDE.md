@@ -27,11 +27,17 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   `viewer.py` (comparison apps for `v`, `show_in_folder`), `handoff.py` (runs media-optimizer
   from the end menu as a child process with `MO_CALLER=keepbest`, `MO_HOLD=0` and the run's
   folder choice as `MO_SUBFOLDERS`/`MO_EXCLUDE_FOLDERS` (JSON; same model: an excluded folder loses
-  only its own files). One whose `run --help` lists `--return-url` (media-optimizer 2.4+) gets
+  only its own files). One whose `run --help` lists `--return-url` (media-optimizer 0.8+) gets
   `--web --no-browser --return-url <keepbest's page> --return-name keepbest` and takes over the tab;
   an older one gets `-y` and its output goes into a box on the page. keepbest ignores
   SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on; the handlers are
   set before the start, as no-op handlers rather than SIG_IGN so the child gets default handling).
+  One whose help lists `--results` also gets `--results <temp file>`: media-optimizer's results file
+  (its `results.py`, format `v` 1), read by `read_results` and turned by `summary` into tiles, a line
+  per stage and the space both freed together (`freed` comes from the run's `Stats.space_saved`
+  through `end_menu`). The tool event carries it as `results`; the page shows it in the tool box, the
+  terminal after the exit code. `run_optimizer` starts with the banner `OPTIMIZER_BANNER`, which the
+  page makes a step and a section of its own (`stepOf`).
 - **Output and questions go through `front.py`**, never `print`/`input`. `app.py` and `core_logic.py`
   call `front.info/warn/…`, `front.show(kind, …)` for structured output (group tables, outcomes,
   summary) and `front.ask(screen)` with a `Screen` dataclass. The screen carries its data, `primary`
@@ -96,7 +102,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 338 tests, ~110 s (see below for which Python)
+python3 -m pytest                 # 343 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -149,7 +155,7 @@ Both paths change when the Python version changes.
   `chromium.launch(channel="chrome")` (Chrome is installed), keepbest started with the system
   `python3` and `--no-browser`, generated pictures only (the last script:
   `scratchpad/click21.py` of the 2026-10-22 session: tree, pictures switch, Open/Show in folder
-  with a fake `gdbus`, one Quit, the hand-off to a media-optimizer 2.4 checkout via a wrapper). The page's CSP blocks
+  with a fake `gdbus`, one Quit, the hand-off to a media-optimizer 0.8 checkout via a wrapper). The page's CSP blocks
   `wait_for_function`; wait with locators.
 
 ## Behaviour that must not regress (safety rules)
@@ -301,7 +307,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
   not read to its end once the child exited, so a stray grandchild can't block). The page is the
   default, and the terminal output never changed.
 - Done (owner's request, 2026-10-22): terminal screens and kitty/timg removed, the tab
-  hand-off to media-optimizer 2.4 (plan step 6), pictures off by default, Open/Show in folder,
+  hand-off to media-optimizer 0.8 (plan step 6), pictures off by default, Open/Show in folder,
   the "why" line, key badges only for Enter and numbers, the collapsed folder tree, one Quit.
 - **The flow stays in the main thread** and the HTTP server runs in a thread: `handoff.py`'s
   `signal.signal()` and interrupt handling need the main thread. Tests that reach `handoff` on the
@@ -311,7 +317,7 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 
 ## Open tasks (target: release 1.1.0)
 
-1.0.0 (2026-10-27) is the first release; 0.5.1 (img_dedupe) and 0.6.0 (terminal screens) are
+1.0.0 (2026-10-27) is the first release, 1.0.1 (2026-10-29) shows media-optimizer's numbers; 0.5.1 (img_dedupe) and 0.6.0 (terminal screens) are
 pre-releases kept for the record. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 

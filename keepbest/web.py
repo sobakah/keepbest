@@ -403,7 +403,7 @@ class WebFront(Front):
         if kind == "tool_start":
             self._tool = self._add({"kind": "tool", "name": data["name"], "command": data["command"],
                                     "lines": [], "running": True, "code": None,
-                                    "handoff": data.get("handoff", False), "url": None})
+                                    "handoff": data.get("handoff", False), "url": None, "results": None})
             self._tool_sent = 0.0
             return
         if kind in ("tool_line", "tool_end") and self._tool is not None:
@@ -420,7 +420,7 @@ class WebFront(Front):
                         self._bump(tool)
                         return
                 else:
-                    tool.update(running=False, code=data["code"])
+                    tool.update(running=False, code=data["code"], results=data.get("results"))
                     if tool["handoff"]:
                         self._handoff_end = time.monotonic()
                     self._tool = None

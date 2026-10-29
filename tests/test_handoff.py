@@ -12,6 +12,14 @@ OFFER = "Optimize this folder with media-optimizer"
 BACK = "Back in keepbest"
 OLD_HELP = "usage: media-optimizer run [-h] [-y] [source]"
 PAGE_HELP = "usage: media-optimizer run [-h] [-y] [--web] [--no-browser] [--return-url URL] [--return-name NAME]"
+RESULTS_HELP = PAGE_HELP + " [--results FILE]"
+# What a media-optimizer that converted 3 pictures and saved 2048 bytes writes (its results.py).
+RESULTS = {"v": 1, "program": "media-optimizer", "version": "1.1.0", "code": 3, "dry_run": False,
+           "source": "/x", "target": None, "converted": 3, "failed": 1, "before": 5120, "after": 3072,
+           "stages": [{"stage": "images", "title": "Images", "state": "done", "code": 3, "total": 4, "done": 4,
+                       "outcomes": {"converted": 3, "failed": 1}, "before": 5120, "after": 3072, "elapsed": 1.0},
+                      {"stage": "gifs", "title": "GIFs", "state": "earlier", "code": None, "total": 1, "done": 0,
+                       "outcomes": {}, "before": 0, "after": 0, "elapsed": None}]}
 
 
 @pytest.fixture
@@ -26,10 +34,10 @@ def optimizer(fake_command, tmp_path):
     """A stand-in media-optimizer that also records the variables it was given."""
     env_log = tmp_path / "optimizer.env"
 
-    def make(script: str = "", exit_code: int = 0, page: bool = False):
+    def make(script: str = "", exit_code: int = 0, page: bool = False, help_text: str = ""):
         folders_log = tmp_path / "optimizer.folders"
         # `run --help` tells keepbest whether it has a page (not recorded as a run)
-        help_text = PAGE_HELP if page else OLD_HELP
+        help_text = help_text or (PAGE_HELP if page else OLD_HELP)
         command = fake_command("media-optimizer", exit_code=exit_code,
                                script=f"[ \"$2\" = --help ] && {{ echo '{help_text}'; exit 0; }}\n"
                                       f"echo \"$MO_CALLER $MO_HOLD\" >> '{env_log}'\n"
@@ -241,3 +249,71 @@ def test_the_last_lines_are_not_lost_when_the_child_ends_between_two_looks(monke
     lines = []
     handoff._pass_on(child, lines.append)
     assert lines == ["last"]
+
+
+# --- its results ---------------------------------------------------------------------------
+def _writes_results(results: dict) -> str:
+    """A stand-in's script part: the results file after --results (the arguments stay as they are)."""
+    import json
+    return (f"prev=; for a in \"$@\"; do [ \"$prev\" = --results ] && out=\"$a\"; prev=\"$a\"; done\n"
+            f"printf '%s' '{json.dumps(results)}' > \"$out\"")
+
+
+def test_its_results_are_shown_next_to_keepbests(one_copy, run_cli, optimizer):
+    """One that writes its results gets a file for them; its numbers come back
+    on the page and in the log, with the space both freed together."""
+    command = optimizer(help_text=RESULTS_HELP,
+                        script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'\n"
+                               + _writes_results(RESULTS))
+    result = run_cli(one_copy.path, keys=["", "m", "q"])
+    assert result.returncode == 0 and BACK in result.stdout, result.stdout
+    (call,) = command.calls()
+    assert call[-2] == "--results" and call[-1].endswith("results.json")
+    assert not __import__("os").path.exists(call[-1]), "the file goes with keepbest's temp folder"
+    (tool,) = [e for e in result.events if e["kind"] == "tool"]
+    assert tool["results"]["tiles"] == [["Converted", 3], ["Space saved", "2.0 KB"], ["Skipped", 0], ["Failed", 1]]
+    assert tool["results"]["stages"] == ["Images: 3 converted, 1 failed, 5.0 KB → 3.0 KB",
+                                         "GIFs: done in the run it resumed"]
+    assert "Together with the" in tool["results"]["together"] and "less in this folder" in result.stdout
+    assert "media-optimizer: Converted 3 · Space saved 2.0 KB · Skipped 0 · Failed 1" in result.stdout
+
+
+def test_an_older_one_gets_no_results_file(one_copy, run_cli, optimizer):
+    command = optimizer(page=True)
+    result = run_cli(one_copy.path, keys=["", "m", "q"])
+    assert "--results" not in command.calls()[0]
+    assert "without a run" not in result.stdout, "it may have run: it just writes no results"
+
+
+def test_closed_without_a_run(one_copy, run_cli, optimizer):
+    """Its page was closed before anything ran: no results file, and keepbest says so."""
+    optimizer(help_text=RESULTS_HELP, script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'")
+    result = run_cli(one_copy.path, keys=["", "m", "q"])
+    assert "media-optimizer was closed without a run." in result.stdout
+    (tool,) = [e for e in result.events if e["kind"] == "tool"]
+    assert tool["results"] is None
+
+
+def test_results_keepbest_cannot_read_are_left_out(tmp_path):
+    from keepbest import handoff
+    path = tmp_path / "results.json"
+    assert handoff.read_results(path) is None                     # none written
+    for text in ["{", "[]", '{"v": 2, "stages": []}', '{"v": 1}']:
+        path.write_text(text)
+        assert handoff.read_results(path) is None, text
+    path.write_text(__import__("json").dumps(RESULTS))
+    assert handoff.read_results(path) == RESULTS
+
+
+def test_the_summary_of_a_preview_and_of_a_stopped_run():
+    from keepbest import handoff
+    dry = {**RESULTS, "dry_run": True, "converted": 0, "failed": 0, "before": 0, "after": 0,
+           "stages": [{"title": "Images", "state": "done", "outcomes": {"dry": 4}, "before": 0}]}
+    s = handoff.summary(dry, freed=10_000)
+    assert s["tiles"][0] == ("Would be converted", 4) and s["dry"] and s["together"] is None
+    stopped = {**RESULTS, "code": 130, "stages": [{**RESULTS["stages"][0], "state": "running"},
+                                                  {"title": "Videos", "state": "waiting", "outcomes": {}}]}
+    assert handoff.summary(stopped)["stages"] == ["Images: 3 converted, 1 failed, 5.0 KB → 3.0 KB (stopped here)",
+                                                  "Videos: not reached"]
+    assert handoff.summary(RESULTS)["together"] is None, "keepbest freed nothing"
+    assert handoff.summary(None) is None

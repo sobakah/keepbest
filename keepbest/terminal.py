@@ -151,6 +151,17 @@ def _folder_header(header) -> None:
               f"{StyleUI.RESET}  {StyleUI.GRAY}{header.files_text}{StyleUI.RESET}\n")
 
 
+def _tool_end(code: int, results: dict | None) -> None:
+    dim(f"exit code {code}")
+    if not results:
+        return
+    info("media-optimizer: " + " · ".join(f"{label} {value}" for label, value in results["tiles"]))
+    for line in results["stages"]:
+        dim(f"  {line}")
+    if results["together"]:
+        success(results["together"])
+
+
 _MESSAGES = {
     "banner": lambda text: print_banner(text),
     "info": lambda text: info(text),
@@ -168,10 +179,10 @@ _MESSAGES = {
     "stage3_header": _stage3_header,
     "summary": _summary,
     "folder_header": lambda header: _folder_header(header),
-    # media-optimizer on the page: its command and exit code (its lines stay on the page)
+    # media-optimizer on the page: its command, exit code and numbers (its lines stay on the page)
     "tool_start": lambda name, command, handoff=False: info(f"$ {command}"),
     "tool_line": lambda text: None,
-    "tool_end": lambda code: dim(f"exit code {code}"),
+    "tool_end": lambda code, results=None: _tool_end(code, results),
 }
 
 

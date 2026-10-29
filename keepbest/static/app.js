@@ -23,16 +23,19 @@ async function api(path, body) {
 }
 
 const STEPS = [['settings', 'Settings'], ['1', '1 Identical'], ['2', '2 Remux'], ['3', '3 Visual'], ['summary', 'Summary']];
+const OPTIMIZE_STEP = ['optimize', 'media-optimizer'];  // shown once it was started from the end menu
 const MODES = { trash: ['TRASH', 'b-keep'], dry_run: ['DRY RUN', 'b-plain'], permanent: ['PERMANENT', 'b-danger'] };
 const STATUS = { done: ['DONE', 'b-ok'], skipped: ['SKIPPED', 'b-borderline'], ignored: ['NOT DUP', 'b-notdup'],
   pending: ['OPEN', 'b-plain'] };
 const MARKS = { success: '✓', warn: '!', error: '✗' };
 const URL_PATTERN = /https?:\/\/[^\s)\]]*[^\s)\].,;:!?'"]/g;
 
-// The step a banner starts: "Stage 2 · Remuxed videos" is step 2.
+// The step a banner starts: "Stage 2 · Remuxed videos" is step 2; "Next ·
+// media-optimizer" (app.OPTIMIZER_BANNER) is the program started afterwards.
 function stepOf(text) {
   const stage = /^Stage (\d)/.exec(text);
   if (stage) return stage[1];
+  if (/^Next · media-optimizer/.test(text)) return 'optimize';
   return /^Summary/.test(text) ? 'summary' : null;
 }
 
@@ -218,6 +221,17 @@ function Summary({ event }) {
   </div>`;
 }
 
+// media-optimizer's numbers (its results file, handoff.summary): tiles as in
+// keepbest's own summary, a line per stage, and what both freed together.
+function ToolResults({ results }) {
+  return html`<div class="stack-tight">
+    <dl class="tiles">${results.tiles.map(([label, value]) => html`<div class="tile" key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}</dl>
+    ${results.stages.map((line) => html`<p class="line k-dim">${line}</p>`)}
+    ${results.dry && html`<p class="line k-dim">A preview: nothing was converted.</p>`}
+    ${results.together && html`<p class="line k-success"><span class="mark">${MARKS.success}</span>${results.together}</p>`}
+  </div>`;
+}
+
 // Another program's output (media-optimizer), as in cdimport: it follows new
 // lines only while scrolled to its end; Stop is Ctrl+C for that program. One
 // with a page of its own (handoff) gets this tab while it runs: its page leads
@@ -246,7 +260,8 @@ function Tool({ event }) {
     ${event.handoff && event.running && html`<p class="line">${event.url
       ? html`It asks for its settings and shows the run on its page. <a href=${event.url}>Go to ${event.name}'s page</a>; it leads back here when done.`
       : 'Starting its page…'}</p>`}
-    ${event.lines.length > 0 && (event.handoff
+    ${event.results && html`<${ToolResults} results=${event.results} />`}
+    ${event.lines.length > 0 && (event.handoff || !event.running   // once done, its numbers come first
       ? html`<details><summary class="small muted">Its output</summary><pre class="tool-body">${event.lines.join('\n')}</pre></details>`
       : html`<pre class="tool-body" ref=${body} onScroll=${scrolled}>${event.lines.join('\n')}</pre>`)}
   </div>`;
@@ -1041,14 +1056,16 @@ function App() {
   const shown = question || (holdLast.current && finished === null ? lastQuestion.current : null);
   const now = shown && ['StartScreen', 'FolderScreen'].includes(shown.screen) ? 'settings'
     : shown && shown.kind === 'path' ? null : step;
-  const order = STEPS.map(([id]) => id);
+  const steps = events.some((e) => e && e.kind === 'banner' && stepOf(e.text) === 'optimize')
+    ? [...STEPS, OPTIMIZE_STEP] : STEPS;
+  const order = steps.map(([id]) => id);
 
   return html`
     <div class="top"><header class="topbar">
       <span class="brand"><img src="/static/icon.svg" alt="" width="26" height="26" /> keepbest</span>
       ${folder && html`<span class="folder">${folder}</span>`}
       <ol class="steps" aria-label="Progress">
-        ${STEPS.map(([id, name]) => {
+        ${steps.map(([id, name]) => {
           const state = id === now && finished === null ? 'now'
             : now && (order.indexOf(id) < order.indexOf(now) || (finished !== null && id === now)) ? 'done' : '';
           return html`<li class=${'step ' + state} aria-current=${state === 'now' ? 'step' : undefined}>${name}</li>`;

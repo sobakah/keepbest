@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -15,7 +16,7 @@ from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_f
                         dry_run_from_session, planned_changes,
                         resolve_limit, resume_review, review_dry_run_again)
 from .front import (AfterDryRunScreen, EndScreen, FolderEntry, FolderHeader, FolderRow, FolderScreen, Note,
-                    SessionPanel, SettingRow, StartScreen, ask, ask_path, blank, confirm, error, exit_script,
+                    SessionPanel, SettingRow, StartScreen, ask, ask_path, banner, blank, confirm, error, exit_script,
                     info, page_address, show, success, transient, warn)
 from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
@@ -898,6 +899,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             continue
 
         choice = None
+        freed = 0  # by the real run: shown with media-optimizer's numbers
         # A saved session continues with the folders it was scanned with.
         run_settings = session_settings(settings, saved) if action != "start" else settings
         if action in ("apply_saved", "review_saved"):
@@ -908,6 +910,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             if stats is None:  # declined the permanent-deletion question
                 continue
             real_run = True
+            freed = stats.space_saved
         else:
             run_config = config
             if action == "resume":
@@ -920,15 +923,17 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             if quit_requested:
                 exit_script(1 if stats.failed else 0)
             real_run = run_config["delete_mode"] != "dry_run"
+            freed = stats.space_saved if real_run else 0
             # Started with --dry-run, nothing is carried out in this run; the saved
             # dry run can be carried out by starting again without it.
             if dry_result is not None and dry_result.has_changes and not config.get("_cli_dry_run"):
-                choice = continue_after_dry_run(target, config, base_config, run_settings, index, store,
-                                                dry_result)
-                real_run = choice is None  # None: it was carried out
+                outcome = continue_after_dry_run(target, config, base_config, run_settings, index, store,
+                                                 dry_result)
+                real_run = isinstance(outcome, Stats)  # it was carried out
+                choice, freed = (None, outcome.space_saved) if real_run else (outcome, 0)
 
         if choice is None:
-            choice = end_menu(target, run_settings, index, offer_optimizer=real_run)
+            choice = end_menu(target, run_settings, index, offer_optimizer=real_run, freed=freed)
         if choice == "change":
             changed = resolve_directory(None, index, allow_cancel=True, start=target)
             if changed is not None:
@@ -939,11 +944,12 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             exit_script(1 if stats.failed else 0)
 
 
-def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: bool) -> str:
+def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: bool, freed: int = 0) -> str:
     """The menu after a run. Returns 'back', 'change' or 'quit'.
 
     After a real run, media-optimizer is offered for the same folder if it is
-    installed; when it exits, this menu comes back for a new run.
+    installed; when it exits, this menu comes back for a new run. *freed* is
+    what the run freed, added up with what media-optimizer saves.
     """
     executable = handoff.available() if offer_optimizer else None
     optimizer = executable is not None
@@ -959,7 +965,7 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
                                     ("c", "Change directory"), ("q", "Quit")]))
         answer = ask(EndScreen(prompt="Action: ", primary="Quit", menu=groups))
         if answer == "m" and optimizer:
-            run_optimizer(target, settings)
+            run_optimizer(target, settings, freed)
             index.clear()  # media-optimizer converts and renames files
             optimizer = False
             continue
@@ -968,8 +974,12 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
         warn("Unknown option.")  # a typo must not end the program
 
 
-def run_optimizer(target: Path, settings: dict) -> None:
-    info(f"\nStarting media-optimizer on {target}.")
+OPTIMIZER_BANNER = "Next · media-optimizer"
+
+
+def run_optimizer(target: Path, settings: dict, freed: int = 0) -> None:
+    banner(OPTIMIZER_BANNER)  # a step of its own on the page, as keepbest's stages
+    info(f"Starting media-optimizer on {target}.")
     if not settings["recursive"]:
         info("It gets the same choice: only the main folder, no subfolders.")
     elif settings["excluded"]:
@@ -979,12 +989,17 @@ def run_optimizer(target: Path, settings: dict) -> None:
     back = page_address() if executable and handoff.has_page(executable) else ""
     show("tool_start", name="media-optimizer", handoff=bool(back),
          command=f"media-optimizer run {target} --web" if back else f"media-optimizer run -y {target}")
-    code = handoff.run(target, lambda line: show("tool_line", text=line), settings["recursive"],
-                       settings["excluded"], return_url=back)
-    show("tool_end", code=code)
+    with tempfile.TemporaryDirectory(prefix=f"{NAME}_mo_") as tmp:
+        results_file = Path(tmp) / "results.json"
+        code = handoff.run(target, lambda line: show("tool_line", text=line), settings["recursive"],
+                           settings["excluded"], return_url=back, results_file=results_file)
+        results = handoff.summary(handoff.read_results(results_file), freed)
+    show("tool_end", code=code, results=results)
     blank()
     if code == 127:
         error("media-optimizer could not be started.")
+    elif results is None and back and code == 0 and handoff.has_results(executable):
+        info("media-optimizer was closed without a run.")  # one that writes its results ran nothing
     success(f"Back in {NAME}. Scan again, change the directory or quit.")
 
 
@@ -1034,11 +1049,11 @@ def carry_out_dry_run(target: Path, config: dict, base_config: dict, settings: d
 
 
 def continue_after_dry_run(target: Path, config: dict, base_config: dict, settings: dict,
-                           index: FolderIndex, store, dry: DryRun) -> str | None:
+                           index: FolderIndex, store, dry: DryRun) -> str | Stats:
     """Offer to carry out a finished dry run without rescanning.
 
-    Returns 'back' or 'change' when the user navigates away, None after a real
-    run has been done (the normal end menu follows).
+    Returns 'back' or 'change' when the user navigates away, the real run's
+    Stats after it has been done (the normal end menu follows).
     """
     real_mode = real_delete_mode(base_config)
     while True:
@@ -1052,9 +1067,10 @@ def continue_after_dry_run(target: Path, config: dict, base_config: dict, settin
         if choice not in ("apply", "review"):
             warn("Unknown option.")
             continue
-        if carry_out_dry_run(target, config, base_config, settings, index, store, dry,
-                             review=(choice == "review")) is not None:
-            return None
+        stats = carry_out_dry_run(target, config, base_config, settings, index, store, dry,
+                                  review=(choice == "review"))
+        if stats is not None:
+            return stats
 
 
 def after_dry_run_menu(dry: DryRun, real_mode: str) -> str:
