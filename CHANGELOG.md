@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- A more playful icon, drawn like cdimport's: the best copy in front with a crown, the grey duplicates tipping over behind it. Run `keepbest --install-desktop-entry` again to show it in the app menu.
+
 ## [1.1.1] — 2026-10-29
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page. From this version on, a new release is offered at the next start.
