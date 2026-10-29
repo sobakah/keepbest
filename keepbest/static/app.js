@@ -1076,6 +1076,8 @@ function App() {
     sections[sections.length - 1].items.push(e);
   }
   const shown = question || (holdLast.current && finished === null ? lastQuestion.current : null);
+  // The yes/no question a change on a form leads to: over the form, which stays, dimmed.
+  const under = question && question.kind === 'confirm' && changing.current ? lastForm.current : null;
   const now = shown && ['StartScreen', 'FolderScreen'].includes(shown.screen) ? 'settings'
     : shown && shown.kind === 'path' ? null : step;
   const steps = events.some((e) => e && e.kind === 'banner' && stepOf(e.text) === 'optimize')
@@ -1101,7 +1103,9 @@ function App() {
         ${s.title && html`<h2>${s.title}</h2>`}
         ${s.items.map((e) => html`<${Item} key=${e.id} event=${e} />`)}
       </section>`)}
-      ${shown && html`<${Question} key=${shown.id} question=${shown} onAnswer=${answer} stale=${!question} />`}
+      ${under ? html`<${Question} key=${under.id} question=${under} onAnswer=${answer} stale=${true} />
+          <div class="overlay ask"><div class="box"><${Question} key=${question.id} question=${question} onAnswer=${answer} /></div></div>`
+        : shown && html`<${Question} key=${shown.id} question=${shown} onAnswer=${answer} stale=${!question} />`}
       ${finished !== null && !question && html`<section class="question">
         <h2 class="prompt">${finished === 0 ? 'keepbest has finished' : finished === 130 ? 'keepbest was stopped' : `keepbest ended with exit code ${finished}`}</h2>
         <p class="muted">${finished === 0 ? 'Everything above is done.' : 'Saved progress is kept; start keepbest on the folder again to continue.'}</p>

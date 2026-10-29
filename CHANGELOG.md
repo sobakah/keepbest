@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Switching a folder that has subfolders no longer makes the folder tree disappear: the question whether the folders below it change too appears over the tree, which stays visible, dimmed, until its new state is there.
 - An answer given just before the page was closed counts. Choosing *don't save progress* and closing the tab at once could stop keepbest at that question instead, and keep the progress.
 - The summary's tiles all have the same height. A label on two lines ("Identical images removed" on a wide page) made its row taller than the others and moved its number up.
 
