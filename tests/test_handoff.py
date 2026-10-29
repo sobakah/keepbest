@@ -63,7 +63,7 @@ def test_real_run_offers_media_optimizer_for_the_same_folder(one_copy, run_cli, 
 
 def test_carrying_out_a_dry_run_offers_it_too(one_copy, run_cli, optimizer):
     command = optimizer()
-    result = run_cli(one_copy.path, keys=["4", "", "", "m", "q"])   # dry run, start, apply, optimizer
+    result = run_cli(one_copy.path, keys=["4", "", "", "y", "m", "q"])   # dry run, start, carry out, yes, optimizer
     assert len(one_copy.files()) == 1                           # the copy is gone
     assert OFFER in shown(result)
     assert command.calls() == [["run", str(one_copy.path), "-y"]]

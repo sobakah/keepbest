@@ -529,7 +529,7 @@ def find_remuxes(files: list[Path], config: dict, confirm_mode: str, stats: Stat
             remaining.extend(group.paths)
         else:
             remaining.append(kept)
-        groups.append(group)  # skipped ones too: a dry run reviewed again asks about them
+        groups.append(group)  # skipped ones too: a dry run carried out says it left them alone
     return sorted(remaining), groups
 
 
@@ -1230,7 +1230,7 @@ def _next_open(groups: list[Group], after: int) -> int | None:
 
 
 def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: Stats, rel,
-                  ctx: RunContext, start: int = 0) -> bool:
+                  ctx: RunContext, start: int = 0, overview_first: bool = False) -> bool:
     """Walk through the groups like lrckit walks through tracks.
 
     Groups that need no confirmation are resolved as the walk reaches them;
@@ -1248,6 +1248,10 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
     preset = None          # a changed decision's new answer, for the decision screen
     opened = False         # the group was opened from the overview: back there once it is done
     finished = False       # "Finish" was chosen in the overview: don't show it again at the end
+    if overview_first:     # an opened dry run: its groups as a list first
+        choice, opened = _overview(groups, _next_open(groups, -1), rel)
+        index, revisit, interactive = (total, True, True) if choice is None else (choice, True, True)
+        finished = choice is None
 
     while True:
         if index >= total:
@@ -1386,8 +1390,12 @@ def tighten_groups(groups: list[Group], limit: int) -> tuple[list[Group], int]:
     return groups, removed
 
 
-def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel, ctx: RunContext) -> bool:
-    banner("Stage 3 · Visually identical images (resumed)" + (" - dry run" if ctx.dry else ""))
+def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel, ctx: RunContext,
+                  open_overview: bool = False) -> bool:
+    """Continue a saved session. *open_overview*: a finished dry run opened again,
+    its groups shown in the overview, where decided ones can still change."""
+    banner("Stage 3 · Visually identical images (" + ("opened" if open_overview else "resumed")
+           + (") - dry run" if ctx.dry else ")"))
     ctx.exact_groups = [ExactGroup.from_dict(e) for e in data.get("exact_groups", [])]
     groups = [Group.from_dict(g) for g in data["groups"]]
     groups, dropped_groups, dropped_images = validate_groups(groups)
@@ -1412,6 +1420,8 @@ def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel
     if ctx.dry:  # what the decisions so far remove and rename, for the renames still to come
         ctx.dropping, ctx.planned = replay_dry_run(ctx.exact_groups, groups, ctx.rename)
     open_groups = [i for i, g in enumerate(groups) if g.is_open]
+    if open_overview and groups:
+        return review_groups(groups, config, confirm_mode, stats, rel, ctx, overview_first=True)
     if not open_groups:
         info("Nothing left to review in the saved session.")
         return False
@@ -1485,10 +1495,9 @@ def _follow_renames(groups: list[Group], renamed: dict[Path, Path]) -> None:
 
 
 def _apply_all_exact(exact_groups: list[ExactGroup], config: dict, stats: Stats, rel,
-                     ctx: RunContext, confirm_mode: str | None = None) -> dict[Path, Path]:
+                     ctx: RunContext) -> dict[Path, Path]:
     """Carry out a dry run's Stage 1 and 2 groups as they were decided. Remuxes
-    skipped in the dry run are left alone, or with *confirm_mode* (reviewing the
-    dry run again) asked about afresh. Returns {old path: new path} of the renames."""
+    skipped in the dry run are left alone. Returns {old path: new path} of the renames."""
     renamed = {}
     for kind, title in (("exact", "Stage 1 · Identical files"), ("remux", "Stage 2 · Remuxed videos")):
         of_kind = [g for g in exact_groups if g.kind == kind]
@@ -1499,21 +1508,15 @@ def _apply_all_exact(exact_groups: list[ExactGroup], config: dict, stats: Stats,
                 f["path"] = renamed.get(f["path"], f["path"])
             old_path = group.paths[0]
             if group.status == "skipped":
-                if confirm_mode is None:
-                    stats.groups_skipped += 1
-                    continue
-                new_path = _decide_remux(group, number, len(of_kind), config, confirm_mode, stats, rel, ctx)
-                if new_path is None:
-                    continue
-                old_path = group.paths[0]  # the file chosen now
-            else:
-                how = {"automatic": "automatic", "user": "chosen by user"}.get(group.decision, "decided")
-                new_path = _apply_exact(group, number, len(of_kind), config, stats, rel, ctx,
-                                        _reason(group, f"{how} in the dry run"))
+                stats.groups_skipped += 1
+                continue
+            how = {"automatic": "automatic", "user": "chosen by user"}.get(group.decision, "decided")
+            new_path = _apply_exact(group, number, len(of_kind), config, stats, rel, ctx,
+                                    _reason(group, f"{how} in the dry run"))
             if new_path != old_path:
                 renamed[old_path] = new_path
     skipped = sum(g.status == "skipped" for g in exact_groups)
-    if skipped and confirm_mode is None:
+    if skipped:
         dim(f"\n{skipped} remux group(s) skipped in the dry run were left as they are.")
     return renamed
 
@@ -1542,33 +1545,6 @@ def apply_dry_run(exact_groups: list[ExactGroup], groups: list[Group], config: d
     if skipped:
         stats.groups_skipped += sum(g.status != "ignored" for g in skipped)
         dim(f"\n{len(skipped)} group(s) skipped or marked as not duplicates in the dry run were left as they are.")
-
-
-def review_dry_run_again(exact_groups: list[ExactGroup], groups: list[Group], config: dict,
-                         confirm_mode: str, stats: Stats, rel, ctx: RunContext) -> bool:
-    """Carry out the identical copies and remuxes as decided in the dry run (asking
-    about the remuxes skipped there), then walk through the visual groups afresh,
-    as they were found: a keeper chosen in the dry run is forgotten, and images it
-    had taken out of its group are back."""
-    exact_groups, dropped_files = _check_exact(exact_groups)
-    renamed = _apply_all_exact(exact_groups, config, stats, rel, ctx, confirm_mode)
-    for group in groups:  # forget the dry run's decisions, but not "not duplicates" marks
-        if group.status != "ignored":
-            if group.undo is not None:
-                group.images = [dict(m) for m in group.undo["images"]]
-                group.diffs = list(group.undo["diffs"])
-                group.rename = group.undo.get("rename", group.rename)
-            group.status, group.kept, group.removed, group.decision, group.undo = "pending", None, 0, None, None
-    _follow_renames(groups, renamed)
-    groups, dropped_groups, dropped_images = validate_groups(groups)
-    groups, hidden = drop_ignored(groups, ctx.ignores)
-    report_ignored(hidden, groups)
-    if dropped_files or dropped_groups or dropped_images:
-        warn("Some files changed on disk since the dry run and were left alone.")
-    if not groups:
-        return False
-    banner("Stage 3 · Visually identical images")
-    return review_groups(groups, config, confirm_mode, stats, rel, ctx)
 
 
 def planned_changes(exact_groups: list[ExactGroup], groups: list[Group], rename: bool) -> tuple[int, int]:

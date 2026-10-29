@@ -1,8 +1,7 @@
-"""Carrying out a saved dry run, or reviewing it again: the same result as a real run."""
+"""Carrying out a saved dry run: the same result as a real run."""
 
 import pytest
 
-import pictures
 from conftest import asked, make_video, remux, requires_ffmpeg, summary
 
 
@@ -18,8 +17,7 @@ def renamed_remux(library):
 
 
 @requires_ffmpeg
-@pytest.mark.parametrize("carry_out", [[""], ["e"]], ids=["apply", "review-again"])
-def test_a_stage_1_rename_reaches_the_remux_group(renamed_remux, run_cli, tmp_path, carry_out):
+def test_a_stage_1_rename_reaches_the_remux_group(renamed_remux, run_cli, tmp_path):
     real = tmp_path / "real"
     import shutil
     shutil.copytree(renamed_remux.path, real, copy_function=shutil.copy2)
@@ -27,7 +25,7 @@ def test_a_stage_1_rename_reaches_the_remux_group(renamed_remux, run_cli, tmp_pa
     expected = sorted(p.name for p in real.iterdir())
 
     run_cli(renamed_remux.path, "--dry-run", keys=["", ""])         # dry run, kept to carry out
-    result = run_cli(renamed_remux.path, keys=[*carry_out, "", ""])
+    result = run_cli(renamed_remux.path, keys=["a", "y", ""])     # carry it out, yes
     assert summary(result)["failed"] == 0
     assert renamed_remux.files() == expected == ["clip.mp4"]        # the same keeper as a real run
 
@@ -44,18 +42,10 @@ def silent_remux(library):
 
 
 @requires_ffmpeg
-def test_a_skipped_remux_is_counted_and_asked_again(silent_remux, run_cli):
+def test_a_skipped_remux_is_left_alone_when_applied(silent_remux, run_cli):
     dry = run_cli(silent_remux.path, "--dry-run", keys=["", "s", ""])     # start, skip the remux, quit
     assert summary(dry)["skipped"] == 1
-    again = run_cli(silent_remux.path, keys=["e", "", ""])          # review again, keep clip.mp4, quit
-    assert [q["group"]["tracks"] for q in asked(again, "RemuxScreen")] == ["covered"]   # asked again
-    assert silent_remux.files() == ["a.png", "clip.mp4"]
-
-
-@requires_ffmpeg
-def test_a_skipped_remux_is_left_alone_when_applied(silent_remux, run_cli):
-    run_cli(silent_remux.path, "--dry-run", keys=["", "s", ""])
-    applied = run_cli(silent_remux.path, keys=["", ""])             # carry out as it showed
+    applied = run_cli(silent_remux.path, keys=["a", "y", ""])       # carry out as it showed
     assert "1 remux group(s) skipped in the dry run were left as they are" in applied.stdout
     assert summary(applied)["skipped"] == 1
     assert silent_remux.files() == ["a.png", "clip.mp4", "silent.mkv"]
@@ -64,25 +54,11 @@ def test_a_skipped_remux_is_left_alone_when_applied(silent_remux, run_cli):
 @requires_ffmpeg
 def test_a_remux_chosen_in_the_dry_run_is_logged_as_chosen(silent_remux, run_cli, tmp_path):
     run_cli(silent_remux.path, "--dry-run", keys=["", "1", ""])     # keep silent.mkv instead
-    run_cli(silent_remux.path, keys=["e", ""])                      # review again: carried out as chosen
+    run_cli(silent_remux.path, keys=["a", "y"])                     # carried out as chosen
     assert silent_remux.files() == ["a.png", "silent.mkv"]
     log = (tmp_path / "state" / "keepbest.log").read_text()
     remux_line = next(line for line in log.splitlines() if "clip.mp4" in line)
     assert "chosen by user in the dry run" in remux_line and "automatic" not in remux_line
-
-
-# --- visually identical images ----------------------------------------------------
-def test_review_again_brings_back_images_another_keeper_took_out(library, run_cli):
-    """a.png is close to b.png and c.png, which are far from each other. Keeping b.png
-    in the dry run takes c.png out of the group; reviewing again starts from the
-    group as it was found, so a.png (the larger picture) is kept and both go."""
-    library.photo("a.png", 1, size=(640, 480))
-    library.variant("a.png", "b.png", change=lambda im: pictures.brighter(pictures.downscaled(im), 1.06))
-    library.variant("a.png", "c.png", change=lambda im: pictures.brighter(pictures.downscaled(im), 0.94))
-    dry = run_cli(library.path, "--dry-run", "-i", keys=["", "1", "", ""])   # start, keep b.png, finish
-    assert "Kept, not a duplicate of #1: c.png" in dry.stdout
-    run_cli(library.path, keys=["e", "", ""])                       # review again: asks as configured
-    assert library.files() == ["a.png"]
 
 
 # --- what the start screen promises ------------------------------------------------
@@ -139,8 +115,9 @@ def test_the_saved_session_counts_identical_copies_as_groups(library, run_cli):
 def test_carrying_out_renames_as_the_dry_run_showed(library, run_cli, dry_args, now_args, renamed):
     numbered_copies(library)
     run_cli(library.path, "--stages", "1", *dry_args, keys=["4", "", "q"])
-    result = run_cli(library.path, *now_args, keys=["", "q"])       # carry out, quit
+    result = run_cli(library.path, *now_args, keys=["a", "y", "q"])   # carry out, yes, quit
     start = asked(result, "StartScreen")[0]
-    assert "Carry out the saved dry run" in start["primary"]
-    assert ("rename 1" in start["primary"]) == (start["panel"]["to_rename"] == 1) == renamed
+    carry = next(label for _, items in start["menu"] for key, label in items if key == "a")
+    assert carry.startswith("Carry it out: move 1 file(s) to the trash")
+    assert ("rename 1" in carry) == (start["panel"]["to_rename"] == 1) == renamed
     assert ("photo.jpg" in library.files()) == renamed

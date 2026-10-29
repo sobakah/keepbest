@@ -204,24 +204,48 @@ def test_dry_run_does_not_resume_a_real_session(three_groups, run_cli):
 def test_dry_run_does_not_carry_out_a_saved_dry_run(three_groups, run_cli):
     run_cli(three_groups.path, "--dry-run", keys=["", "q"])         # finish a dry run, keep it saved
     before = three_groups.files()
-    result = run_cli(three_groups.path, "--dry-run", keys=["", "e", "q"])
-    assert "the saved dry run is not carried out" in shown(result)
+    result = run_cli(three_groups.path, "--dry-run", keys=["a", "q"])   # no carrying out on offer
+    assert [key for _, key in result.typos] == ["a"]
+    assert "the saved dry run can be opened, not carried out" in shown(result)
     assert three_groups.files() == before
-    carried_out = run_cli(three_groups.path, keys=["", ""])         # without --dry-run, Enter carries it out
+    carried_out = run_cli(three_groups.path, keys=["a", "y", ""])   # without --dry-run it can be
     assert summary(carried_out)["visual"] == 3
+
+
+def test_coming_back_to_a_saved_dry_run_changes_nothing(three_groups, run_cli, tmp_path):
+    """Enter on the start screen opens a saved dry run (as a dry run); carrying it
+    out is a button of its own that asks, No by default: Enter alone never deletes."""
+    run_cli(three_groups.path, "--dry-run", keys=["", "q"])         # finish a dry run, keep it saved
+    before = three_groups.files()
+    result = run_cli(three_groups.path, keys=["", "", "", "", ""])
+    assert [q.get("screen") or q["kind"] for q in result.questions][:5] == [
+        "StartScreen", "OverviewScreen", "AfterDryRunScreen", "confirm", "AfterDryRunScreen"]
+    assert "Carry out the dry run: move 3 file(s) to the trash?" in shown(result)
+    assert "Nothing changed - the dry run stays saved." in result.stdout
+    assert three_groups.files() == before
+    assert not (tmp_path / "state" / "journal.jsonl").exists()      # no real run started
+
+
+def test_a_decision_changed_in_an_opened_dry_run_is_carried_out(one_group, run_cli):
+    run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", ""])  # keep #1, finish
+    # open it, open group 1, keep its #2 instead, finish, carry it out, yes
+    result = run_cli(one_group.path, "-i", keys=["", "1", "2", "", "", "y"])
+    (handled,) = asked(result, "HandledScreen")
+    chosen = handled["group"]["images"][2]["name"]
+    assert chosen != "a 95.jpg" and one_group.files() == [chosen]
 
 
 def test_dry_run_is_not_carried_out_right_after_it_finished(three_groups, run_cli):
     before = three_groups.files()
     result = run_cli(three_groups.path, "--dry-run", keys=["", "", ""])   # start, then Enter twice
-    assert "Apply exactly what the dry run showed" not in shown(result)
+    assert "Carry it out" not in shown(result)
     assert "start keepbest on this folder again without --dry-run" in result.stdout
     assert three_groups.files() == before
 
 
 def test_a_dry_run_chosen_on_the_start_screen_can_still_be_carried_out(three_groups, run_cli):
-    result = run_cli(three_groups.path, keys=["4", "", ""])         # trash -> dry run, start, apply
-    assert "Apply exactly what the dry run showed" in shown(result)
+    result = run_cli(three_groups.path, keys=["4", "", "", "y"])    # trash -> dry run, start, carry out, yes
+    assert "Carry it out: move 3 file(s) to the trash" in shown(result)
     assert len(three_groups.files()) == 3
 
 
@@ -242,7 +266,7 @@ def test_a_dry_run_decision_can_be_undone(one_group, run_cli):
     assert "Decision undone - choose again." in result.stdout
     assert summary(result)["visual"] == 2                      # counted once, not twice
     assert one_group.files() == ["a 95.jpg", "a.jpg", "a.png"]
-    run_cli(one_group.path, keys=["", ""])                     # carry out the saved dry run
+    run_cli(one_group.path, keys=["a", "y"])                   # carry out the saved dry run
     assert one_group.files() == ["a.png"]                      # the second choice counts
 
 
@@ -256,7 +280,7 @@ def test_keeping_another_file_changes_a_dry_run_decision(one_group, run_cli):
     assert "Keep another file, or skip the group, to change it." in handled["note"]
     assert handled["primary"] == "Back to the overview"
     assert summary(result)["visual"] == 2                      # counted once, not twice
-    run_cli(one_group.path, keys=["", ""])                     # carry out the saved dry run
+    run_cli(one_group.path, keys=["a", "y"])                   # carry out the saved dry run
     assert one_group.files() == [chosen]
 
 

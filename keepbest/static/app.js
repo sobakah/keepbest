@@ -346,6 +346,12 @@ function Primary({ question, answer, sending, danger = false }) {
     onClick=${() => answer('')}>${question.primary} <kbd>Enter</kbd></button></div>`;
 }
 
+// A key's label in the screen's menu.
+const labelOf = (q, key) => {
+  for (const [, items] of q.menu) for (const [k, label] of items) if (k === key) return label;
+  return key;
+};
+
 // Where each file has its own Keep button: what Enter does, as a line instead of a button.
 function EnterHint({ question }) {
   if (!question.primary) return null;
@@ -407,8 +413,8 @@ function StartForm({ question, answer, sending }) {
     ${!q.blocked && !q.primary && q.nothingToScan && html`<p class="alert">Fewer than two files in scope - nothing to compare.</p>`}
     <div class="row">
       <${Primary} question=${q} answer=${answer} sending=${sending} />
-      ${q.keys.includes('e') && html`<button class="btn" disabled=${sending} title=${keyTitle('e')} onClick=${() => answer('e')}>
-        Review its groups again for real</button>`}
+      ${q.keys.includes('a') && html`<button class="btn btn-danger" disabled=${sending} title=${keyTitle('a')} onClick=${() => answer('a')}>
+        ${labelOf(q, 'a')}…</button>`}
       ${q.keys.includes('n') && html`<button class="btn" disabled=${sending} title=${keyTitle('n')} onClick=${() => answer('n')}>
         Start over: discard the session</button>`}
     </div>

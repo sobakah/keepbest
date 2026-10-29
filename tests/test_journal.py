@@ -203,8 +203,7 @@ def without_run_details(records, folder):
     return [{k: strip(v) for k, v in r.items() if k not in ("run", "ts", "pid")} for r in records]
 
 
-@pytest.mark.parametrize("carry_out", [[""], ["e"]], ids=["apply", "review-again"])
-def test_carrying_out_a_dry_run_journals_like_a_real_run(library, run_cli, journal, tmp_path, carry_out):
+def test_carrying_out_a_dry_run_journals_like_a_real_run(library, run_cli, journal, tmp_path):
     library.photo("photo (1).png", 1)
     library.copy_of("photo (1).png", "photo (2).png")
     library.photo("big.png", 2, size=(640, 480))
@@ -217,7 +216,7 @@ def test_carrying_out_a_dry_run_journals_like_a_real_run(library, run_cli, journ
 
     run_cli(library.path, "--dry-run", keys=["", ""])           # dry run, kept to carry out
     assert not journal.path.exists()
-    result = run_cli(library.path, keys=[*carry_out, "", ""])
+    result = run_cli(library.path, keys=["a", "y", ""])       # carry it out, yes
     assert summary(result)["failed"] == 0
     carried_out = without_run_details(journal(), library.path)
     assert carried_out == direct and len(changes(carried_out)) == 3

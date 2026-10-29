@@ -14,7 +14,7 @@ from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
                         dry_run_from_session, planned_changes,
-                        resolve_limit, resume_review, review_dry_run_again)
+                        resolve_limit, resume_review)
 from .front import (AfterDryRunScreen, EndScreen, FolderEntry, FolderHeader, FolderRow, FolderScreen, Note,
                     SessionPanel, SettingRow, StartScreen, ask, ask_path, banner, blank, confirm, error, exit_script,
                     info, page_address, show, success, transient, warn)
@@ -471,7 +471,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
     """Show folder, saved session and settings.
 
     Returns (action, saved session) with action one of 'start', 'resume',
-    'apply_saved', 'review_saved' or 'change'.
+    'open_saved' (a finished dry run's groups, still as a dry run),
+    'apply_saved' (carry it out, asked first) or 'change'.
     """
     while True:
         saved = store.load() if store else None
@@ -490,10 +491,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         # finished dry run would delete files, so they can't be continued here.
         forced_dry = bool(config.get("_cli_dry_run"))
         blocked = None
-        if forced_dry and session and saved_finished:
-            blocked = ("--dry-run was given, so the saved dry run is not carried out. Start keepbest "
-                       "without --dry-run to carry it out, or start over to discard it and scan again.")
-        elif forced_dry and session and not saved_dry:
+        if forced_dry and session and not saved_dry:
             blocked = ("--dry-run was given, but the saved session is a real run that would delete files. "
                        "Start keepbest without --dry-run to resume it, or start over to discard it.")
         matching = (saved or {}).get("matching") or {}
@@ -563,11 +561,14 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         if blocked:
             pass
         elif saved and saved_finished:
+            # Enter only looks: carrying it out is a button of its own that asks first.
             plan = saved_dry_run(saved, saved_rename(saved, config))
             what = _fate(carry_out_mode(config), plan.to_remove)
             if plan.to_rename:
                 what += f", rename {plan.to_rename}"
-            primary = f"Carry out the saved dry run: {what}"
+            primary = "Open the saved dry run (changes nothing)"
+            rows.append(Note("--dry-run was given: the saved dry run can be opened, not carried out." if forced_dry else
+                             "Opening it changes nothing; the delete mode applies when you carry it out."))
         elif saved and open_groups:
             label = "dry run" if saved_dry else "session"
             primary = f"Resume saved {label} ({open_groups} open group(s))"
@@ -588,7 +589,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         if saved:
             session_menu = [("n", "Start over: discard the session, unlock all settings")]
             if saved_finished and not forced_dry:
-                session_menu.insert(0, ("e", "Review its groups again for real"))
+                session_menu.insert(0, ("a", f"Carry it out: {what}"))
             groups_menu.append(("Session", session_menu))
         groups_menu.append(("Navigate", [("c", "Change directory"), ("q", "Quit")]))
 
@@ -602,7 +603,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             warn(blocked)
         elif choice == "":
             if saved and saved_finished:
-                return "apply_saved", saved
+                return "open_saved", saved
             if saved and open_groups:
                 return "resume", saved
             if in_scope >= 2:
@@ -611,8 +612,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             exit_script()
         elif choice == "c":
             return "change", None
-        elif choice == "e" and saved and saved_finished and not forced_dry:
-            return "review_saved", saved
+        elif choice == "a" and saved and saved_finished and not forced_dry:
+            return "apply_saved", saved
         elif choice in ("x", "n") and saved:
             if confirm("Discard the saved session for this folder?", tone="warn"):
                 store.delete()
@@ -695,7 +696,7 @@ def _summary_text(stats: Stats) -> str:
 
 def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
              store: SessionStore | None, resume: dict | None = None,
-             from_dry: DryRun | None = None, review_again: bool = False) -> tuple[Stats, bool, DryRun | None]:
+             from_dry: DryRun | None = None, open_overview: bool = False) -> tuple[Stats, bool, DryRun | None]:
     """Run a new scan, resume a saved one, or carry out a finished dry run.
 
     Returns (stats, quit_requested, dry_run_result). The last one is only set
@@ -704,7 +705,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
     dry = config["delete_mode"] == "dry_run"
     if config.get("_cli_dry_run") and not dry:  # safety net: the screens never get here
         raise RuntimeError("--dry-run was given, but a real run was about to start")
-    applying = from_dry is not None and not review_again
+    applying = from_dry is not None
     # Applying asks nothing, so it saves nothing new. The saved dry run is only
     # deleted once applying has finished, so an interrupted apply can be repeated.
     ctx_store = None if applying else store
@@ -721,7 +722,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
     if resume and limit >= session_limit(resume):  # a looser limit doesn't apply to a saved session
         limit, preset = session_limit(resume), "session"
     kind = ("resumed dry run" if resume and dry else "resumed session" if resume
-            else "dry run applied" if applying else "dry run reviewed again" if from_dry else "new scan")
+            else "dry run applied" if applying else "new scan")
     action_log = ActionLog(
         None if dry else resolve_log_path(config["log_file"]),
         f"{NAME} {__version__} · folder {target} · mode {config['delete_mode']} · "
@@ -754,12 +755,9 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
     try:
         keep_session = False
         if resume:
-            info(f"\nResuming the saved {'dry run' if dry else 'session'} for {target}")
-            keep_session = resume_review(resume, config, settings["confirm"], stats, rel, ctx)
-        elif from_dry and review_again:
-            info(f"\nReviewing the dry run's groups again for real ({MODE_OPTIONS[config['delete_mode']]}) - no rescan")
-            keep_session = review_dry_run_again(from_dry.exact_groups, from_dry.groups, config,
-                                                settings["confirm"], stats, rel, ctx)
+            info(f"\nOpening the saved dry run for {target} - it changes nothing" if open_overview
+                 else f"\nResuming the saved {'dry run' if dry else 'session'} for {target}")
+            keep_session = resume_review(resume, config, settings["confirm"], stats, rel, ctx, open_overview)
         elif from_dry:
             info(f"\nApplying the dry run for real ({MODE_OPTIONS[config['delete_mode']]}) - no rescan")
             apply_dry_run(from_dry.exact_groups, from_dry.groups, config, stats, rel, ctx)
@@ -902,12 +900,12 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
         freed = 0  # by the real run: shown with media-optimizer's numbers
         # A saved session continues with the folders it was scanned with.
         run_settings = session_settings(settings, saved) if action != "start" else settings
-        if action in ("apply_saved", "review_saved"):
+        if action == "apply_saved":
             run_config = {**config, "rename_numbered": saved_rename(saved, config)}
             stats = carry_out_dry_run(target, run_config, base_config, run_settings, index, store,
                                       saved_dry_run(saved, run_config["rename_numbered"]),
-                                      review=(action == "review_saved"), mode=carry_out_mode(config))
-            if stats is None:  # declined the permanent-deletion question
+                                      mode=carry_out_mode(config))
+            if stats is None:  # declined
                 continue
             real_run = True
             freed = stats.space_saved
@@ -915,10 +913,13 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             run_config = config
             if action == "resume":
                 run_config = {**config, "delete_mode": resume_mode(saved, config)}
+            elif action == "open_saved":
+                run_config = {**config, "delete_mode": "dry_run"}
             if run_config["delete_mode"] == "permanent" and not confirm_permanent():
                 continue
             stats, quit_requested, dry_result = run_scan(target, run_config, run_settings, index, store,
-                                                         resume=saved if action == "resume" else None)
+                                                         resume=saved if action in ("resume", "open_saved") else None,
+                                                         open_overview=action == "open_saved")
             index.clear()  # files were removed or renamed, recount on the next screen
             if quit_requested:
                 exit_script(1 if stats.failed else 0)
@@ -1029,19 +1030,19 @@ def resume_mode(saved: dict, config: dict, quiet: bool = False) -> str:
 
 
 def carry_out_dry_run(target: Path, config: dict, base_config: dict, settings: dict,
-                      index: FolderIndex, store, dry: DryRun, review: bool,
-                      mode: str | None = None) -> Stats | None:
-    """Apply a dry run (or review its groups again) for real. None if declined."""
+                      index: FolderIndex, store, dry: DryRun, mode: str | None = None) -> Stats | None:
+    """Apply a dry run for real, after a yes (default no) in every mode. None if declined."""
     real_mode = mode or real_delete_mode(base_config)
     if real_mode == "permanent":
-        if review:
-            if not confirm_permanent():
-                return None
-        elif not confirm(f"Permanently delete {dry.to_remove} file(s)? This cannot be undone.", tone="danger"):
+        if not confirm(f"Permanently delete {dry.to_remove} file(s)? This cannot be undone.", tone="danger"):
+            return None
+    else:
+        what = _fate(real_mode, dry.to_remove) + (f" and rename {dry.to_rename}" if dry.to_rename else "")
+        if not confirm(f"Carry out the dry run: {what}?", tone="warn"):
+            info("Nothing changed - the dry run stays saved.")
             return None
     real_config = {**config, "delete_mode": real_mode}
-    stats, quit_requested, _ = run_scan(target, real_config, settings, index, store,
-                                        from_dry=dry, review_again=review)
+    stats, quit_requested, _ = run_scan(target, real_config, settings, index, store, from_dry=dry)
     index.clear()
     if quit_requested:
         exit_script(1 if stats.failed else 0)
@@ -1057,30 +1058,37 @@ def continue_after_dry_run(target: Path, config: dict, base_config: dict, settin
     """
     real_mode = real_delete_mode(base_config)
     while True:
-        choice = after_dry_run_menu(dry, real_mode)
+        choice = after_dry_run_menu(dry, real_mode, can_open=store is not None)
         if choice == "quit":
             if store is not None:
                 info("The dry run stays saved - choose this folder again to carry it out.")
             exit_script(0)
         if choice in ("back", "change"):
             return choice
-        if choice not in ("apply", "review"):
+        if choice == "open" and store is not None and store.load() is not None:
+            # its groups again, still a dry run: decisions can change, nothing is touched
+            _, quit_requested, result = run_scan(target, {**config, "delete_mode": "dry_run"}, settings, index,
+                                                 store, resume=store.load(), open_overview=True)
+            if quit_requested:
+                exit_script(0)
+            dry = result or dry
+            continue
+        if choice != "apply":
             warn("Unknown option.")
             continue
-        stats = carry_out_dry_run(target, config, base_config, settings, index, store, dry,
-                                  review=(choice == "review"))
+        stats = carry_out_dry_run(target, config, base_config, settings, index, store, dry)
         if stats is not None:
             return stats
 
 
-def after_dry_run_menu(dry: DryRun, real_mode: str) -> str:
-    """Offer to carry out the dry run. Returns 'apply', 'review', 'back', 'change' or 'quit'."""
+def after_dry_run_menu(dry: DryRun, real_mode: str, can_open: bool = True) -> str:
+    """Offer to carry out the dry run (asked first). Returns 'apply', 'open', 'back', 'change' or 'quit'."""
     what = _fate(real_mode, dry.to_remove)
     if dry.to_rename:
         what += f", rename {dry.to_rename}"
+    menu = [("Navigate", [("b", "Back to settings"), ("c", "Change directory"), ("q", "Quit")])]
+    if can_open:
+        menu.insert(0, ("Dry run", [("o", "Open its groups again (still a dry run, changes nothing)")]))
     answer = ask(AfterDryRunScreen(
-        prompt="Action: ", primary=f"Apply exactly what the dry run showed: {what}",
-        menu=[("Continue for real", [("r", "Review the groups again (asks as configured)")]),
-              ("Navigate", [("b", "Back to settings"), ("c", "Change directory"), ("q", "Quit")])],
-        real_mode=real_mode))
-    return {"": "apply", "r": "review", "b": "back", "c": "change", "q": "quit"}.get(answer, "unknown")
+        prompt="Action: ", primary=f"Carry it out: {what}", menu=menu, real_mode=real_mode))
+    return {"": "apply", "o": "open", "b": "back", "c": "change", "q": "quit"}.get(answer, "unknown")

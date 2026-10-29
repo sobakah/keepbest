@@ -102,7 +102,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 362 tests, ~110 s (see below for which Python)
+python3 -m pytest                 # 360 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -195,14 +195,18 @@ Both paths change when the Python version changes.
   the same order; a copy containing every track of the others in their order (`covering_copy`) is
   recommended; the same tracks in another order (`tracks_reordered`) are asked about. Without
   questions a group is only resolved when a covering copy exists, otherwise left alone and counted
-  as skipped. Skipped remux groups stay in `exact_groups` (`ExactGroup.status`), so reviewing a
-  dry run again asks about them; decided ones carry `decision` for the log.
+  as skipped. Skipped remux groups stay in `exact_groups` (`ExactGroup.status`) and are left alone
+  when the dry run is carried out; decided ones carry `decision` for the log.
 - Carrying out a dry run maps Stage 1 renames into the later remux and visual groups; in the dry
   run itself, `ctx.planned` (renames a real run would make) ranks Stage 2/3 like a real run and
   counts each rename once; with `ctx.dropping` (files it would remove) a name an earlier group frees
   counts as free and one an earlier rename takes as taken (`_name_free`). `replay_dry_run` rebuilds
   both on resume and for `planned_changes`; `undo_decision` takes the group's share out again.
-  Reviewing a dry run again restores each visual group from `Group.undo`.
+- A saved dry run is never carried out by Enter: on the start screen Enter opens it (`open_saved`:
+  `run_scan(resume=…, open_overview=True)` as a dry run, its overview first), `a` carries it out;
+  right after a dry run Enter carries it out and `o` opens it. Carrying out (`carry_out_dry_run`)
+  always asks `[y/N]` first, in every mode. There is no "review again for real" any more (it trashed
+  files with each decision and caught the owner out on 2026-10-29).
 - Declining the permanent-mode `[y/N]` after choosing another keeper restores the group as found.
 - When nothing of a group could be removed, there is no rename and (real runs) the group stays open.
 - Interrupts during Stage 2 stop ffprobe/ffmpeg at once (`video.stop_all` via `_threaded`); a

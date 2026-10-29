@@ -107,16 +107,18 @@ In `permanent` mode, you are asked once before the run starts, since identical c
 
 **After a dry run** chosen on the start screen (setting `4`), you can carry it out for real right away, with the delete mode from your config (`trash` if the config says `dry_run`). After `--dry-run`, it is saved instead, to be carried out from the start screen in a later start without `--dry-run` (see below):
 
-- **Enter:** apply exactly what the dry run showed, including your choices, without asking again.
-- **`r`:** go through the groups again for real. Identical copies and remuxes are carried out as decided in the dry run (logged as decided there; remuxes you skipped are asked again), and the visual groups are shown as they were found, as if the dry run's decisions had not been made.
+- **Enter:** carry out exactly what the dry run showed, including your choices. You are asked first (`[y/N]`, No by default), in every delete mode.
+- **`o`:** open its groups again, still as a dry run: look at them and change decisions (see `u` above). Nothing is touched.
+
+Remuxes you skipped in the dry run are left alone when it is carried out.
 
 Before anything is deleted, every file is checked against the dry run; files that changed in the meantime are left alone.
 
 **Progress is saved** once the duplicate groups are found, in dry runs too: before every question, after every decision, and at least once a second while groups are handled automatically. Each save is written to disk completely before it replaces the previous one. Ctrl+C, closing the terminal, stopping the program from outside or a crash therefore lose at most the last second of automatic decisions, and those are safe to repeat: before resuming, every file is checked against the disk, and anything already removed or changed is left out. Only an interruption *during* the analysis means starting that scan again.
 
-When you open the same folder again, the start screen offers to **resume** (Enter) or to start over (`n`), which discards the saved session. A finished dry run stays saved until you carry it out, so you can also do that later: on the start screen, Enter carries it out and `e` goes through its groups again.
+When you open the same folder again, the start screen offers to **resume** (Enter) or to start over (`n`), which discards the saved session. A finished dry run stays saved until you carry it out, so you can also do that later. On the start screen, Enter **opens** it, as a dry run: its groups overview, where you can look at every group and change decisions, and nothing is deleted. Carrying it out is a button of its own (`a`), which asks first (`[y/N]`, No by default).
 
-**`--dry-run` always wins.** Started with `--dry-run`, nothing is deleted or renamed in that run: the delete mode is locked, a saved real session isn't resumed, a finished dry run isn't carried out, and a new dry run isn't offered for carrying out when it is done. Start without `--dry-run` for that, or start over (`n`) to discard a saved session.
+**`--dry-run` always wins.** Started with `--dry-run`, nothing is deleted or renamed in that run: the delete mode is locked, a saved real session isn't resumed, a finished dry run can be opened but isn't carried out, and a new dry run isn't offered for carrying out when it is done. Start without `--dry-run` for that, or start over (`n`) to discard a saved session.
 
 **When resuming**, the groups found by the original scan are used as they are, and the start screen shows which settings can still be changed. Greyed-out rows (stages, videos, subfolders, folder choice) belong to the saved session and are shown with its values. The file count on the start screen and media-optimizer afterwards (`m`) use the session's folders too, not those of the command line. Struck-through choices are unavailable: a *looser* strictness would need a new scan, and a real session can't continue as a dry run. **Stricter works without a new scan**: every group keeps the score of each image, so images above the new limit are simply taken out. Everything else applies: when to ask (`3`, and `uncertain_ratio`), the viewer (`5`) and the rename of "(1)" (`6`). A dry run always resumes as a dry run. A finished dry run is carried out exactly as it showed; only the delete mode (trash or permanent) can be chosen. **Start over** (`n`) discards the session: all settings are unlocked, and Enter starts a new scan. The summary shows the **totals of the whole session**, including earlier runs.
 

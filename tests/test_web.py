@@ -366,9 +366,12 @@ def test_a_saved_dry_run_is_carried_out_from_the_page(library, serve, run_cli):
     assert len(library.files()) == 4
     page, done = serve(library.path)
     start = page.question()
-    assert start["panel"]["finished"] is True and start["primary"].startswith("Carry out the saved dry run")
-    end = page.walk("")[0]
-    page.answer(page.question(end["id"]), "q")
+    assert start["panel"]["finished"] is True and start["primary"] == "Open the saved dry run (changes nothing)"
+    sure = page.walk("a")[0]
+    sure = page.question(sure["id"])
+    assert sure["kind"] == "confirm" and sure["default"] is False and "move 2 file(s) to the trash" in sure["prompt"]
+    page.answer(sure, True)
+    page.answer(page.question(sure["id"]), "q")
     assert finish(page, done) == 0
     assert library.files() == ["a.png", "c.png"]
 
