@@ -148,7 +148,19 @@ function useOpenRows() {
   return [(i) => opened.has(i), toggle];
 }
 
-function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
+// Which file to keep, while that is asked: the file's KEEP/REMOVE badge with a
+// radio button, on its card and in its table row. Choosing another sends its number.
+function KeepPick({ i, keepIndex, badge, pick = null }) {
+  const shown = html`<span class=${'badge ' + badge[1]}>${badge[0]}</span>`;
+  if (!pick) return shown;
+  const kept = i === keepIndex;
+  return html`<label class=${'keep-pick' + (pick.sending ? ' off' : '')}
+      title=${kept ? 'The file kept' : `Keep this one instead (${keyTitle(String(i))})`}>
+    <input type="radio" name=${pick.name} checked=${kept} disabled=${pick.sending}
+      onChange=${(e) => { e.currentTarget.blur(); pick.answer(String(i)); }} />${shown}</label>`;
+}
+
+function VisualTable({ group, keepIndex = 0, done = false, actions = null, pick = null }) {
   // The kept file's cells that decided against another file are bold.
   const won = new Set(reasons(group, keepIndex).map((r) => CRITERION_CELLS[r.criterion]));
   const cell = (i, name, cls = '') => (i === keepIndex && won.has(name) ? `${cls} win`.trim() : cls);
@@ -163,7 +175,7 @@ function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
       const badge = done ? (kept ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : (kept ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove']);
       const hot = image.diff !== null && image.diff > group.borderlineAbove;
       return html`<tr class=${kept ? 'kept' : ''} key=${i}>
-        <td class="mono">${i}</td><td><span class=${'badge ' + badge[1]}>${badge[0]}</span></td>
+        <td class="mono">${i}</td><td><${KeepPick} i=${i} keepIndex=${keepIndex} badge=${badge} pick=${pick} /></td>
         <td class=${cell(i, 'file', 'file')}>${image.name}</td><td class=${cell(i, 'format')}>${image.format}</td>
         <td class=${cell(i, 'type')}>${image.type}</td>
         <td class=${cell(i, 'resolution', 'num')}>${image.width}×${image.height}</td><td class="num">${image.size}</td>
@@ -614,11 +626,12 @@ function GroupScreen({ question, answer, sending }) {
     : g.status === 'done' ? (i === keepIndex ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : ['KEPT', 'b-keep']);
   const diffText = (image) => (image.diff === null ? 'kept' : `diff ${image.diff}`);
   const hot = (image) => image.diff !== null && image.diff > g.borderlineAbove;
+  // one radio group per place: the cards, the flip view and the table each show the file kept
+  const pick = (place) => (decision ? { name: `keep-${q.id}-${place}`, answer, sending } : null);
 
   const card = (image, i) => {
-    const [text, cls] = badgeOf(i);
     return html`<article class=${'card' + (i === keepIndex ? ' keep' : '')} key=${image.name}>
-      <div class="card-head"><span class="mono"><b>#${i}</b></span><span class=${'badge ' + cls}>${text}</span>
+      <div class="card-head"><span class="mono"><b>#${i}</b></span><${KeepPick} i=${i} keepIndex=${keepIndex} badge=${badgeOf(i)} pick=${pick('cards')} />
         ${decision && i === 0 && html`<span class="small muted">recommended</span>`}
         <span class=${'mono small push' + (hot(image) ? ' diff-hot' : '')}>${diffText(image)}</span></div>
       <${Viewport} image=${image} view=${view} aspect=${aspect} spot=${g.spot} outline=${outline} onPan=${pan} label=${image.name} />
@@ -629,11 +642,9 @@ function GroupScreen({ question, answer, sending }) {
       <div class="row card-actions">${choices(i)}<${FileActions} id=${image.file} noOpen=${true} /></div>
     </article>`;
   };
-  // Keeping another file and marking one as no duplicate: on its card, or in its table row.
-  const choices = (i) => decision && i > 0 && html`
-    <button class="btn btn-small" disabled=${sending} title=${keyTitle(String(i))} onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>
-    ${q.keys.includes('i' + i) && html`<button class="btn btn-small" disabled=${sending} title=${keyTitle('i' + i)}
-      onClick=${() => answer('i' + i)}>Not a duplicate</button>`}`;
+  // Marking a file as no duplicate: on its card, or in its table row (keeping another one is its KeepPick).
+  const choices = (i) => decision && i > 0 && q.keys.includes('i' + i) && html`<button class="btn btn-small"
+    disabled=${sending} title=${keyTitle('i' + i)} onClick=${() => answer('i' + i)}>Not a duplicate</button>`;
 
   const shown = flipShowOther ? flipOther : keepIndex;
   return html`<div class="stack">
@@ -660,7 +671,7 @@ function GroupScreen({ question, answer, sending }) {
       <span class="small muted push">Drag to move · + and - zoom${layout === 'flip' ? ' · Space flips' : ''}</span>`}
     </div>
 
-    ${!pictures ? html`<${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'}
+    ${!pictures ? html`<${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} pick=${pick('table')}
         actions=${(i, opener) => html`${choices(i)}<${FileActions} id=${g.images[i].file} ...${opener} />`} />`
       : layout === 'side'
       ? html`<div class="cards">${g.images.map(card)}</div>`
@@ -671,14 +682,12 @@ function GroupScreen({ question, answer, sending }) {
           </div>
           <div class="flip-side stack-tight">
             <span class="small muted">Showing</span>
-            <div class="row"><b class="mono">#${shown}</b><span class=${'badge ' + badgeOf(shown)[1]}>${badgeOf(shown)[0]}</span>
+            <div class="row"><b class="mono">#${shown}</b><${KeepPick} i=${shown} keepIndex=${keepIndex} badge=${badgeOf(shown)} pick=${pick('flip')} />
               <span class=${'mono small' + (hot(g.images[shown]) ? ' diff-hot' : '')}>${diffText(g.images[shown])}</span></div>
             <div class="file">${g.images[shown].name}</div>
             <p class="small muted">Click the picture (or press Space) to switch between #${keepIndex} and the one chosen here.</p>
             <div class="row">${others.map((i) => html`<button key=${i} class=${'zoom' + (i === flipOther ? ' on' : '')}
               onClick=${view_(() => { setFlipOther(i); setFlipShowOther(true); })}>#${i}</button>`)}</div>
-            ${decision && shown > 0 && html`<button class="btn btn-small" disabled=${sending} onClick=${() => answer(String(shown))}>
-              Keep #${shown} instead <kbd>${shown}</kbd></button>`}
           </div>
         </div>`}
 
@@ -692,7 +701,7 @@ function GroupScreen({ question, answer, sending }) {
     </section>`}
 
     ${pictures && html`<details class="details" open><summary>Details</summary>
-      <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} /></details>`}
+      <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} pick=${pick('table')} /></details>`}
     ${q.note && html`<p class="line">${q.note}</p>`}
     <${Primary} question=${q} answer=${answer} sending=${sending} />
     <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k)} />
@@ -740,11 +749,11 @@ function RemuxView({ question, answer, sending }) {
         <${Player} key=${playing} file=${g.files[playing]} />
       </div>`}
       <div class="remux-files stack-tight">${g.files.map((f, i) => html`<article key=${i} class=${'card' + (i === 0 ? ' keep' : '')}>
-        <div class="card-head"><b class="mono">#${i}</b><span class=${'badge ' + (i === 0 ? 'b-keep' : 'b-remove')}>${i === 0 ? 'KEEP' : 'REMOVE'}</span>
+        <div class="card-head"><b class="mono">#${i}</b><${KeepPick} i=${i} keepIndex=${0} badge=${i === 0 ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove']}
+          pick=${{ name: `keep-${q.id}`, answer, sending }} />
           ${i === 0 && html`<span class="small muted">recommended</span>`}<span class="mono small push">${f.size}</span></div>
         <div class="card-body"><div class="file">${f.name}</div><div class="small muted">${f.streams}</div></div>
-        <div class="row card-actions">${i > 0 && html`<button class="btn btn-small" disabled=${sending} title=${keyTitle(String(i))}
-          onClick=${() => answer(String(i))}>Keep this one <kbd>${i}</kbd></button>`}<${FileActions} id=${f.file} video=${true} /></div>
+        <div class="row card-actions"><${FileActions} id=${f.file} video=${true} /></div>
       </article>`)}</div>
     </div>
     <${Primary} question=${q} answer=${answer} sending=${sending} />

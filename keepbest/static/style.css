@@ -131,6 +131,12 @@ td.file { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; mi
 tr.kept td.file { color: var(--ink); font-weight: 600; }
 .diff-hot { color: var(--border-line); }
 
+/* choosing the file to keep: a radio button with the file's KEEP/REMOVE badge */
+.keep-pick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.keep-pick input { margin: 0; accent-color: var(--keep); cursor: pointer; }
+.keep-pick:hover .badge { filter: brightness(1.15); }
+.keep-pick.off, .keep-pick.off input { cursor: default; }
+
 /* summary */
 /* every tile as tall as the tallest (a label may take two lines), the number at the top */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); grid-auto-rows: 1fr;
