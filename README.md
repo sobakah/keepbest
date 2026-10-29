@@ -87,8 +87,8 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By def
 
 | Key | Action |
 |---|---|
-| **Enter** | Keep the recommended file ▶ and remove the others |
-| `1`, `2`, … | Keep that file instead: or click the round button by its `KEEP`/`REMOVE` mark, next to its picture or in its row (the numbers shown in the group; `#0` is the recommended one) |
+| **Enter** | Keep the recommended file ▶ (`#0`, framed) and remove the others |
+| `1`, `2`, … | Keep that file instead (the numbers shown in the group). Each file also has a *Keep* button, next to its picture and in its row of the details |
 | `s` | Skip: keep all files; the group is shown again next time |
 | `i` | Not duplicates of #0: keep all files and never show them together with #0 again |
 | `i2` | Only image #2 is not a duplicate; decide on the rest as usual |

@@ -129,13 +129,8 @@ td { padding: 7px 12px; border-top: 1px solid var(--border); vertical-align: mid
 td.num, th.num { text-align: right; font-family: var(--mono); white-space: nowrap; }
 td.file { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; min-width: 16em; }
 tr.kept td.file { color: var(--ink); font-weight: 600; }
+tr.kept { outline: 2px solid var(--keep); outline-offset: -2px; }   /* the file kept, as its card's border */
 .diff-hot { color: var(--border-line); }
-
-/* choosing the file to keep: a radio button with the file's KEEP/REMOVE badge */
-.keep-pick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.keep-pick input { margin: 0; accent-color: var(--keep); cursor: pointer; }
-.keep-pick:hover .badge { filter: brightness(1.15); }
-.keep-pick.off, .keep-pick.off input { cursor: default; }
 
 /* summary */
 /* every tile as tall as the tallest (a label may take two lines), the number at the top */

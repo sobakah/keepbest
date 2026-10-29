@@ -12,7 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The space keepbest and media-optimizer freed, added up.** Back from media-optimizer, its box has a tile *Freed together* next to *Space saved*, and the line below it says how much each freed.
 
-- **Choosing the file to keep** is a round button by each file's *KEEP*/*REMOVE* mark, next to its picture and in its row of the details, instead of a *Keep this one* button with its number on each card. Remuxed videos too.
+- **Each file has its own *Keep* button**, next to its picture and in its row of the details (also without pictures, and for remuxed videos), instead of a *Keep this one* button with its number on each card and a big *Keep* button below the group. The recommended file is framed in both places; Enter keeps it, as before.
 
 ### Fixed
 
