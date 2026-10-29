@@ -402,6 +402,25 @@ def test_remuxed_videos_on_the_page(library, serve):
     assert finish(page, result) == 0
 
 
+def test_every_step_of_stage_3_counts_on_the_page(library, serve):
+    """Comparing the pixels of many candidate pairs takes long: it has a counter
+    of its own, which ends at the number of candidate pairs."""
+    visual_pair(library)
+    library.variant("a.png", "a again.jpg", quality=85)
+    library.variant("a.png", "a text.jpg", pictures.with_text, quality=90)  # stays out of the group
+    page, result = serve(library.path, confirm="always")
+    start, decision = page.walk("", "q")
+    assert decision["screen"] == "DecisionScreen"
+    bars = {e["label"]: e for e in page.events("progress")}
+    assert list(bars)[-4:] == ["Analyzing images", "Finding candidates", "Loading pictures", "Comparing pixels"]
+    assert all(not e["running"] and e["done"] == e["total"] for e in bars.values()), bars
+    analyzed = next(e["text"] for e in page.events() if e.get("text", "").startswith("Analyzed"))
+    assert f"· {bars['Comparing pixels']['total']} candidate pair(s)" in analyzed
+    assert bars["Comparing pixels"]["total"] > 2   # more pairs than those in the group
+    page.answer(page.question(decision["id"]), False)          # don't keep the session
+    assert finish(page, result) == 0
+
+
 def test_the_overview_shows_each_groups_kept_picture(library, serve):
     from PIL import Image
     visual_pair(library)

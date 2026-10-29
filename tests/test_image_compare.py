@@ -337,3 +337,18 @@ def test_a_saved_session_keeps_the_jpeg_xl_preference():
     for image in old["images"]:
         image.pop("lossless_rank", None)
     assert deciding_criterion(*Group.from_dict(old).images) is None
+
+
+@pytest.mark.parametrize("count", [0, 1, 2, 7, 8, 40])
+@pytest.mark.parametrize("bits, distance", [(128, 28), (128, 9)])   # every pair / by chunks
+def test_the_candidate_search_finds_every_close_pair(count, bits, distance):
+    import random
+    from keepbest.core_logic import _candidate_pairs
+    rng = random.Random(count)
+    base = rng.getrandbits(bits)
+    # near copies of one hash, so some pairs are close and some aren't
+    hashes = [base ^ sum(1 << rng.randrange(bits) for _ in range(rng.randrange(20))) for _ in range(count)]
+    expected = {(i, j) for i in range(count) for j in range(i + 1, count)
+                if bin(hashes[i] ^ hashes[j]).count("1") <= distance}
+    assert _candidate_pairs(hashes, bits, distance) == expected
+    assert count < 8 or expected

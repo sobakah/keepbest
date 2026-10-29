@@ -662,26 +662,37 @@ def _candidate_pairs(hashes: list[int], n_bits: int, max_dist: int) -> set[tuple
     """
     k = max_dist + 1
     width = n_bits // k
+    n = len(hashes)
     if width < 6:
-        return {(i, j) for i in range(len(hashes)) for j in range(i + 1, len(hashes))
-                if _popcount(hashes[i] ^ hashes[j]) <= max_dist}
+        pairs = set()
+        # Row i compares n-1-i pairs: taking the rows from both ends in turn makes
+        # every two rows the same work, so the counter moves at an even pace.
+        order = [r for i in range((n + 1) // 2) for r in dict.fromkeys((i, n - 1 - i))]
+        with progress("Finding candidates", n) as bar:
+            for i in order:
+                h = hashes[i]
+                pairs.update((i, j) for j in range(i + 1, n) if _popcount(h ^ hashes[j]) <= max_dist)
+                bar.advance()
+        return pairs
     pairs, checked = set(), set()
-    for c in range(k):
-        start = c * width
-        w = width if c < k - 1 else n_bits - start
-        mask = (1 << w) - 1
-        buckets = defaultdict(list)
-        for idx, h in enumerate(hashes):
-            buckets[(h >> start) & mask].append(idx)
-        for members in buckets.values():
-            for a in range(len(members)):
-                for b in range(a + 1, len(members)):
-                    pair = (members[a], members[b])
-                    if pair in checked:
-                        continue
-                    checked.add(pair)
-                    if _popcount(hashes[pair[0]] ^ hashes[pair[1]]) <= max_dist:
-                        pairs.add(pair)
+    with progress("Finding candidates", k) as bar:
+        for c in range(k):
+            start = c * width
+            w = width if c < k - 1 else n_bits - start
+            mask = (1 << w) - 1
+            buckets = defaultdict(list)
+            for idx, h in enumerate(hashes):
+                buckets[(h >> start) & mask].append(idx)
+            for members in buckets.values():
+                for a in range(len(members)):
+                    for b in range(a + 1, len(members)):
+                        pair = (members[a], members[b])
+                        if pair in checked:
+                            continue
+                        checked.add(pair)
+                        if _popcount(hashes[pair[0]] ^ hashes[pair[1]]) <= max_dist:
+                            pairs.add(pair)
+            bar.advance()
     return pairs
 
 
@@ -792,7 +803,7 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         if involved:
             paths = [metas[i]["path"] for i in involved]
             for i, t in zip(involved, _parallel(executor, _safe_thumbnail, paths,
-                                                 "Comparing pixels", config["compare_size"])):
+                                                 "Loading pictures", config["compare_size"])):
                 if t is not None:
                     thumbs[i] = t
     except BaseException:
@@ -800,45 +811,58 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         raise
     executor.shutdown(wait=True)
 
+    # The counter counts candidate pairs: each one the anchor is compared with
+    # (or skips), then those of the images that leave with its group.
+    near = defaultdict(set)
+    for a, b in pairs:
+        if a in thumbs and b in thumbs:
+            near[a].add(b)
+            near[b].add(a)
     groups: list[Group] = []
     marked_out = set()   # kept out of a group by a mark
-    for comp in components:
-        comp = [i for i in comp if i in thumbs]
-        comp.sort(key=lambda i: score_image(metas[i]), reverse=True)
-        while len(comp) > 1:
-            anchor, rest = comp[0], comp[1:]
-            members, leftover = [], []
-            for i in rest:
-                if ignores is not None and ignores.contains(metas[anchor], metas[i]):
-                    marked_out.add(i)
-                    leftover.append(i)
-                    continue
-                if metas[i].get("frames", 1) > 1:
-                    # Several pictures in one file (MPO, multi-page TIFF): the others
-                    # may hold something the anchor lacks, so it is only ever kept.
-                    leftover.append(i)
-                    continue
-                # Every deleted image is checked directly against the image that is
-                # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
-                distance = _popcount(metas[anchor]["hash"] ^ metas[i]["hash"])
-                if distance <= max_hash and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"]):
-                    diff, spot = difference_spot(thumbs[anchor], thumbs[i])
-                    log.debug("%s vs %s: hash distance %d, pixel diff %d",
-                              metas[anchor]["path"].name, metas[i]["path"].name, distance, diff)
-                    if diff <= limit:
-                        members.append((i, diff))
-                        metas[i]["spot"] = spot  # where it differs most from the anchor
+    with progress("Comparing pixels", sum(map(len, near.values())) // 2) as bar:
+        for comp in components:
+            comp = [i for i in comp if i in thumbs]
+            comp.sort(key=lambda i: score_image(metas[i]), reverse=True)
+            while len(comp) > 1:
+                anchor, rest = comp[0], comp[1:]
+                members, leftover = [], []
+                for i in rest:
+                    if i in near[anchor]:
+                        bar.advance()
+                    if ignores is not None and ignores.contains(metas[anchor], metas[i]):
+                        marked_out.add(i)
+                        leftover.append(i)
                         continue
-                leftover.append(i)
-            if members:
-                metas[anchor]["spot"] = None
-                groups.append(Group(
-                    images=[metas[anchor]] + [metas[i] for i, _ in members],
-                    diffs=[None] + [d for _, d in members],
-                    limit=limit,
-                    borderline_above=borderline_above,
-                ))
-            comp = leftover
+                    if metas[i].get("frames", 1) > 1:
+                        # Several pictures in one file (MPO, multi-page TIFF): the others
+                        # may hold something the anchor lacks, so it is only ever kept.
+                        leftover.append(i)
+                        continue
+                    # Every deleted image is checked directly against the image that is
+                    # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
+                    distance = _popcount(metas[anchor]["hash"] ^ metas[i]["hash"])
+                    if distance <= max_hash and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"]):
+                        diff, spot = difference_spot(thumbs[anchor], thumbs[i])
+                        log.debug("%s vs %s: hash distance %d, pixel diff %d",
+                                  metas[anchor]["path"].name, metas[i]["path"].name, distance, diff)
+                        if diff <= limit:
+                            members.append((i, diff))
+                            metas[i]["spot"] = spot  # where it differs most from the anchor
+                            continue
+                    leftover.append(i)
+                if members:
+                    metas[anchor]["spot"] = None
+                    groups.append(Group(
+                        images=[metas[anchor]] + [metas[i] for i, _ in members],
+                        diffs=[None] + [d for _, d in members],
+                        limit=limit,
+                        borderline_above=borderline_above,
+                    ))
+                    gone, left = {i for i, _ in members}, set(leftover)
+                    bar.advance(sum(len(near[i] & left) for i in gone)
+                                + sum(len(near[i] & gone) for i in gone) // 2)
+                comp = leftover
 
     # Stable, predictable order: by the keeper's path.
     groups.sort(key=lambda g: str(g.images[0]["path"]).lower())

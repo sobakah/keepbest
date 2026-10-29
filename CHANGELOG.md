@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **Every step of stage 3 counts.** With tens of thousands of pictures, keepbest could look frozen for many minutes after "Comparing pixels" had reached 100 %: that counter only loaded the pictures, and finding the candidate pairs and comparing their pixels showed nothing. Now each step has its own counter: *Finding candidates*, *Loading pictures* and *Comparing pixels*, which counts the candidate pairs and ends at the number shown afterwards.
+
 ## [1.0.1] — 2026-10-29
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page. To see media-optimizer's numbers, update it to 1.1.0 too (`pipx upgrade media-optimizer`).

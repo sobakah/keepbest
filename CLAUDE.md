@@ -102,7 +102,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 343 tests, ~110 s (see below for which Python)
+python3 -m pytest                 # 356 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -334,9 +334,11 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   `sys.executable` when Pillow/send2trash are missing; "Missing required packages" should name the
   Python used; `--auto` should print excluded folders.
 - **Performance:** with defaults the candidate search is always all-pairs (128 bits / 29 chunks =
-  4 bits; 0.9 s for 5,000 images, ~90 s for 50,000, no progress shown) – numpy XOR+popcount or a
-  BK-tree, at least a progress line. Pixel comparisons run serially and re-blur the anchor per
-  pair – cache blurred thumbnails. All candidate thumbnails are held in memory – process clusters
+  4 bits; 0.9 s for 5,000 images, ~90 s for 50,000) – numpy XOR+popcount or a BK-tree. Pixel
+  comparisons (7.5 ms a pair) run serially in the main process and re-blur the anchor per pair –
+  run them in the pool, cache blurred thumbnails. Each step has a counter ("Finding candidates",
+  "Loading pictures", "Comparing pixels" counting candidate pairs: compared, or settled when an
+  image leaves with a group). All candidate thumbnails are held in memory – process clusters
   in batches of ~200.
 - **Possible features (owner decides):** E1 folder priority (`--prefer DIR` / reference folders
   never deleted from – rated most valuable); E2 HEIC/HEIF and RAW (extensions for stage 1,
