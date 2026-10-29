@@ -1161,7 +1161,7 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
         return "next"
 
 
-def _handled_screen(group: Group, position: str, rel):
+def _handled_screen(group: Group, position: str, rel, back: bool = False):
     """A resolved or "not duplicates" group. Returns 'next', 'prev', 'overview', or
     for a dry run's decision 'undo', or ('change', answer): keep another file
     (its path) or skip the group ("s") instead, carried out after the undo."""
@@ -1181,7 +1181,8 @@ def _handled_screen(group: Group, position: str, rel):
     if can_undo:
         menu.insert(0, ("Change", [(f"0-{count - 1}", "Keep that file instead"), ("s", "Skip instead, keep all files"),
                                    ("u", "Undo this decision and choose again")]))
-    screen = HandledScreen(prompt=f"Group {position} action: ", primary="Continue", menu=menu,
+    screen = HandledScreen(prompt=f"Group {position} action: ", primary="Back to the overview" if back else "Continue",
+                           menu=menu,
                            group=group, position=position, rel=rel, note=note)
     again = False
     while True:
@@ -1203,8 +1204,9 @@ def _handled_screen(group: Group, position: str, rel):
         warn("Unknown option.")
 
 
-def _overview(groups: list[Group], current: int | None, rel) -> int | None:
-    """Tree-style list of all groups. Returns a group index, or None to finish."""
+def _overview(groups: list[Group], current: int | None, rel) -> tuple[int | None, bool]:
+    """Tree-style list of all groups. Returns (a group index, or None to finish;
+    whether that group was opened from the list, rather than continued with)."""
     while True:
         choice = ask(OverviewScreen(
             prompt="Action: ",
@@ -1212,12 +1214,19 @@ def _overview(groups: list[Group], current: int | None, rel) -> int | None:
             menu=[("Navigate", [(f"1-{len(groups)}", "Jump to group"), ("q", "Quit")])],
             groups=groups, current=current, rel=rel))
         if choice == "":
-            return current
+            return current, False
         if choice == "q":
             raise UserQuit
         if choice.isdigit() and 1 <= int(choice) <= len(groups):
-            return int(choice) - 1
+            return int(choice) - 1, True
         warn("Unknown option.")
+
+
+def _next_open(groups: list[Group], after: int) -> int | None:
+    """The first group not asked about yet after *after*, else the first one before
+    it (skipped groups are open too, but the walk doesn't go back to them)."""
+    order = list(range(after + 1, len(groups))) + list(range(after))
+    return next((i for i in order if groups[i].status == "pending"), None)
 
 
 def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: Stats, rel,
@@ -1237,13 +1246,15 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
     interactive = False    # at least one decision screen was shown
     reopened = set()       # undone decisions: always asked again, never resolved automatically
     preset = None          # a changed decision's new answer, for the decision screen
+    opened = False         # the group was opened from the overview: back there once it is done
+    finished = False       # "Finish" was chosen in the overview: don't show it again at the end
 
     while True:
         if index >= total:
             ctx.save(groups, total - 1)
-            if interactive:
+            if interactive and not finished:
                 success("\nReached the last group.")
-                choice = _overview(groups, None, rel)
+                choice, opened = _overview(groups, None, rel)
                 if choice is not None:
                     index, revisit = choice, True
                     continue
@@ -1264,7 +1275,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
                 index += 1
                 continue
             ctx.save(groups, index)
-            navigation = _handled_screen(group, position, rel)
+            navigation = _handled_screen(group, position, rel, back=opened)
         elif group.status == "pending" and not needs_prompt:
             show("group_line", group=group, position=position)
             show("group_table", group=group, rel=rel, dry=config["delete_mode"] == "dry_run")
@@ -1291,6 +1302,9 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
             ctx.save(groups, index)
             info("Decision undone - choose again.")
             revisit = True
+        elif navigation == "next" and opened:   # back to the list it was opened from
+            choice, opened = _overview(groups, _next_open(groups, index), rel)
+            index, revisit, finished = (total, True, True) if choice is None else (choice, True, False)
         elif navigation == "next":
             index += 1
         elif navigation == "prev":
@@ -1301,7 +1315,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
                 warn("No earlier open group.")
                 revisit = True
         elif navigation == "overview":
-            choice = _overview(groups, index, rel)
+            choice, opened = _overview(groups, index, rel)
             index, revisit = (index if choice is None else choice), True
 
 

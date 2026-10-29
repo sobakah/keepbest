@@ -651,8 +651,13 @@ function GroupScreen({ question, answer, sending }) {
   const tableActions = (i, opener) => html`${choices(i)}<${FileActions} id=${g.images[i].file} ...${opener} />`;
 
   const shown = flipShowOther ? flipOther : keepIndex;
+  const [number, total] = q.position.split('/');
   return html`<div class="stack">
-    <div class="row"><span class="mono">[${q.position}]</span><${Verdict} borderline=${g.borderline} />
+    <nav class="crumbs" aria-label="Where you are">
+      ${q.keys.includes('t') && html`<button class="btn btn-small" disabled=${sending} title="Key: t"
+        onClick=${() => answer('t')}>‹ Groups overview</button><span class="muted" aria-hidden="true">›</span>`}
+      <b>Group ${number} of ${total}</b></nav>
+    <div class="row"><${Verdict} borderline=${g.borderline} />
       <span class="muted">worst difference <b class="mono">${g.worst}</b> of ${g.limit} allowed (0 = pixel-identical)</span>
       ${g.status === 'skipped' && decision && html`<span class="badge b-borderline">SKIPPED EARLIER</span>`}</div>
 
@@ -710,7 +715,7 @@ function GroupScreen({ question, answer, sending }) {
     ${q.note && html`<p class="line">${q.note}</p>`}
     ${decision ? html`<${EnterHint} question=${q} />` : html`<${Primary} question=${q} answer=${answer} sending=${sending} />`}
     <${Menu} question=${q} answer=${answer} sending=${sending}
-      skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k) || (changeable && k === 'u')} />
+      skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k) || (changeable && k === 'u') || k === 't'} />
   </div>`;
 }
 

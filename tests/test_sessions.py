@@ -254,9 +254,23 @@ def test_keeping_another_file_changes_a_dry_run_decision(one_group, run_cli):
     chosen = handled["group"]["images"][2]["name"]
     assert handled["group"]["images"][handled["group"]["kept"]]["name"] == "a 95.jpg"
     assert "Keep another file, or skip the group, to change it." in handled["note"]
+    assert handled["primary"] == "Back to the overview"
     assert summary(result)["visual"] == 2                      # counted once, not twice
     run_cli(one_group.path, keys=["", ""])                     # carry out the saved dry run
     assert one_group.files() == [chosen]
+
+
+def test_a_group_opened_from_the_overview_leads_back_to_it(library, run_cli):
+    for seed in (1, 2, 3):
+        library.photo(f"{seed}.png", seed)
+        library.variant(f"{seed}.png", f"{seed}.jpg", quality=90)
+    # start, the overview from group 1, open group 2, keep its #0: the overview again; continue, skip group 3
+    result = run_cli(library.path, "--dry-run", "-i", keys=["", "t", "2", "", "", "s"])
+    assert [q.get("screen") for q in result.questions][:6] == [
+        "StartScreen", "DecisionScreen", "OverviewScreen", "DecisionScreen", "OverviewScreen", "DecisionScreen"]
+    back = result.questions[4]
+    assert back["primary"] == "Continue with group 3"            # the walk's next group, not group 2's
+    assert result.questions[5]["position"] == "3/3"
 
 
 def test_skipping_instead_changes_a_dry_run_decision(one_group, run_cli):

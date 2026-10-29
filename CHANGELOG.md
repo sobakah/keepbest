@@ -14,6 +14,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Each file has its own *Keep* button**, next to its picture and in its row of the details (also without pictures, and for remuxed videos), instead of a *Keep this one* button with its number on each card and a big *Keep* button below the group. The recommended file is framed in both places; Enter keeps it, as before.
 - **A dry run's decision changes with another file's *Keep***: open the decided group from the overview and keep another file, or skip the group instead. The *Undo* button is gone; `u` still works.
+- **Groups belong to the overview.** Each group starts with *‹ Groups overview › Group 3 of 12*, and a group opened from the overview leads back to it once decided, skipped or looked at, with the next group not asked yet as *Continue*.
 
 ### Fixed
 

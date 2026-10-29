@@ -95,7 +95,7 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By def
 | `i0` | Only #0 is different: it is marked and kept, and the others are compared with each other afresh |
 | `n` | Remove "(1)" from the kept name: on/off for this group |
 | `v` | Open the images in the viewer (see [Viewers](#viewers)) |
-| `p` / `t` | Previous open group / overview of all groups |
+| `p` / `t` | Previous open group / overview of all groups (*‹ Groups overview* above each group). A group opened from the overview leads back to it once it is decided or skipped |
 | `u` | Dry runs only: a group you already decided can still change. Open it from the overview (`t`, then its number) and keep another file with its *Keep* button (or its number), or skip it instead (`s`); `u` undoes the decision and asks again, for the other choices (a key only, the page has no button for it). Its images, including any a chosen file had left out, come back. Real runs can't change a decision: trashed files are restored from the system trash (the log has their paths). |
 | `q` | Quit (asks whether to keep your progress) |
 
