@@ -5,6 +5,7 @@ import io
 import math
 import re
 import signal
+import threading
 
 from PIL import Image, ImageChops, ImageFilter, ImageOps
 
@@ -325,11 +326,12 @@ def pixel_difference(thumb_a, thumb_b):
     return _cells(thumb_a, thumb_b).getextrema()[1]
 
 
-def difference_spot(thumb_a, thumb_b):
+def difference_spot(thumb_a, thumb_b, blurred=None):
     """pixel_difference and where it is: (score, (left, top, size)), the worst
     cell as fractions of the picture. Comparison thumbnails are the whole upright
-    picture squeezed into a square, so the fractions hold for the picture itself."""
-    cells = _cells(thumb_a, thumb_b)
+    picture squeezed into a square, so the fractions hold for the picture itself.
+    *blurred*: a Blurred to take the blurred pictures from."""
+    cells = _cells(thumb_a, thumb_b, blurred)
     data = cells.tobytes()
     worst = max(data)
     index = data.index(worst)
@@ -337,7 +339,7 @@ def difference_spot(thumb_a, thumb_b):
     return worst, (round(index % grid / grid, 5), round(index // grid / grid, 5), round(1 / grid, 5))
 
 
-def _cells(thumb_a, thumb_b):
+def _cells(thumb_a, thumb_b, blurred=None):
     """The mean difference of each 8x8 cell (an "L" image, one pixel per cell).
     The images are compared at the smaller of the two resolutions, lightly blurred
     to absorb resampling/compression noise; the per-cell maximum (not a global mean)
@@ -348,20 +350,15 @@ def _cells(thumb_a, thumb_b):
     white: then a picture and a copy of it twice as bright never look alike, a dark
     16-bit picture still matches its 8-bit copy, and edits in 10- or 12-bit data
     stored in 16-bit files are not squeezed into a few dark levels."""
-    (sa, da, ha), (sb, db, hb) = thumb_a, thumb_b
+    (sa, _, ha), (sb, _, hb) = thumb_a, thumb_b
+    side = min(sa, sb)
     if ha is None and hb is None:
-        a = Image.frombytes("RGB", (sa, sa), da)
-        b = Image.frombytes("RGB", (sb, sb), db)
+        a, b = (blurred.get(t) if blurred is not None and t[0] == side else _blur(_rgb(t), side)
+                for t in (thumb_a, thumb_b))
     else:
         scale = 255 / max(_peak(thumb_a), _peak(thumb_b), 1.0)
-        a, b = _as_rgb(thumb_a, scale), _as_rgb(thumb_b, scale)
-    side = min(sa, sb)
-    if sa != side:
-        a = a.resize((side, side), Image.LANCZOS)
-    if sb != side:
-        b = b.resize((side, side), Image.LANCZOS)
-    blur = ImageFilter.GaussianBlur(1)
-    diff = ImageChops.difference(a.filter(blur), b.filter(blur))
+        a, b = _blur(_as_rgb(thumb_a, scale), side), _blur(_as_rgb(thumb_b, scale), side)
+    diff = ImageChops.difference(a, b)
     r, g, bl = diff.split()
     worst_channel = ImageChops.lighter(ImageChops.lighter(r, g), bl)
     return worst_channel.resize((side // _CELL, side // _CELL), Image.BOX)
@@ -414,3 +411,39 @@ def deciding_criterion(keeper: dict, other: dict) -> str | None:
     except (KeyError, TypeError):
         return None
     return None
+
+
+def _rgb(thumb):
+    side, rgb, _ = thumb
+    return Image.frombytes("RGB", (side, side), rgb)
+
+
+def _blur(image, side):
+    """The picture at *side*, lightly blurred, as the comparison uses it."""
+    if image.width != side:
+        image = image.resize((side, side), Image.LANCZOS)
+    return image.filter(ImageFilter.GaussianBlur(1))
+
+
+class Blurred:
+    """The blurred pictures of up to *size* 8-bit thumbnails, as compared at their
+    own size. Blurring is most of a comparison's work, and a picture is compared
+    with several others in turn. Threads may share one."""
+
+    def __init__(self, size: int = 32):
+        self.size, self._kept, self._lock = size, {}, threading.Lock()
+
+    def get(self, thumb):
+        with self._lock:
+            kept = self._kept.get(id(thumb))
+        if kept is not None:
+            return kept[1]
+        image = _blur(_rgb(thumb), thumb[0])
+        with self._lock:
+            if len(self._kept) < self.size:
+                self._kept.setdefault(id(thumb), (thumb, image))   # the thumb keeps its id taken
+        return image
+
+    def forget(self, thumb) -> None:
+        with self._lock:
+            self._kept.pop(id(thumb), None)

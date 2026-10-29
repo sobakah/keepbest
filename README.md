@@ -343,6 +343,6 @@ Without the version bump, `pipx upgrade keepbest` doesn't see the new release. N
 
 - An upscaled copy counts as the better one, because it has the higher resolution.
 - Very small watermarks on very large photos can disappear at the 512 px comparison size; raise `compare_size` or use `strict` if that matters.
-- During the visual comparison, a thumbnail of every candidate image is kept in memory (about 768 KB each), so thousands of candidates can need several GB of RAM.
+- During the visual comparison, a thumbnail of every candidate image is kept in memory (about 768 KB each), so thousands of candidates can need several GB of RAM. Up to 32 blurred copies per CPU core come on top while the pixels are compared.
 - Videos are only compared by content; a re-encoded copy is not recognised. MPEG-4 (DivX/Xvid) video inside an MPEG-TS file can't be read by ffmpeg and is left alone.
 - Developed and tested on Linux; macOS and Windows are supported by the code but untested.

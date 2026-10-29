@@ -102,7 +102,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 356 tests, ~110 s (see below for which Python)
+python3 -m pytest                 # 358 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -286,7 +286,8 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   machine now has a full ffmpeg (libx264, libx265), so they run. Remux detection itself needs no
   decoders.
 - Known limitations (README): upscaled copies win on resolution; tiny watermarks can vanish at
-  512 px; all candidate thumbnails are held in memory during stage 3 (~768 KB each); MPEG-4 Part 2
+  512 px; all candidate thumbnails are held in memory during stage 3 (~768 KB each, plus up to
+  32 blurred ones per thread); MPEG-4 Part 2
   inside MPEG-TS can't be read by ffmpeg (left alone); macOS/Windows untested.
 
 ## Working style the owner expects
@@ -334,12 +335,17 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   `sys.executable` when Pillow/send2trash are missing; "Missing required packages" should name the
   Python used; `--auto` should print excluded folders.
 - **Performance:** with defaults the candidate search is always all-pairs (128 bits / 29 chunks =
-  4 bits; 0.9 s for 5,000 images, ~90 s for 50,000) – numpy XOR+popcount or a BK-tree. Pixel
-  comparisons (7.5 ms a pair) run serially in the main process and re-blur the anchor per pair –
-  run them in the pool, cache blurred thumbnails. Each step has a counter ("Finding candidates",
-  "Loading pictures", "Comparing pixels" counting candidate pairs: compared, or settled when an
-  image leaves with a group). All candidate thumbnails are held in memory – process clusters
-  in batches of ~200.
+  4 bits; 0.9 s for 5,000 images, ~90 s for 50,000) – numpy XOR+popcount or a BK-tree. Each step
+  has a counter ("Finding candidates", "Loading pictures", "Comparing pixels" counting candidate
+  pairs: compared, or settled when an image leaves with a group). All candidate thumbnails are
+  held in memory – process clusters in batches of ~200.
+- **Pixel comparison** (`find_groups.settle`): clusters (components) are settled in threads, the
+  largest first; within one, anchors go in score order as before, and an anchor with 8+ candidates
+  is compared with them in a second thread pool. Results don't depend on timing (groups sorted by
+  keeper path); `stop` ends every thread at its next comparison after an error or Ctrl+C.
+  `image_utils.Blurred` keeps up to 32 blurred thumbnails per cluster (the blur was 6 of the
+  7.5 ms a pair took), only for pictures compared at their own size, so scores are unchanged.
+  Measured: 5-6x faster on 16 cores (bigger clusters ~1.2 ms a pair).
 - **Possible features (owner decides):** E1 folder priority (`--prefer DIR` / reference folders
   never deleted from – rated most valuable); E2 HEIC/HEIF and RAW (extensions for stage 1,
   optional `pillow-heif` for stage 3); E3 marks tied to content instead of relative paths; E4 list

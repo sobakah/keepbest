@@ -352,3 +352,51 @@ def test_the_candidate_search_finds_every_close_pair(count, bits, distance):
                 if bin(hashes[i] ^ hashes[j]).count("1") <= distance}
     assert _candidate_pairs(hashes, bits, distance) == expected
     assert count < 8 or expected
+
+
+def test_blurred_pictures_kept_give_the_same_scores(library):
+    """A picture is blurred once for all its comparisons: the scores and squares
+    are those of blurring it for each, also at another size and for 16 bits."""
+    from keepbest.image_utils import Blurred, difference_spot
+    library.photo("a.png", 7, size=(640, 480))
+    library.variant("a.png", "a.jpg", quality=80)
+    library.variant("a.png", "small.jpg", pictures.downscaled)
+    library.variant("a.png", "text.jpg", pictures.with_text)
+    gray = Image.open(library / "a.png").convert("L")
+    Image.frombytes("I;16", gray.size, bytes(b for px in gray.tobytes() for b in (0, px))).save(library / "16.png")
+    thumbs = [comparison_thumbnail(library / name, 512)
+              for name in ("a.png", "a.jpg", "small.jpg", "text.jpg", "16.png")]
+    for size in (1, 32):   # full after one picture / room for all
+        blurred = Blurred(size)
+        for a in thumbs:
+            for b in thumbs:
+                assert difference_spot(a, b, blurred) == difference_spot(a, b)
+
+
+def test_an_interrupt_stops_the_pixel_comparison_at_once(library, config_file, monkeypatch):
+    """Clusters are compared in threads: when one is interrupted, the others stop
+    at their next comparison instead of comparing everything first."""
+    from PIL import ImageDraw
+    from keepbest import core_logic
+    from keepbest.config import load_config
+    base = pictures.photo(5, (400, 400))
+    for k in range(12):   # alike to the hash, not to the pixels: 66 comparisons
+        burst = base.copy()
+        ImageDraw.Draw(burst).rectangle((k * 30, k * 30, k * 30 + 60, k * 30 + 60), fill=(255, 0, k * 20))
+        burst.save(library / f"burst {k}.png")
+    for seed in range(4):
+        library.photo(f"{seed}.png", seed + 10)
+        library.variant(f"{seed}.png", f"{seed} copy.jpg", quality=80)
+    calls = []
+
+    def interrupted(a, b, *rest):
+        calls.append(a)
+        if a[0] == 240:   # in a small cluster, while the bursts are compared
+            raise KeyboardInterrupt
+        return compare(a, b, *rest)
+    compare = core_logic.difference_spot
+    monkeypatch.setattr(core_logic, "difference_spot", interrupted)
+    config, _ = load_config(config_file.path)
+    with pytest.raises(KeyboardInterrupt):
+        core_logic.find_groups(sorted(library.path.iterdir()), config, str)
+    assert len(calls) < 20

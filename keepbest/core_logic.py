@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from collections import defaultdict
 import time
 from dataclasses import asdict, dataclass, fields
@@ -15,7 +16,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 
-from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, analyze_image,
+from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, Blurred, analyze_image,
                          aspect_ratio_close, comparison_thumbnail,
                          difference_spot, has_copy_number, ignore_sigint,
                          rename_target, score_image, sha256_file)
@@ -818,51 +819,90 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         if a in thumbs and b in thumbs:
             near[a].add(b)
             near[b].add(a)
+    counted, stop = threading.Lock(), threading.Event()
+
+    def count(amount=1):
+        with counted:
+            bar.advance(amount)
+
+    def compare(anchor, i, blurred):
+        """(score, spot) of image *i* against the anchor; None once stopped."""
+        if stop.is_set():
+            return None
+        diff, spot = difference_spot(thumbs[anchor], thumbs[i], blurred)
+        log.debug("%s vs %s: hash distance %d, pixel diff %d", metas[anchor]["path"].name, metas[i]["path"].name,
+                  _popcount(metas[anchor]["hash"] ^ metas[i]["hash"]), diff)
+        count()
+        return diff, spot
+
+    def settle(comp):
+        """Group one cluster around its best images in turn: (groups, images kept
+        out by a mark). Clusters share no image, so they are settled in parallel,
+        and a big cluster's anchor is compared with the others in parallel too."""
+        found, marked, blurred = [], set(), Blurred()
+        comp = [i for i in comp if i in thumbs]
+        comp.sort(key=lambda i: score_image(metas[i]), reverse=True)
+        while len(comp) > 1:
+            anchor, rest = comp[0], comp[1:]
+            candidates = []
+            for i in rest:
+                if ignores is not None and ignores.contains(metas[anchor], metas[i]):
+                    marked.add(i)
+                elif metas[i].get("frames", 1) > 1:
+                    # Several pictures in one file (MPO, multi-page TIFF): the others
+                    # may hold something the anchor lacks, so it is only ever kept.
+                    pass
+                # Every deleted image is checked directly against the image that is
+                # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
+                elif (_popcount(metas[anchor]["hash"] ^ metas[i]["hash"]) <= max_hash
+                      and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"])):
+                    candidates.append(i)
+            count(len(near[anchor].intersection(rest)) - len(candidates))   # those not compared
+            spread = inner.map if len(candidates) >= 8 else map
+            scores = list(spread(compare, [anchor] * len(candidates), candidates, [blurred] * len(candidates)))
+            if stop.is_set():
+                return found, marked
+            members = [(i, diff) for i, (diff, _) in zip(candidates, scores) if diff <= limit]
+            gone = {i for i, _ in members}
+            leftover = [i for i in rest if i not in gone]
+            blurred.forget(thumbs[anchor])
+            if members:
+                for i, (diff, spot) in zip(candidates, scores):
+                    if i in gone:
+                        metas[i]["spot"] = spot  # where it differs most from the anchor
+                metas[anchor]["spot"] = None
+                found.append(Group(
+                    images=[metas[anchor]] + [metas[i] for i, _ in members],
+                    diffs=[None] + [d for _, d in members],
+                    limit=limit,
+                    borderline_above=borderline_above,
+                ))
+                left = set(leftover)
+                for i in gone:
+                    blurred.forget(thumbs[i])
+                count(sum(len(near[i] & left) for i in gone) + sum(len(near[i] & gone) for i in gone) // 2)
+            comp = leftover
+        return found, marked
+
     groups: list[Group] = []
     marked_out = set()   # kept out of a group by a mark
     with progress("Comparing pixels", sum(map(len, near.values())) // 2) as bar:
-        for comp in components:
-            comp = [i for i in comp if i in thumbs]
-            comp.sort(key=lambda i: score_image(metas[i]), reverse=True)
-            while len(comp) > 1:
-                anchor, rest = comp[0], comp[1:]
-                members, leftover = [], []
-                for i in rest:
-                    if i in near[anchor]:
-                        bar.advance()
-                    if ignores is not None and ignores.contains(metas[anchor], metas[i]):
-                        marked_out.add(i)
-                        leftover.append(i)
-                        continue
-                    if metas[i].get("frames", 1) > 1:
-                        # Several pictures in one file (MPO, multi-page TIFF): the others
-                        # may hold something the anchor lacks, so it is only ever kept.
-                        leftover.append(i)
-                        continue
-                    # Every deleted image is checked directly against the image that is
-                    # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
-                    distance = _popcount(metas[anchor]["hash"] ^ metas[i]["hash"])
-                    if distance <= max_hash and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"]):
-                        diff, spot = difference_spot(thumbs[anchor], thumbs[i])
-                        log.debug("%s vs %s: hash distance %d, pixel diff %d",
-                                  metas[anchor]["path"].name, metas[i]["path"].name, distance, diff)
-                        if diff <= limit:
-                            members.append((i, diff))
-                            metas[i]["spot"] = spot  # where it differs most from the anchor
-                            continue
-                    leftover.append(i)
-                if members:
-                    metas[anchor]["spot"] = None
-                    groups.append(Group(
-                        images=[metas[anchor]] + [metas[i] for i, _ in members],
-                        diffs=[None] + [d for _, d in members],
-                        limit=limit,
-                        borderline_above=borderline_above,
-                    ))
-                    gone, left = {i for i, _ in members}, set(leftover)
-                    bar.advance(sum(len(near[i] & left) for i in gone)
-                                + sum(len(near[i] & gone) for i in gone) // 2)
-                comp = leftover
+        pool = concurrent.futures.ThreadPoolExecutor(os.cpu_count())
+        inner = concurrent.futures.ThreadPoolExecutor(os.cpu_count())
+        try:
+            # the largest first, so a big cluster doesn't start last; taken as they
+            # end, so an error or interrupt in any of them stops the others at once
+            futures = [pool.submit(settle, comp) for comp in sorted(components, key=len, reverse=True)]
+            for future in concurrent.futures.as_completed(futures):
+                found, marked = future.result()
+                groups += found
+                marked_out |= marked
+        except BaseException:
+            stop.set()   # the threads end at their next comparison
+            raise
+        finally:
+            pool.shutdown(cancel_futures=True)
+            inner.shutdown(cancel_futures=True)
 
     # Stable, predictable order: by the keeper's path.
     groups.sort(key=lambda g: str(g.images[0]["path"]).lower())
