@@ -102,7 +102,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 358 tests, ~110 s (see below for which Python)
+python3 -m pytest                 # 361 tests, ~110 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```
@@ -174,7 +174,9 @@ Both paths change when the Python version changes.
 - "Not duplicates" marks separate pairs, not groups: `find_groups` keeps a member marked against
   the anchor out of its group (it is compared with the rest again); `i0` marks #0 against the
   others and regroups them around the next one.
-- Dry runs can undo a decided group (`u` on the handled screen, `undo_decision`): `_resolve` stores
+- Dry runs can undo a decided group (`u` on the handled screen, `undo_decision`), or change it at once:
+  a file's number or `s` there returns `("change", answer)`, the review loop undoes and hands the answer
+  (a path, or "s") to `_decision_screen` as `preset`. `_resolve` stores
   the group before the decision (`Group.undo`, saved in the session) and what it added to the
   totals; undo restores both and the group is always asked again. Real runs store no undo data.
 - Before resuming a session or carrying out a dry run, every file is checked against the disk

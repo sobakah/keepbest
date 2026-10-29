@@ -246,10 +246,31 @@ def test_a_dry_run_decision_can_be_undone(one_group, run_cli):
     assert one_group.files() == ["a.png"]                      # the second choice counts
 
 
+def test_keeping_another_file_changes_a_dry_run_decision(one_group, run_cli):
+    """A decided group's Keep on another file undoes the decision and keeps that one."""
+    # start, keep #1, open group 1 in the overview, keep its #2 instead, finish, quit
+    result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "2", "", ""])
+    (handled,) = asked(result, "HandledScreen")
+    chosen = handled["group"]["images"][2]["name"]
+    assert handled["group"]["images"][handled["group"]["kept"]]["name"] == "a 95.jpg"
+    assert "Keep another file, or skip the group, to change it." in handled["note"]
+    assert summary(result)["visual"] == 2                      # counted once, not twice
+    run_cli(one_group.path, keys=["", ""])                     # carry out the saved dry run
+    assert one_group.files() == [chosen]
+
+
+def test_skipping_instead_changes_a_dry_run_decision(one_group, run_cli):
+    # start, keep #1, open group 1, skip it instead, keep the kept one (nothing changes), finish, quit
+    result = run_cli(one_group.path, "--dry-run", "-i", keys=["", "1", "1", "s", "", ""])
+    assert summary(result)["visual"] == 0 and summary(result)["skipped"] == 1
+    same = run_cli(one_group.path, "--dry-run", "-i", keys=["n", "", "1", "1", "0", "", "", ""])
+    assert "That file is the one kept already." in same.stdout
+
+
 def test_a_real_decision_offers_no_undo(one_group, run_cli):
     # start, keep #1, jump to group 1, "u" does nothing here, finish, quit
     result = run_cli(one_group.path, "-i", keys=["", "1", "1", "u", "", ""])
-    assert "Undo this decision" not in shown(result)
+    assert "Undo this decision" not in shown(result) and "Skip instead" not in shown(result)
     assert one_group.files() == ["a 95.jpg"]
 
 

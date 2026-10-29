@@ -1011,8 +1011,11 @@ def _keep_description(group: Group, delete_mode: str, rel) -> str:
     return f"{text}, {fate}"
 
 
-def _decision_screen(group: Group, position: str, config: dict, stats: Stats, rel, ctx: RunContext) -> str:
-    """Full screen for one group. Returns 'next', 'prev' or 'overview'."""
+def _decision_screen(group: Group, position: str, config: dict, stats: Stats, rel, ctx: RunContext,
+                     preset=None) -> str:
+    """Full screen for one group. Returns 'next', 'prev' or 'overview'. *preset*: the
+    answer chosen on the group's handled screen (a file's path to keep, or "s"),
+    carried out without asking."""
     count = len(group.images)
     others = "1" if count == 2 else f"1-{count - 1}"
     renamable = any(rename_target(p, group.paths) for p in group.paths)
@@ -1026,13 +1029,17 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
             resolve.append(("i0", "Only #0 is different: compare the others with each other"))
         if renamable:
             resolve.append(("n", f"Remove \"(1)\" from kept name: {'on' if group.rename else 'off'}"))
-        choice = ask(DecisionScreen(
-            prompt=f"Group {position} action: ",
-            primary=_keep_description(group, config["delete_mode"], rel),
-            menu=[("Resolve", resolve),
-                  ("Compare", [("v", "Open images in viewer")]),
-                  ("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])],
-            group=group, position=position, rel=rel))
+        number = next((n for n, m in enumerate(group.images) if m["path"] == preset), None)
+        choice = "s" if preset == "s" else None if number is None else str(number) if number else ""
+        preset = None
+        if choice is None:
+            choice = ask(DecisionScreen(
+                prompt=f"Group {position} action: ",
+                primary=_keep_description(group, config["delete_mode"], rel),
+                menu=[("Resolve", resolve),
+                      ("Compare", [("v", "Open images in viewer")]),
+                      ("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])],
+                group=group, position=position, rel=rel))
 
         if choice == "s":
             if group.status == "pending":
@@ -1154,9 +1161,10 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
         return "next"
 
 
-def _handled_screen(group: Group, position: str, rel) -> str:
+def _handled_screen(group: Group, position: str, rel):
     """A resolved or "not duplicates" group. Returns 'next', 'prev', 'overview', or
-    'undo' (only offered for a dry run's decision)."""
+    for a dry run's decision 'undo', or ('change', answer): keep another file
+    (its path) or skip the group ("s") instead, carried out after the undo."""
     can_undo = group.status == "done" and group.undo is not None
     if group.status == "ignored":
         note = ("\nMarked as not duplicates - all files were kept. Delete .keepbest_ignore.json "
@@ -1164,12 +1172,15 @@ def _handled_screen(group: Group, position: str, rel) -> str:
     else:
         kept = rel(group.images[group.kept or 0]["path"])
         if can_undo:
-            note = f"\nAlready decided in this dry run: keep {kept}, {group.removed} file(s) would be removed."
+            note = (f"\nAlready decided in this dry run: keep {kept}, {group.removed} file(s) would be removed. "
+                    f"Keep another file, or skip the group, to change it.")
         else:
             note = f"\nAlready handled: kept {kept}, {group.removed} file(s) removed."
     menu = [("Navigate", [("p", "Previous open group"), ("t", "Groups overview"), ("q", "Quit")])]
+    count = len(group.images)
     if can_undo:
-        menu.insert(0, ("Change", [("u", "Undo this decision and choose again")]))
+        menu.insert(0, ("Change", [(f"0-{count - 1}", "Keep that file instead"), ("s", "Skip instead, keep all files"),
+                                   ("u", "Undo this decision and choose again")]))
     screen = HandledScreen(prompt=f"Group {position} action: ", primary="Continue", menu=menu,
                            group=group, position=position, rel=rel, note=note)
     again = False
@@ -1180,6 +1191,13 @@ def _handled_screen(group: Group, position: str, rel) -> str:
             raise UserQuit
         if choice == "u" and can_undo:
             return "undo"
+        if can_undo and choice == "s":
+            return "change", "s"
+        if can_undo and choice.isdigit() and int(choice) < count:
+            if int(choice) == (group.kept or 0):
+                dim("That file is the one kept already.")
+                continue
+            return "change", group.images[int(choice)]["path"]
         if choice in ("", "p", "t"):
             return {"p": "prev", "t": "overview"}.get(choice, "next")
         warn("Unknown option.")
@@ -1218,6 +1236,7 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
     revisit = start > 0    # arrived via overview/prev/resume: show handled groups too
     interactive = False    # at least one decision screen was shown
     reopened = set()       # undone decisions: always asked again, never resolved automatically
+    preset = None          # a changed decision's new answer, for the decision screen
 
     while True:
         if index >= total:
@@ -1256,10 +1275,17 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
         else:
             interactive = True
             ctx.save(groups, index)
-            navigation = _decision_screen(group, position, config, stats, rel, ctx)
+            navigation = _decision_screen(group, position, config, stats, rel, ctx, preset)
+            preset = None
 
         revisit = False
-        if navigation == "undo":
+        if isinstance(navigation, tuple):   # changed on its handled screen: undo, then the new answer
+            undo_decision(group, stats, ctx)
+            reopened.add(index)
+            preset = navigation[1]
+            ctx.save(groups, index)
+            revisit = True
+        elif navigation == "undo":
             undo_decision(group, stats, ctx)
             reopened.add(index)
             ctx.save(groups, index)

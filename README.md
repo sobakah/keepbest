@@ -96,7 +96,7 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By def
 | `n` | Remove "(1)" from the kept name: on/off for this group |
 | `v` | Open the images in the viewer (see [Viewers](#viewers)) |
 | `p` / `t` | Previous open group / overview of all groups |
-| `u` | Dry runs only: undo the decision of a group you already decided, and choose again. Open the group from the overview (`t`, then its number); its images, including any a chosen file had left out, come back. Real runs can't undo: trashed files are restored from the system trash (the log has their paths). |
+| `u` | Dry runs only: a group you already decided can still change. Open it from the overview (`t`, then its number) and keep another file with its *Keep* button (or its number), or skip it instead (`s`); `u` undoes the decision and asks again, for the other choices (a key only, the page has no button for it). Its images, including any a chosen file had left out, come back. Real runs can't change a decision: trashed files are restored from the system trash (the log has their paths). |
 | `q` | Quit (asks whether to keep your progress) |
 
 In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing.

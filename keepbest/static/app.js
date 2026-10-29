@@ -636,10 +636,16 @@ function GroupScreen({ question, answer, sending }) {
     </article>`;
   };
   // Keeping a file, and marking one as no duplicate: on its card, in its table row and in the flip view.
-  // The recommended file (#0) is kept with Enter; its border marks it.
-  const keepButton = (i) => decision && html`<button class="btn btn-primary btn-small" disabled=${sending}
-    title=${i === 0 ? 'Keep this file and remove the others (Key: Enter)' : `Keep this file instead (Key: ${i})`}
-    onClick=${() => answer(i === 0 ? '' : String(i))}>Keep${i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>`;
+  // The recommended file (#0) is kept with Enter; its border marks it. A dry run's decided group
+  // (it offers "u") changes with another file's Keep, so it needs no Undo button.
+  const changeable = !decision && q.keys.includes('u');
+  const keepButton = (i) => {
+    if (changeable && i === keepIndex) return html`<button class="btn btn-primary btn-small" disabled>Kept</button>`;
+    return (decision || changeable) && html`<button class="btn btn-primary btn-small" disabled=${sending}
+      title=${decision && i === 0 ? 'Keep this file and remove the others (Key: Enter)'
+        : `Keep this file instead${changeable ? ': the decision changes' : ''} (Key: ${i})`}
+      onClick=${() => answer(decision && i === 0 ? '' : String(i))}>Keep${decision && i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>`;
+  };
   const choices = (i) => html`${keepButton(i)}${decision && i > 0 && q.keys.includes('i' + i) && html`<button
     class="btn btn-small" disabled=${sending} title=${keyTitle('i' + i)} onClick=${() => answer('i' + i)}>Not a duplicate</button>`}`;
   const tableActions = (i, opener) => html`${choices(i)}<${FileActions} id=${g.images[i].file} ...${opener} />`;
@@ -703,7 +709,8 @@ function GroupScreen({ question, answer, sending }) {
       <${VisualTable} group=${g} keepIndex=${keepIndex} done=${!decision && g.status === 'done'} actions=${tableActions} /></details>`}
     ${q.note && html`<p class="line">${q.note}</p>`}
     ${decision ? html`<${EnterHint} question=${q} />` : html`<${Primary} question=${q} answer=${answer} sending=${sending} />`}
-    <${Menu} question=${q} answer=${answer} sending=${sending} skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k)} />
+    <${Menu} question=${q} answer=${answer} sending=${sending}
+      skip=${(k) => /^\d+(-\d+)?$/.test(k) || /^i\d+-i\d+$/.test(k) || (changeable && k === 'u')} />
   </div>`;
 }
 
