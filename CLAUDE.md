@@ -327,8 +327,8 @@ next to it). Mockup: https://claude.ai/artifact/U7avKy8pezpVzCakGEevQc.
 
 1.0.0 (2026-10-27) is the first release, 1.0.1 (2026-10-29) shows media-optimizer's numbers, 1.1.0
 (2026-10-29) opens saved dry runs instead of carrying them out, Keep buttons, faster stage 3, 1.1.1
-(2026-10-29) looks for updates at every start; 0.5.1 (img_dedupe) and 0.6.0 (terminal screens) are
-pre-releases kept for the record. New changes go under
+(2026-10-29) looks for updates at every start, 1.1.2 (2026-10-30) has a new icon; 0.5.1 (img_dedupe)
+and 0.6.0 (terminal screens) are pre-releases kept for the record. New changes go under
 an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
 
 - **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
@@ -361,6 +361,6 @@ an `## [Unreleased]` heading at the top of `CHANGELOG.md`.
   files with damaged EXIF (Pillow's "Truncated File Read" names no file); E5 log rotation, cleanup of
   old sessions (the lock against two instances is done, `running.py`); E6 README `curl` command to fetch
   `config.example.json` for pipx users.
-- **Next release:** raise `__version__` (1.2.0 for behaviour changes, else 1.1.2) before
+- **Next release:** raise `__version__` (1.2.0 for behaviour changes, else 1.1.3) before
   tagging, turn "Unreleased" into that version in `CHANGELOG.md`, tests, commit, `git tag -a`,
   push with tags, GitHub release.
