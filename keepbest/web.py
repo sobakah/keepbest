@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import sys
 import threading
 import time
@@ -72,7 +73,7 @@ MAX_FOLDER_ENTRIES = 500
 PROGRESS_INTERVAL = 0.2
 # Longest side of a preview: for the group view, and for zooming in.
 PREVIEW_SIZES = {"thumb": 480, "screen": 1200, "zoom": 3000}
-# Bytes of a video sent per request at most; the player asks for the rest in ranges.
+# Bytes of a video sent per range at most; the player asks for the next ones.
 MEDIA_CHUNK = 4 * 1024 * 1024
 PREVIEW_CACHE = 40
 # Lines of a tool's output the page keeps.
@@ -829,13 +830,16 @@ class _Handler(BaseHTTPRequestHandler):
         return data
 
     def _send(self, status: int, body: bytes, content_type: str, headers: dict | None = None) -> None:
+        self._send_head(status, len(body), content_type, headers)
+        self.wfile.write(body)
+
+    def _send_head(self, status: int, length: int, content_type: str, headers: dict | None = None) -> None:
         self.send_response(status)
-        for name, value in {"Content-Type": content_type, "Content-Length": str(len(body)),
+        for name, value in {"Content-Type": content_type, "Content-Length": str(length),
                             "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                             "Referrer-Policy": "no-referrer", **(headers or {})}.items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(body)
 
     def _send_json(self, status: int, data) -> None:
         # File names that aren't valid UTF-8 keep their \udcXX escapes as JSON escapes.
@@ -900,7 +904,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(500, {"error": f"Internal error: {exc}"})
 
     def _media(self, path: Path) -> None:
-        """A video for the browser's player, in the byte ranges it asks for."""
+        """A video for the browser's player, in the byte ranges it asks for. A
+        request for no range (a download) gets all of it."""
         size = path.stat().st_size
         start, end, status = 0, size - 1, 200
         match = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "").strip())
@@ -914,16 +919,16 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(416, b"", "text/plain", {"Content-Range": f"bytes */{size}"})
                 return
             status = 206
-        end = min(end, start + MEDIA_CHUNK - 1)
-        with open(path, "rb") as handle:
-            handle.seek(start)
-            data = handle.read(end - start + 1)
         headers = {"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=600"}
-        if status == 206:
-            headers["Content-Range"] = f"bytes {start}-{start + len(data) - 1}/{size}"
-        elif len(data) < size:  # too big for one answer: send the start as a range
-            status, headers["Content-Range"] = 206, f"bytes 0-{len(data) - 1}/{size}"
-        self._send(status, data, _video_type(path), headers)
+        with open(path, "rb") as handle:
+            if status == 200:
+                self._send_head(200, size, _video_type(path), headers)
+                shutil.copyfileobj(handle, self.wfile, MEDIA_CHUNK)
+                return
+            handle.seek(start)
+            data = handle.read(min(end - start + 1, MEDIA_CHUNK))
+        headers["Content-Range"] = f"bytes {start}-{start + len(data) - 1}/{size}"
+        self._send(206, data, _video_type(path), headers)
 
     def _index(self, query: str) -> None:
         given = (parse_qs(query).get("token") or [""])[0]

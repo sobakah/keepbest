@@ -615,6 +615,26 @@ def test_the_command_line_starts_the_page(library, config_file, tmp_path):
     assert library.files() == ["a.png"]
 
 
+def test_a_big_video_without_a_range_comes_whole(library, serve, monkeypatch):
+    """A download asks for no range; a short answer would be saved as a short file."""
+    monkeypatch.setattr(web, "MEDIA_CHUNK", 50)
+    visual_pair(library)
+    video = library / "big.mp4"
+    video.write_bytes(bytes(range(256)) * 2)
+    page, result = serve(library.path)
+    page.question()
+    url = f"{page.base}/api/file/{front._front.file_id(video)}"
+    with page.opener.open(url) as answer:
+        assert answer.status == 200 and answer.headers["Content-Range"] is None
+        assert answer.read() == video.read_bytes()
+    request = urllib.request.Request(url, headers={"Range": "bytes=0-"})     # a player gets it in pieces
+    with page.opener.open(request) as answer:
+        assert answer.status == 206 and answer.headers["Content-Range"] == "bytes 0-49/512"
+        assert answer.read() == video.read_bytes()[:50]
+    page.post("/api/close")
+    result["thread"].join(timeout=10)
+
+
 @pytest.fixture
 def cli_page(config_file):
     """keepbest --web as a separate process (needed where it sets signal handlers,
