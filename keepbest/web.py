@@ -50,7 +50,7 @@ _CONTENT_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
-    ".svg": "image/svg+xml",  # keepbest's own icon only
+    ".svg": "image/svg+xml",  # keepbest's own icon and logo only
 }
 _CSP = ("default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; "
         "frame-ancestors 'none'; form-action 'none'")
@@ -856,7 +856,7 @@ class _Handler(BaseHTTPRequestHandler):
             if not self._authorized():
                 raise ApiError(403, f"Open {NAME} through the address it printed in the terminal.")
             if method == "GET" and url.path == "/favicon.ico":  # asked for by a tab with a picture
-                self._static("icon.svg")
+                self._static("logo.svg")
                 return
             if method == "GET" and url.path.startswith("/static/"):
                 self._static(url.path[len("/static/"):])

@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The page has a new look, shared with lyrembed and cdimport**, in libadwaita's design language, as
+  in picktag: a header with the steps in the middle (an icon for each, no numbers) and a green accent,
+  settings as rows with switches, softer buttons with icons, floating messages. It follows the
+  system's light or dark style; pictures stay on a dark ground in both.
+- A small logo for the header and the browser tab. The full icon stays in the app menu and appears
+  when a run has finished.
 - Ctrl+C in the terminal while media-optimizer's page has the tab ends keepbest too, within seconds.
   It used to wait half a minute for a tab left on a page that was gone.
 - The start screen says when `--exclude` differs from a saved session's folders, which the session

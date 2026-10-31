@@ -3,6 +3,7 @@
 // go back to /api/answer as the keys of the screen's choices, which are also
 // its keyboard shortcuts. File names are only ever text.
 import { html, render, useState, useEffect, useRef } from '/static/vendor/preact-htm.js';
+import { Icon } from '/static/icons.js';
 
 async function api(path, body) {
   const options = {};
@@ -22,13 +23,24 @@ async function api(path, body) {
   return data;
 }
 
-const STEPS = [['settings', 'Settings'], ['1', '1 Identical'], ['2', '2 Remux'], ['3', '3 Visual'], ['summary', 'Summary']];
-const OPTIMIZE_STEP = ['optimize', 'media-optimizer'];  // shown once it was started from the end menu
-const MODES = { trash: ['TRASH', 'b-keep'], dry_run: ['DRY RUN', 'b-plain'], permanent: ['PERMANENT', 'b-danger'] };
-const STATUS = { done: ['DONE', 'b-ok'], skipped: ['SKIPPED', 'b-borderline'], ignored: ['NOT DUP', 'b-notdup'],
-  pending: ['OPEN', 'b-plain'] };
+const STEPS = [['settings', 'Settings', 'settings'], ['1', 'Identical', 'layers'], ['2', 'Remux', 'film'],
+  ['3', 'Visual', 'image'], ['summary', 'Summary', 'flag']];
+const OPTIMIZE_STEP = ['optimize', 'media-optimizer', 'tools'];  // shown once it was started from the end menu
+const STEP_ICONS = Object.fromEntries([...STEPS, OPTIMIZE_STEP].map(([id, , icon]) => [id, icon]));
+const MODES = { trash: ['Trash', 'b-keep'], dry_run: ['Dry run', 'b-plain'], permanent: ['Permanent', 'b-danger'] };
+const STATUS = { done: ['Done', 'b-ok'], skipped: ['Skipped', 'b-borderline'], ignored: ['Not duplicates', 'b-notdup'],
+  pending: ['Open', 'b-plain'] };
 const MARKS = { success: '✓', warn: '!', error: '✗' };
 const URL_PATTERN = /https?:\/\/[^\s)\]]*[^\s)\].,;:!?'"]/g;
+
+// An icon of the shared set, or the film strip, which only the two media programs need.
+function StepIcon({ name, size = 14 }) {
+  if (name !== 'film') return html`<${Icon} name=${name} size=${size} />`;
+  return html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect>
+    <path d="M7 3v18"></path><path d="M17 3v18"></path><path d="M3 12h18"></path><path d="M3 7.5h4"></path>
+    <path d="M3 16.5h4"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>`;
+}
 
 // The step a banner starts: "Stage 2 · Remuxed videos" is step 2; "Next ·
 // media-optimizer" (app.OPTIMIZER_BANNER) is the program started afterwards.
@@ -58,7 +70,7 @@ const Mode = ({ mode }) => {
   return html`<span class=${'badge ' + cls}>${text}</span>`;
 };
 const Verdict = ({ borderline }) => (borderline
-  ? html`<span class="badge b-borderline">BORDERLINE</span>` : html`<span class="badge b-ok">CONFIDENT</span>`);
+  ? html`<span class="badge b-borderline">Borderline</span>` : html`<span class="badge b-ok">Confident</span>`);
 const Key = ({ k }) => (k === '' ? html`<kbd>Enter</kbd>` : html`<kbd>${k}</kbd>`);
 
 // Key badges are only shown for Enter and the numbers that keep another file.
@@ -90,11 +102,11 @@ function FileActions({ id, video = false, open = false, onToggle = null, noOpen 
   return html`<span class="file-actions">
     ${noOpen ? null : onToggle
       ? html`<button class="btn btn-small" aria-pressed=${open} onClick=${toggle}
-          title=${video ? (open ? 'Hide the player' : 'Play it below') : (open ? 'Hide the picture' : 'Show the picture below')}>${
-            open ? 'Hide' : 'Open'}</button>`
+          title=${video ? (open ? 'Hide the player' : 'Play it below') : (open ? 'Hide the picture' : 'Show the picture below')}>
+          <${Icon} name=${open ? 'x' : 'image'} size=${14} /> ${open ? 'Hide' : 'Open'}</button>`
       : html`<a class="btn btn-small" href=${`/api/file/${encodeURIComponent(id)}`} target="_blank" rel="noopener"
-          title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}>Open</a>`}
-    <button class="btn btn-small" onClick=${reveal} title="Open its folder in the file manager">Show in folder</button>
+          title=${video ? 'Play it in a new tab' : 'Open it in a new tab'}><${Icon} name="link" size=${14} /> Open</a>`}
+    <button class="btn btn-small" onClick=${reveal} title="Open its folder in the file manager"><${Icon} name="folder" size=${14} /> Show in folder</button>
     ${note && html`<span class="small k-error">${note}</span>`}
   </span>`;
 }
@@ -160,7 +172,7 @@ function VisualTable({ group, keepIndex = 0, done = false, actions = null }) {
       <th class="num">Size</th><th class="num">BPP</th><th class="num">Diff</th><th></th></tr></thead>
     <tbody>${group.images.map((image, i) => {
       const kept = i === keepIndex;
-      const badge = done ? (kept ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : (kept ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove']);
+      const badge = done ? (kept ? ['Kept', 'b-keep'] : ['Gone', 'b-gone']) : (kept ? ['Keep', 'b-keep'] : ['Remove', 'b-remove']);
       const hot = image.diff !== null && image.diff > group.borderlineAbove;
       return html`<tr class=${kept ? 'kept' : ''} key=${i}>
         <td class="mono">${i}</td><td><span class=${'badge ' + badge[1]}>${badge[0]}</span></td>
@@ -188,7 +200,7 @@ function ExactTable({ group, keepIndex = 0 }) {
     <tbody>${group.files.map((file, i) => {
       const kept = keepIndex === null || i === keepIndex;
       return html`<tr class=${i === keepIndex ? 'kept' : ''} key=${i}>
-        <td class="mono">${i}</td><td><span class=${'badge ' + (kept ? 'b-keep' : 'b-remove')}>${kept ? 'KEEP' : 'REMOVE'}</span></td>
+        <td class="mono">${i}</td><td><span class=${'badge ' + (kept ? 'b-keep' : 'b-remove')}>${kept ? 'Keep' : 'Remove'}</span></td>
         <td class="file">${file.name}</td>
         ${remux && html`<td class="num">${file.size}</td><td class="small muted">${file.streams}</td>`}
         <td class="actions"><div class="cell-actions"><${FileActions} id=${file.file} video=${remux || file.video}
@@ -256,7 +268,7 @@ function Tool({ event }) {
   return html`<div class="tool">
     <div class="row tool-head"><b>${event.name}</b><span class="mono small muted">${event.command}</span>${status}
       ${event.running && html`<button class="btn btn-small push" disabled=${stopping} onClick=${stop}>
-        ${stopping ? 'Stopping…' : `Stop ${event.name}`}</button>`}</div>
+        <${Icon} name="stop" size=${14} /> ${stopping ? 'Stopping…' : `Stop ${event.name}`}</button>`}</div>
     ${event.handoff && event.running && html`<p class="line">${event.url
       ? html`It asks for its settings and shows the run on its page. <a href=${event.url}>Go to ${event.name}'s page</a>; it leads back here when done.`
       : 'Starting its page…'}</p>`}
@@ -280,9 +292,9 @@ function Item({ event }) {
         <span class="name">${event.name}</span></p>`;
     case 'exact_heading':
       return html`<h3 class="group-head"><span class="mono">[${event.number}/${event.total}]</span>
-        <span class=${'badge ' + (event.groupKind === 'remux' ? 'b-keep' : 'b-notdup')}>${event.groupKind === 'remux' ? 'REMUX' : 'IDENTICAL'}</span>
-        ${event.tracks === 'reordered' && html`<span class="badge b-borderline">TRACK ORDER</span>`}
-        ${event.tracks && event.tracks !== 'reordered' && event.tracks !== 'same' && html`<span class="badge b-borderline">TRACKS DIFFER</span>`}
+        <span class=${'badge ' + (event.groupKind === 'remux' ? 'b-keep' : 'b-notdup')}>${event.groupKind === 'remux' ? 'Remux' : 'Identical'}</span>
+        ${event.tracks === 'reordered' && html`<span class="badge b-borderline">Track order</span>`}
+        ${event.tracks && event.tracks !== 'reordered' && event.tracks !== 'same' && html`<span class="badge b-borderline">Tracks differ</span>`}
         <span class="muted">${event.count} files · ${event.groupKind === 'remux' ? 'same video stream in different containers' : `${event.size} each`}</span></h3>`;
     case 'exact_table':
       return html`<${ExactTable} group=${event.group} keepIndex=${event.keepIndex} />`;
@@ -343,7 +355,7 @@ function Menu({ question, answer, sending, skip = () => false }) {
 function Primary({ question, answer, sending, danger = false }) {
   if (!question.primary) return null;
   return html`<div><button class=${'btn ' + (danger ? 'btn-danger' : 'btn-primary')} disabled=${sending}
-    onClick=${() => answer('')}>${question.primary} <kbd>Enter</kbd></button></div>`;
+    onClick=${() => answer('')}><${Icon} name="check" /> ${question.primary} <kbd>Enter</kbd></button></div>`;
 }
 
 // A key's label in the screen's menu.
@@ -359,13 +371,13 @@ function EnterHint({ question }) {
 }
 
 function SettingRow({ row, set, sending }) {
-  if (row.type === 'note') return html`<p class=${'note' + (row.style === 'hint' ? ' hint' : '')}>${row.text}</p>`;
+  if (row.type === 'note') return html`<p class=${'setting-note' + (row.style === 'hint' ? ' hint' : '')}>${row.text}</p>`;
   if (row.type === 'folders') {
     const subs = row.chosen === row.total ? `all ${row.total} subfolders` : `${row.chosen} of ${row.total} subfolders`;
     return html`<div class="setting"><div class="label">${row.label}</div>
       <div class="value"><span>${row.mainOn ? 'main folder' : html`<span class="k-warn">main folder excluded</span>`} + ${subs}</span>
         <button class="btn btn-small" disabled=${sending} title=${keyTitle(row.key)} onClick=${() => set(row.key)}>
-          <${Label} text="Choose folders" k=${row.key} /></button></div></div>`;
+          <${Icon} name="folder" size=${14} /><${Label} text="Choose folders" k=${row.key} /></button></div></div>`;
   }
   const locked = row.locked !== null && row.locked !== undefined;
   return html`<div class=${'setting' + (locked ? ' locked' : '')}>
@@ -384,7 +396,7 @@ function SettingRow({ row, set, sending }) {
 
 function Panel({ panel }) {
   const kind = panel.dry ? 'Dry run' : 'Session';
-  return html`<div class="panel">
+  return html`<div class="note note-info">
     <b>Saved ${kind.toLowerCase()} from ${panel.when}</b> ·
     ${panel.finished
       ? ` finished: ${panel.groups} group(s), ${panel.to_remove} file(s) to remove, ${panel.to_rename} to rename`
@@ -400,23 +412,23 @@ function StartForm({ question, answer, sending }) {
     <dl class="facts">
       <dt>Folder</dt><dd class="row"><span class="mono" title=${q.target}>${q.targetShort}</span>
         <button class="btn btn-small" disabled=${sending} title=${keyTitle('c')} onClick=${() => answer('c')}>
-          <${Label} text="Change directory" k="c" /></button></dd>
+          <${Icon} name="folder" size=${14} /><${Label} text="Change directory" k="c" /></button></dd>
       <dt>Files</dt><dd><b>${q.inScope}</b> in scope <span class="muted">(${q.inScope - q.scopeVideos} images, ${q.scopeVideos} videos)</span>
         ${q.moreInSubfolders > 0 && html` <span class="muted">· ${q.moreInSubfolders} more in subfolders</span>`}</dd>
     </dl>
     ${q.panel && html`<${Panel} panel=${q.panel} />`}
-    <div class="settings">
-      <div class="row" style=${{ paddingBottom: '6px' }}><h2>Settings</h2><${Mode} mode=${q.mode} /></div>
-      ${q.rows.map((row, i) => html`<${SettingRow} key=${i} row=${row} set=${set} sending=${sending} />`)}
+    <div>
+      <div class="row settings-head"><h2>Settings</h2><${Mode} mode=${q.mode} /></div>
+      <div class="settings">${q.rows.map((row, i) => html`<${SettingRow} key=${i} row=${row} set=${set} sending=${sending} />`)}</div>
     </div>
-    ${q.blocked && html`<p class="alert">${q.blocked}</p>`}
-    ${!q.blocked && !q.primary && q.nothingToScan && html`<p class="alert">Fewer than two files in scope - nothing to compare.</p>`}
+    ${q.blocked && html`<p class="note note-warn">${q.blocked}</p>`}
+    ${!q.blocked && !q.primary && q.nothingToScan && html`<p class="note note-warn">Fewer than two files in scope - nothing to compare.</p>`}
     <div class="row">
       <${Primary} question=${q} answer=${answer} sending=${sending} />
       ${q.keys.includes('a') && html`<button class="btn btn-danger" disabled=${sending} title=${keyTitle('a')} onClick=${() => answer('a')}>
-        ${labelOf(q, 'a')}…</button>`}
+        <${Icon} name="trash" /> ${labelOf(q, 'a')}…</button>`}
       ${q.keys.includes('n') && html`<button class="btn" disabled=${sending} title=${keyTitle('n')} onClick=${() => answer('n')}>
-        Start over: discard the session</button>`}
+        <${Icon} name="undo" /> Start over: discard the session</button>`}
     </div>
   </div>`;
 }
@@ -444,8 +456,9 @@ function FolderTree({ question, answer, sending }) {
   const toggle = (rel) => { if (opened.has(rel)) opened.delete(rel); else opened.add(rel); redraw((n) => n + 1); };
   return html`<div class="stack">
     <p class="muted">A folder you switch off loses only its own files; you are asked whether the folders below it change too.</p>
-    <label class="switch" title=${keyTitle('m')}><input type="checkbox" checked=${q.header.main_on} disabled=${sending} onChange=${() => answer('m')} />
-      <span style=${{ flex: '1 1 auto' }}><b><${Label} text="Main folder" k="m" /></b> <span class="muted">· ${q.header.files_text}</span></span></label>
+    <label class="switch-row" title=${keyTitle('m')}>
+      <span><b><${Label} text="Main folder" k="m" /></b> <span class="muted">· ${q.header.files_text}</span></span>
+      <input class="switch" type="checkbox" checked=${q.header.main_on} disabled=${sending} onChange=${() => answer('m')} /></label>
     <div class="row"><span class="small muted">Subfolders</span>
       <button class="btn btn-small" disabled=${sending} title=${keyTitle('a')} onClick=${() => answer('a')}><${Label} text="All" k="a" /></button>
       <button class="btn btn-small" disabled=${sending} title=${keyTitle('n')} onClick=${() => answer('n')}><${Label} text="None" k="n" /></button></div>
@@ -457,10 +470,10 @@ function FolderTree({ question, answer, sending }) {
         <div class="tree-row" style=${{ paddingLeft: `${4 + e.depth * 26}px` }}>
           ${hasChildren[i]
             ? html`<button class="twisty" aria-expanded=${open} aria-label=${(open ? 'Close ' : 'Open ') + e.name}
-                onClick=${(ev) => { toggle(e.rel); ev.currentTarget.blur(); }}>${open ? '▾' : '▸'}</button>`
+                onClick=${(ev) => { toggle(e.rel); ev.currentTarget.blur(); }}><${Icon} name="right" /></button>`
             : html`<span class="twisty"></span>`}
           <label><input type="checkbox" checked=${e.on} disabled=${sending} onChange=${() => answer(e.key)} />
-            <span class="name">${e.name}/</span>
+            <span class="name">${e.name}</span>
             ${hidden > 0 && html`<span class="small k-warn">${hidden} below off</span>`}
             <span class="amount">${e.amount}</span></label></div></li>`;
     })}</ul>
@@ -500,22 +513,22 @@ function FolderPicker({ question, answer, sending }) {
     <form onSubmit=${(e) => { e.preventDefault(); open(typed); }}>
       <label class="small muted" for="folder-path" style=${{ flexBasis: '100%' }}>Folder</label>
       <input id="folder-path" type="text" value=${typed} spellcheck="false" onInput=${(e) => setTyped(e.target.value)} />
-      <button class="btn" type="submit" disabled=${sending}>Go</button>
+      <button class="btn" type="submit" disabled=${sending}><${Icon} name="right" /> Go</button>
     </form>
     ${error && html`<p class="line k-error"><span class="mark">✗</span>${error}</p>`}
     ${listing && html`<div class="stack-tight">
       <div class="row">
-        <button class="btn btn-small" disabled=${!listing.parent} onClick=${() => open(listing.parent)}>Up</button>
-        <button class="btn btn-small" onClick=${() => open(listing.pictures)}>Pictures</button>
+        <button class="btn btn-small" disabled=${!listing.parent} onClick=${() => open(listing.parent)}><${Icon} name="up" size=${14} /> Up</button>
+        <button class="btn btn-small" onClick=${() => open(listing.pictures)}><${Icon} name="image" size=${14} /> Pictures</button>
         <span class="small muted">${listing.mediaFiles} picture/video file(s) directly in this folder</span>
       </div>
       <ul class="dirs">${listing.dirs.map((d) => html`<li key=${d.path}><button disabled=${sending} onClick=${() => open(d.path)}>
-        <span>${d.name}/</span>${d.protected && html`<span class="small">not scanned</span>`}</button></li>`)}
+        <span class="row"><${Icon} name="folder" /> ${d.name}</span>${d.protected && html`<span class="small">not scanned</span>`}</button></li>`)}
         ${!listing.dirs.length && html`<li class="muted small" style=${{ padding: '9px 14px' }}>No subfolders.</li>`}</ul>
       ${listing.truncated && html`<p class="small muted">Only the first folders are listed; type a path to go further.</p>`}
       <div class="row">
         <button class="btn btn-primary" disabled=${sending || listing.protected} onClick=${() => choose(listing.path)}>
-          Scan this folder</button>
+          <${Icon} name="search" /> Scan this folder</button>
         ${listing.protected && html`<span class="small muted">The home folder, the folders above it and system folders are not scanned.</span>`}
         ${question.prompt.includes('empty to cancel') && html`<button class="btn" disabled=${sending} onClick=${keep}>Keep the current folder</button>`}
       </div>
@@ -622,8 +635,8 @@ function GroupScreen({ question, answer, sending }) {
     return () => removeEventListener('keydown', handler);
   }, []);
 
-  const badgeOf = (i) => (decision ? (i === keepIndex ? ['KEEP', 'b-keep'] : ['REMOVE', 'b-remove'])
-    : g.status === 'done' ? (i === keepIndex ? ['KEPT', 'b-keep'] : ['GONE', 'b-gone']) : ['KEPT', 'b-keep']);
+  const badgeOf = (i) => (decision ? (i === keepIndex ? ['Keep', 'b-keep'] : ['Remove', 'b-remove'])
+    : g.status === 'done' ? (i === keepIndex ? ['Kept', 'b-keep'] : ['Gone', 'b-gone']) : ['Kept', 'b-keep']);
   const diffText = (image) => (image.diff === null ? 'kept' : `diff ${image.diff}`);
   const hot = (image) => image.diff !== null && image.diff > g.borderlineAbove;
 
@@ -646,14 +659,14 @@ function GroupScreen({ question, answer, sending }) {
   // (it offers "u") changes with another file's Keep, so it needs no Undo button.
   const changeable = !decision && q.keys.includes('u');
   const keepButton = (i) => {
-    if (changeable && i === keepIndex) return html`<button class="btn btn-primary btn-small" disabled>Kept</button>`;
+    if (changeable && i === keepIndex) return html`<button class="btn btn-primary btn-small" disabled><${Icon} name="check" size=${14} /> Kept</button>`;
     return (decision || changeable) && html`<button class="btn btn-primary btn-small" disabled=${sending}
       title=${decision && i === 0 ? 'Keep this file and remove the others (Key: Enter)'
         : `Keep this file instead${changeable ? ': the decision changes' : ''} (Key: ${i})`}
-      onClick=${() => answer(decision && i === 0 ? '' : String(i))}>Keep${decision && i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>`;
+      onClick=${() => answer(decision && i === 0 ? '' : String(i))}><${Icon} name="check" size=${14} /> Keep${decision && i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>`;
   };
   const choices = (i) => html`${keepButton(i)}${decision && i > 0 && q.keys.includes('i' + i) && html`<button
-    class="btn btn-small" disabled=${sending} title=${keyTitle('i' + i)} onClick=${() => answer('i' + i)}>Not a duplicate</button>`}`;
+    class="btn btn-small" disabled=${sending} title=${keyTitle('i' + i)} onClick=${() => answer('i' + i)}><${Icon} name="x" size=${14} /> Not a duplicate</button>`}`;
   const tableActions = (i, opener) => html`${choices(i)}<${FileActions} id=${g.images[i].file} ...${opener} />`;
 
   const shown = flipShowOther ? flipOther : keepIndex;
@@ -661,16 +674,16 @@ function GroupScreen({ question, answer, sending }) {
   return html`<div class="stack">
     <nav class="crumbs" aria-label="Where you are">
       ${q.keys.includes('t') && html`<button class="btn btn-small" disabled=${sending} title="Key: t"
-        onClick=${() => answer('t')}>‹ Groups overview</button><span class="muted" aria-hidden="true">›</span>`}
+        onClick=${() => answer('t')}><${Icon} name="left" size=${14} /> Groups overview</button>`}
       <b>Group ${number} of ${total}</b></nav>
     <div class="row"><${Verdict} borderline=${g.borderline} />
       <span class="muted">worst difference <b class="mono">${g.worst}</b> of ${g.limit} allowed (0 = pixel-identical)</span>
-      ${g.status === 'skipped' && decision && html`<span class="badge b-borderline">SKIPPED EARLIER</span>`}</div>
+      ${g.status === 'skipped' && decision && html`<span class="badge b-borderline">Skipped earlier</span>`}</div>
 
     <${Why} group=${g} keepIndex=${keepIndex} decided=${!decision && g.status === 'done'} />
 
     <div class="toolbar">
-      <label class="row small switch-inline"><input type="checkbox" checked=${pictures} onChange=${view_(togglePictures)} />
+      <label class="small switch-inline"><input class="switch" type="checkbox" checked=${pictures} onChange=${view_(togglePictures)} />
         Show pictures</label>
       ${pictures && html`<div class="segmented" role="group" aria-label="Layout">
         <button aria-pressed=${layout === 'side'} class=${layout === 'side' ? 'on' : ''} onClick=${view_(() => chooseLayout('side'))}>Side by side</button>
@@ -681,8 +694,8 @@ function GroupScreen({ question, answer, sending }) {
         ${ZOOMS.map((z) => html`<button key=${z} class=${'zoom' + (view.z === z ? ' on' : '')} aria-pressed=${view.z === z}
           onClick=${view_(() => zoomTo(z))}>${z === 1 ? 'Fit' : `${z}×`}</button>`)}
       </div>
-      ${g.spot && html`<button class="btn btn-small spot-button" onClick=${view_(toSpot)}>Go to the most different square</button>`}
-      ${g.spot && html`<label class="row small"><input type="checkbox" checked=${outline} onChange=${view_(toggleOutline)} /> Outline it</label>`}
+      ${g.spot && html`<button class="btn btn-small" onClick=${view_(toSpot)}><${Icon} name="search" size=${14} /> Go to the most different square</button>`}
+      ${g.spot && html`<label class="small switch-inline"><input class="switch" type="checkbox" checked=${outline} onChange=${view_(toggleOutline)} /> Outline it</label>`}
       <span class="small muted push">Drag to move · + and - zoom${layout === 'flip' ? ' · Space flips' : ''}</span>`}
     </div>
 
@@ -750,14 +763,14 @@ function RemuxView({ question, answer, sending }) {
   const [player, setPlayer] = useState(prefs.pictures);
   const togglePlayer = (e) => { prefs.pictures = !player; setPlayer(!player); e.currentTarget.blur(); };
   return html`<div class="stack">
-    <div class="row"><span class="mono">[${q.number}/${q.total}]</span><span class="badge b-keep">REMUX</span>
-      ${g.tracks === 'reordered' && html`<span class="badge b-borderline">TRACK ORDER</span>`}
-      ${g.tracks === 'differ' && html`<span class="badge b-borderline">TRACKS DIFFER</span>`}
-      ${g.tracks === 'covered' && html`<span class="badge b-ok">COVERING COPY</span>`}</div>
+    <div class="row"><span class="mono">[${q.number}/${q.total}]</span><span class="badge b-keep">Remux</span>
+      ${g.tracks === 'reordered' && html`<span class="badge b-borderline">Track order</span>`}
+      ${g.tracks === 'differ' && html`<span class="badge b-borderline">Tracks differ</span>`}
+      ${g.tracks === 'covered' && html`<span class="badge b-ok">Covering copy</span>`}</div>
     <p class="muted">${TRACK_TEXT[g.tracks] || TRACK_TEXT.differ}</p>
-    ${g.tracks === 'differ' && html`<p class="alert">No file contains all tracks of the others: removing them loses a track
+    ${g.tracks === 'differ' && html`<p class="note note-warn">No file contains all tracks of the others: removing them loses a track
       (other sound, language or subtitles).</p>`}
-    <label class="row small switch-inline"><input type="checkbox" checked=${player} onChange=${togglePlayer} /> Show the player</label>
+    <label class="small switch-inline"><input class="switch" type="checkbox" checked=${player} onChange=${togglePlayer} /> Show the player</label>
     <div class=${'remux' + (player ? '' : ' no-player')}>
       ${player && html`<div class="remux-player stack-tight">
         <div class="row" role="group" aria-label="File to play">${g.files.map((f, i) => html`<button key=${i}
@@ -766,12 +779,12 @@ function RemuxView({ question, answer, sending }) {
         <${Player} key=${playing} file=${g.files[playing]} />
       </div>`}
       <div class="remux-files stack-tight">${g.files.map((f, i) => html`<article key=${i} class=${'card' + (i === 0 ? ' keep' : '')}>
-        <div class="card-head"><b class="mono">#${i}</b><span class=${'badge ' + (i === 0 ? 'b-keep' : 'b-remove')}>${i === 0 ? 'KEEP' : 'REMOVE'}</span>
+        <div class="card-head"><b class="mono">#${i}</b><span class=${'badge ' + (i === 0 ? 'b-keep' : 'b-remove')}>${i === 0 ? 'Keep' : 'Remove'}</span>
           ${i === 0 && html`<span class="small muted">recommended</span>`}<span class="mono small push">${f.size}</span></div>
         <div class="card-body"><div class="file">${f.name}</div><div class="small muted">${f.streams}</div></div>
         <div class="row card-actions"><button class="btn btn-primary btn-small" disabled=${sending}
           title=${i === 0 ? 'Keep this file and remove the others (Key: Enter)' : `Keep this file instead (Key: ${i})`}
-          onClick=${() => answer(i === 0 ? '' : String(i))}>Keep${i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>
+          onClick=${() => answer(i === 0 ? '' : String(i))}><${Icon} name="check" size=${14} /> Keep${i === 0 ? html` <kbd>Enter</kbd>` : ''}</button>
           <${FileActions} id=${f.file} video=${true} /></div>
       </article>`)}</div>
     </div>
@@ -798,7 +811,7 @@ function Overview({ question, answer, sending }) {
   return html`<div class="stack">
     <div class="row">
       <span>${`${count('done')} decided · ${count('skipped')} skipped · ${count('ignored')} not duplicates · ${count('pending')} open`}</span>
-      <label class="row small switch-inline push"><input type="checkbox" checked=${pictures}
+      <label class="small switch-inline push"><input class="switch" type="checkbox" checked=${pictures}
         onChange=${(e) => { prefs.pictures = !pictures; setPictures(!pictures); e.currentTarget.blur(); }} /> Show pictures</label>
       <div class="segmented" role="group" aria-label="Show">${[['all', 'All'], ['open', 'Open'], ['decided', 'Decided']].map(([id, label]) =>
         html`<button key=${id} class=${filter === id ? 'on' : ''} aria-pressed=${filter === id}
@@ -810,7 +823,7 @@ function Overview({ question, answer, sending }) {
         + (open(g) ? '' : ' closed')} disabled=${sending} title="Open this group" onClick=${() => answer(g.key)}>
         ${pictures && html`<${Thumb} id=${g.preview} label=${g.keeper} />`}
         <span class="row"><b class="mono">${g.key}</b><span class=${'badge ' + cls}>${text}</span>
-          ${String(q.current + 1) === g.key && html`<span class="small" style=${{ color: 'var(--keep)' }}>▶ current</span>`}</span>
+          ${String(q.current + 1) === g.key && html`<span class="badge b-keep">Current</span>`}</span>
         <span class="file">${g.keeper}</span>
         <span class=${'small ' + (g.borderline ? 'diff-hot' : 'muted')}>${g.count} images · worst ${g.worst}/${g.limit}${g.borderline ? ' · borderline' : ''}</span>
       </button><div class="tile-actions"><${FileActions} id=${g.file} /></div></li>`;
@@ -822,6 +835,8 @@ function Overview({ question, answer, sending }) {
 
 // Screens that come back changed after most answers: shown until their next state arrives.
 const FORMS = ['StartScreen', 'FolderScreen'];
+// Screens that are a page of their own; what is left is a short question, in a card.
+const PAGES = [...FORMS, 'DecisionScreen', 'HandledScreen', 'OverviewScreen', 'RemuxScreen'];
 
 const TITLES = {
   StartScreen: 'Settings', FolderScreen: 'Choose folders to scan', DecisionScreen: 'Duplicate group',
@@ -870,9 +885,9 @@ function Question({ question, onAnswer, stale = false }) {
     const danger = question.tone === 'danger';
     body = html`<div class="row">
       <button class=${'btn ' + (question.default ? 'btn-primary' : '')} disabled=${sending} title="Key: y" onClick=${() => answer(true)}>
-        <${Label} text=${danger ? 'Yes, delete' : 'Yes'} k="y" />${question.default ? html` <${Key} k="" />` : ''}</button>
+        <${Icon} name=${danger ? 'trash' : 'check'} /><${Label} text=${danger ? 'Yes, delete' : 'Yes'} k="y" />${question.default ? html` <${Key} k="" />` : ''}</button>
       <button class=${'btn ' + (!question.default ? 'btn-primary' : '')} disabled=${sending} title="Key: n" onClick=${() => answer(false)}>
-        <${Label} text="No" k="n" />${!question.default ? html` <${Key} k="" />` : ''}</button></div>`;
+        <${Icon} name="x" /><${Label} text="No" k="n" />${!question.default ? html` <${Key} k="" />` : ''}</button></div>`;
   } else if (question.kind === 'path') {
     title = 'Choose the picture folder';
     body = html`<${FolderPicker} ...${props} />`;
@@ -889,8 +904,10 @@ function Question({ question, onAnswer, stale = false }) {
         the delete mode <${Mode} mode=${question.realMode} /> from your config.</p>${body}</div>`;
     }
   }
-  return html`<section class=${'question' + (question.tone === 'danger' ? ' danger' : '') + (stale ? ' stale' : '')}
-    aria-live="polite" aria-busy=${stale}>
+  const page = question.kind === 'path' || PAGES.includes(question.screen);
+  const form = question.kind === 'path' || FORMS.includes(question.screen);
+  return html`<section class=${'question' + (page ? '' : ' boxed') + (form ? ' form' : '')
+    + (question.tone === 'danger' ? ' danger' : '') + (stale ? ' stale' : '')} aria-live="polite" aria-busy=${stale}>
     <h2 class="prompt">${title}</h2>${body}</section>`;
 }
 
@@ -925,16 +942,16 @@ function UpdateNotice({ update, onError }) {
         : html`<span><b>keepbest ${version} is available</b> <span class="muted">(this is ${update.current})</span></span>`}
       ${update.installable && html`<button class="btn btn-small" disabled=${!update.ready || sending}
         title=${update.ready ? 'Install it with pipx, then keepbest starts again here' : where}
-        onClick=${install}>${failed ? 'Try again' : 'Update'}</button>`}
-      <a class="small" href=${update.notes} target="_blank" rel="noopener noreferrer">What's new</a>
+        onClick=${install}><${Icon} name="down" size=${14} /> ${failed ? 'Try again' : 'Update'}</button>`}
+      <a class="small" href=${update.notes} target="_blank" rel="noopener noreferrer">What's new <${Icon} name="link" size=${13} /></a>
       ${!failed && html`<button class="btn btn-small" onClick=${() => setHidden(true)}>Not now</button>`}
       ${update.installable && !update.ready && html`<span class="small muted">Update: on the start or end screen</span>`}
     </div>
-    ${failed && html`<pre class="update-command">${update.output}</pre>
+    ${failed && html`<pre class="update-command mono">${update.output}</pre>
       <p class="small muted">All of pipx's output is in update.log in keepbest's state folder.</p>`}
     <details class="small" open=${failed}>
       <summary>${update.installable ? 'The command, to run it in a terminal' : 'How to update'}</summary>
-      <pre class="update-command">${update.command}</pre>
+      <pre class="update-command mono">${update.command}</pre>
     </details>
   </div>`;
 }
@@ -1072,11 +1089,11 @@ function App() {
   for (const e of events) {
     if (!e) continue;
     if (e.kind === 'summary') {  // the terminal prints the summary under a banner of its own
-      sections.push({ title: e.mode === 'dry_run' ? 'Summary - dry run' : 'Summary', items: [] });
+      sections.push({ title: e.mode === 'dry_run' ? 'Summary - dry run' : 'Summary', step: 'summary', items: [] });
       step = 'summary';
     }
     if (e.kind === 'banner' || !sections.length) {
-      sections.push({ title: e.kind === 'banner' ? e.text : null, items: [] });
+      sections.push({ title: e.kind === 'banner' ? e.text : null, step: e.kind === 'banner' ? stepOf(e.text) : null, items: [] });
       if (e.kind === 'banner') { step = stepOf(e.text) || step; continue; }
     }
     sections[sections.length - 1].items.push(e);
@@ -1092,35 +1109,45 @@ function App() {
 
   return html`
     <div class="top"><header class="topbar">
-      <span class="brand"><img src="/static/icon.svg" alt="" width="26" height="26" /> keepbest</span>
-      ${folder && html`<span class="folder">${folder}</span>`}
-      <ol class="steps" aria-label="Progress">
-        ${steps.map(([id, name]) => {
+      <div><span class="brand"><img src="/static/logo.svg" alt="" width="28" height="28" />
+        <span class="brand-text"><span class="brand-name">keepbest</span>
+          ${folder && html`<span class="brand-sub" title=${folder}>${folder}</span>`}</span></span></div>
+      <ol class="steps" aria-label="Workflow">
+        ${steps.map(([id, name, icon]) => {
           const state = id === now && finished === null ? 'now'
             : now && (order.indexOf(id) < order.indexOf(now) || (finished !== null && id === now)) ? 'done' : '';
-          return html`<li class=${'step ' + state} aria-current=${state === 'now' ? 'step' : undefined}>${name}</li>`;
+          return html`<li class=${'step ' + state} key=${id} aria-current=${state === 'now' ? 'step' : undefined}>
+            <span class="step-go"><span class="dot"><${StepIcon} name=${state === 'done' ? 'check' : icon} /></span>
+              <span class="step-name">${name}</span></span></li>`;
         })}
       </ol>
-      ${finished === null && html`<button class="btn btn-small" title="Key: q" onClick=${quit}><${Label} text="Quit" k="q" /></button>`}
+      <div class="topbar-end">
+        ${finished === null && html`<button class="btn" title="Quit (key: q)" onClick=${quit}><${Icon} name="power" />
+          <span class="btn-text"><${Label} text="Quit" k="q" /></span></button>`}
+      </div>
     </header>
     <${UpdateNotice} update=${update} onError=${setError} /></div>
-    <main>
+    <main class="wide">
       ${sections.map((s, i) => html`<section class=${'section' + (i < sections.length - 1 ? ' old' : '')} key=${i}>
-        ${s.title && html`<h2>${s.title}</h2>`}
+        ${s.title && html`<h2><span class="dot"><${StepIcon} name=${STEP_ICONS[s.step] || 'flag'} /></span>${s.title.replace(/^Stage \d · /, '')}</h2>`}
         ${s.items.map((e) => html`<${Item} key=${e.id} event=${e} />`)}
       </section>`)}
       ${under ? html`<${Question} key=${under.id} question=${under} onAnswer=${answer} stale=${true} />
-          <div class="overlay ask"><div class="box"><${Question} key=${question.id} question=${question} onAnswer=${answer} /></div></div>`
+          <div class="overlay ask"><div class="card"><${Question} key=${question.id} question=${question} onAnswer=${answer} /></div></div>`
         : shown && html`<${Question} key=${shown.id} question=${shown} onAnswer=${answer} stale=${!question} />`}
-      ${finished !== null && !question && html`<section class="question">
-        <h2 class="prompt">${finished === 0 ? 'keepbest has finished' : finished === 130 ? 'keepbest was stopped' : `keepbest ended with exit code ${finished}`}</h2>
+      ${finished !== null && !question && html`<section class="section status">
+        <img class="status-icon" src="/static/icon.svg" alt="" />
+        <h1>${finished === 0 ? 'keepbest has finished' : finished === 130 ? 'keepbest was stopped' : `keepbest ended with exit code ${finished}`}</h1>
         <p class="muted">${finished === 0 ? 'Everything above is done.' : 'Saved progress is kept; start keepbest on the folder again to continue.'}</p>
-        <div class="row"><button class="btn btn-primary" onClick=${close}>Close</button></div>
+        <div class="row"><button class="btn btn-primary" onClick=${close}><${Icon} name="check" /> Close</button></div>
       </section>`}
     </main>
-    ${error && html`<div class="toast" role="alert">${error}</div>`}
-    ${closed && html`<div class="overlay"><div class="box stack-tight"><h2>keepbest has ended</h2>
-      <p class="muted">You can close this tab.</p></div></div>`}
+    ${error && html`<div class="toasts"><div class="toast toast-error" role="alert"><span>${error}</span></div></div>`}
+    <div class="overlay" hidden=${!closed}><div class="card status">
+      <img class="status-icon" src="/static/icon.svg" alt="" />
+      <h1>keepbest has ended</h1>
+      <p class="muted">You can close this tab.</p>
+    </div></div>
   `;
 }
 

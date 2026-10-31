@@ -156,10 +156,9 @@ Both paths change when the Python version changes.
 - **The page** is covered by API tests (`tests/test_web.py`, server in the test process, no
   browser). Clicking through it is a manual check: Playwright in a venv outside the repo,
   `chromium.launch(channel="chrome")` (Chrome is installed), keepbest started with the system
-  `python3` and `--no-browser`, generated pictures only (the last script:
-  `scratchpad/click21.py` of the 2026-10-22 session: tree, pictures switch, Open/Show in folder
-  with a fake `gdbus`, one Quit, the hand-off to a media-optimizer 0.8 checkout via a wrapper). The page's CSP blocks
-  `wait_for_function`; wait with locators.
+  `python3` and `--no-browser`, generated pictures only: both `color_scheme`s, and 390 px wide
+  with `scrollWidth` compared to `innerWidth`. The page's CSP blocks `wait_for_function`; wait with
+  locators. A full-page screenshot shows the sticky header where the page was scrolled to.
 
 ## Behaviour that must not regress (safety rules)
 
@@ -288,6 +287,19 @@ difference at ≤ 512 px; presets strict 12 / normal 20 / loose 28; borderline a
   `&&` chains, `$(...)`) must be written for fish (`for x in …; …; end`, `; and`, `(…)`).
   Examples in the README are for all users and stay in bash. Don't rely on tools only some
   distributions ship.
+
+## The look (agreed 2026-10-31)
+
+keepbest's page shares lyrembed's and cdimport's look, libadwaita's, which also makes it fit picktag
+(the rules are in lyrembed's `CLAUDE.md`). `static/base.css` and `static/icons.js` are copies of
+lyrembed's, unchanged, like `vendor/`: compare them with `diff`, change them there and copy them back.
+Only the green accent and what only this page has live in `style.css`. The header bar is always:
+program (with the folder under it), steps in the middle (icons, no numbers), actions. `icon.svg` is
+unreadable below about 64 px: the header and the browser tab use `logo.svg`, the full icon appears
+only at 112 px on status pages. What shows after the server stopped is in the page from the start
+(`hidden`), or its icon is asked of a server that is gone. The page follows the system's light or
+dark style, but pictures stay on `--picture-bg`: that ground is where they are judged. The film-strip
+icon isn't in the shared set (`StepIcon` in `app.js`); media-optimizer draws it too.
 
 ## Environment notes
 
