@@ -1256,6 +1256,10 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
     while True:
         if index >= total:
             ctx.save(groups, total - 1)
+            first = _next_open(groups, -1)
+            if first is not None and not interactive and not finished:
+                index, revisit = first, False   # resumed past them: not shown yet, and nothing asked since
+                continue
             if interactive and not finished:
                 success("\nReached the last group.")
                 choice, opened = _overview(groups, None, rel)

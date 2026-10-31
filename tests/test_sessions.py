@@ -157,6 +157,21 @@ def test_a_resumed_session_starts_at_its_group_when_earlier_ones_are_gone(librar
     assert [screen.group.images[0]["path"].name for screen in answers.asked] == ["c.png"]
 
 
+def test_groups_passed_over_before_a_resume_are_not_called_skipped(library):
+    """Jumped to group c, quit, and resumed with no questions: a and b were never shown."""
+    groups = real_groups(library, 3)
+    answers = Scripted([])
+    front.use(answers)
+    ctx = review_context(library.path, dry=False, store=SessionStore(library.path))
+    ctx.groups = groups
+    try:
+        review_groups(groups, {**DEFAULT_CONFIG, "delete_mode": "trash"}, "never", ctx.stats, str, ctx, start=2)
+    finally:
+        front.use(None)
+    assert [g.status for g in groups] == ["done"] * 3 and answers.asked == []
+    assert library.files() == ["a.png", "b.png", "c.png"]
+
+
 def test_statistics_continue_from_the_session():
     stats = stats_from_session({"stats": {"scanned": 51, "exact_deleted": 1, "similar_deleted": 7}}, 0)
     assert (stats.scanned, stats.exact_deleted, stats.similar_deleted) == (51, 1, 7)

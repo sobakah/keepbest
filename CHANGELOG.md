@@ -11,6 +11,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   clicked (*loose* for *normal*).
 - A resumed session started one group too late when groups before the saved one had been dropped
   (files changed, marked as not duplicates, a stricter limit).
+- Groups a resumed session had passed over are worked through when the walk ends without a question,
+  instead of being called "skipped" without ever being shown.
 
 ## [1.1.2] — 2026-10-30
 
