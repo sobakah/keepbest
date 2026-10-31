@@ -31,7 +31,9 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
   `--web --no-browser --return-url <keepbest's page> --return-name keepbest` and takes over the tab;
   an older one gets `-y` and its output goes into a box on the page. keepbest ignores
   SIGINT/SIGHUP meanwhile, they reach the child directly, and passes SIGTERM on; the handlers are
-  set before the start, as no-op handlers rather than SIG_IGN so the child gets default handling).
+  set before the start, as Python handlers rather than SIG_IGN so the child gets default handling.
+  With media-optimizer's page they end keepbest once the child is gone (`stopped_from_terminal`, not
+  the exit code: a run stopped on that page ends with 130 too): the tab has nothing to come back to).
   One whose help lists `--results` also gets `--results <temp file>`: media-optimizer's results file
   (its `results.py`, format `v` 1), read by `read_results` and turned by `summary` into tiles, a line
   per stage and the space both freed together (`freed` comes from the run's `Stats.space_saved`

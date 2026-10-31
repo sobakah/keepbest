@@ -5,6 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Ctrl+C in the terminal while media-optimizer's page has the tab ends keepbest too, within seconds.
+  It used to wait half a minute for a tab left on a page that was gone.
+
 ### Fixed
 
 - Choosing a strictness on the page while a custom limit was set landed on the option after the one

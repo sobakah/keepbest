@@ -1002,6 +1002,8 @@ def run_optimizer(target: Path, settings: dict, freed: int = 0) -> None:
         results = handoff.summary(handoff.read_results(results_file), freed)
     show("tool_end", code=code, results=results)
     blank()
+    if back and handoff.stopped_from_terminal():
+        raise KeyboardInterrupt  # the tab is on the page that just went away: nobody would answer here
     if code == 127:
         error("media-optimizer could not be started.")
     elif results is None and back and code == 0 and handoff.has_results(executable):

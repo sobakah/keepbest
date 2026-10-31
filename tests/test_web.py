@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -722,6 +723,53 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
     tool = tool_event(page, timeout=5)        # not waiting for the "sleep" that still holds the pipe
     assert tool["code"] == 130 and got.read_text().strip() == "INT"
     page.answer(page.question(end["id"]), "q")                   # keepbest itself goes on
+    page.post("/api/close")
+    assert proc.wait(timeout=20) == 0
+
+
+def page_optimizer(fake_command, exit_code=130):
+    """A media-optimizer with a page: prints its address, ends a moment later."""
+    from test_handoff import PAGE_HELP
+    return fake_command("media-optimizer", script=f"[ \"$2\" = --help ] && {{ echo '{PAGE_HELP}'; exit 0; }}\n"
+                                                  "echo 'media-optimizer is running at "
+                                                  "http://127.0.0.1:1/?token=abc'\nsleep 1\n"
+                                                  f"exit {exit_code}")
+
+
+def test_ctrl_c_on_media_optimizers_page_ends_keepbest(library, cli_page, fake_command):
+    """The tab is left on a page that is gone: nobody would answer keepbest's next question."""
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    page_optimizer(fake_command)
+    page, proc = cli_page(library.path)
+    page.walk("", "m")
+    tool_event(page, running=True)
+    proc.send_signal(signal.SIGINT)                     # reaches both: the same process group
+    assert proc.wait(timeout=10) == 130
+
+
+def test_a_run_stopped_on_media_optimizers_page_leads_back(library, cli_page, fake_command):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    page_optimizer(fake_command)                        # 130 too, but keepbest wasn't stopped
+    page, proc = cli_page(library.path)
+    start, end = page.walk("", "m")
+    assert tool_event(page)["code"] == 130
+    page.answer(page.question(end["id"]), "q")
+    page.post("/api/close")
+    assert proc.wait(timeout=20) == 0
+
+
+def test_ctrl_c_leaves_keepbest_on_its_page_without_a_handoff(library, cli_page, fake_command):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+    fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\necho started\nsleep 1\nexit 130")
+    page, proc = cli_page(library.path)
+    start, end = page.walk("", "m")
+    tool_event(page, running=True)
+    proc.send_signal(signal.SIGINT)
+    assert tool_event(page)["code"] == 130
+    page.answer(page.question(end["id"]), "q")
     page.post("/api/close")
     assert proc.wait(timeout=20) == 0
 

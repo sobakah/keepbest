@@ -25,6 +25,7 @@ from .core_logic import format_size
 
 COMMAND = "media-optimizer"
 _child: subprocess.Popen | None = None   # the media-optimizer running now, for interrupt()
+_stopped = False                         # Ctrl+C or a closed terminal reached the last run()
 _run_help: dict[str, str] = {}
 
 
@@ -75,13 +76,15 @@ def run(target: Path, output, recursive: bool = True, excluded=(), return_url: s
     With *return_url* (keepbest's page) it shows its own page, whose address it
     prints, and its last button leads back there. Without, it asks nothing
     (-y: its config's settings) and its output is all there is to show.
-    interrupt() stops it as Ctrl+C would.
+    interrupt() stops it as Ctrl+C would; stopped_from_terminal() tells a
+    Ctrl+C in the terminal from a run stopped on a page, also an exit code of 130.
 
     MO_CALLER tells media-optimizer who started it; MO_HOLD=0 stops it from
     keeping a window open at the end. The folder choice of this run is passed
     on (folder_env).
     """
-    global _child
+    global _child, _stopped
+    _stopped = False
     executable = available()
     if executable is None:
         return 127
@@ -105,7 +108,8 @@ def run(target: Path, output, recursive: bool = True, excluded=(), return_url: s
     pending: list[int] = []
 
     def ignore(signum, frame):
-        pass
+        global _stopped
+        _stopped = True
 
     def forward(signum, frame):
         if child is None:
@@ -218,6 +222,11 @@ def _pass_on(child: subprocess.Popen, output) -> None:
     if pending:
         output(pending)
     child.stdout.close()
+
+
+def stopped_from_terminal() -> bool:
+    """Whether Ctrl+C or a closed terminal reached the last run()."""
+    return _stopped
 
 
 def interrupt() -> bool:
