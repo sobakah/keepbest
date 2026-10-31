@@ -124,6 +124,23 @@ def test_a_setting_is_chosen_directly(library, serve):
     assert finish(page, result) == 0
 
 
+def test_a_setting_is_chosen_directly_when_its_options_change_on_the_way(library, serve):
+    """A custom limit is an extra option, gone after the first press: what was
+    chosen is the option, not its place in the row."""
+    visual_pair(library)
+    page, result = serve(library.path, max_pixel_diff=15)
+    first = page.question()
+    strictness = next(r for r in first["rows"] if r.get("key") == "2")
+    labels = [o["label"] for o in strictness["options"]]
+    assert labels == ["custom (15)", "strict (12)", "normal (20)", "loose (28)"]
+    page.answer(first, {"set": ["2", labels.index("normal (20)")]})
+    again = page.question(first["id"])
+    strictness = next(r for r in again["rows"] if r.get("key") == "2")
+    assert [o["label"] for o in strictness["options"] if o["current"]] == ["normal (20)"]
+    page.answer(again, "q")
+    assert finish(page, result) == 0
+
+
 def test_answers_are_checked(library, serve):
     visual_pair(library)
     page, result = serve(library.path)

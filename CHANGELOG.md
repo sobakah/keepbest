@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Choosing a strictness on the page while a custom limit was set landed on the option after the one
+  clicked (*loose* for *normal*).
+
 ## [1.1.2] — 2026-10-30
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page.

@@ -366,7 +366,7 @@ class WebFront(Front):
         self._update_commands: list | None = None
         # Start screen: a choice the page picked directly, reached by pressing
         # the row's key until it shows (the flow only knows "next choice").
-        self._target: tuple[str, int] | None = None
+        self._target: tuple[str, object] | None = None
         self._presses = 0
         # Pictures the page may show, by random id: the only files /api/preview
         # reads, so the page can never make keepbest open anything else.
@@ -594,9 +594,9 @@ class WebFront(Front):
         if target is None or not isinstance(screen, StartScreen):
             self._target = None
             return None
-        key, index = target
+        key, option = target
         row = next((r for r in screen.rows if isinstance(r, SettingRow) and r.key == key and r.locked is None), None)
-        if row is None or list(row.options).index(row.current) == index or self._presses > len(row.options):
+        if row is None or row.current == option or self._presses > len(row.options):
             self._target = None
             return None
         self._presses += 1
@@ -639,7 +639,9 @@ class WebFront(Front):
             if row is None or row["locked"] or not isinstance(index, int) or not 0 <= index < len(row["options"]) \
                     or row["options"][index]["unavailable"]:
                 raise ApiError(400, "That choice can't be made here.")
-            self._target, self._presses = (key, index), 1
+            # The option, not its place: pressing can add or take away options (a custom limit).
+            options = next(r.options for r in self._screen.rows if isinstance(r, SettingRow) and r.key == key)
+            self._target, self._presses = (key, list(options)[index]), 1
             return key
         if not isinstance(value, str) or value not in question["keys"]:
             raise ApiError(400, f"Not an option here: {value!r}")
