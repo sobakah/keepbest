@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 
 from conftest import asked, shown, summary
+from keepbest import front
 from keepbest import session as session_mod
-from keepbest.core_logic import (Group, RunContext, Stats, stats_from_session, tighten_groups,
-                                validate_groups)
+from keepbest.config import DEFAULT_CONFIG
+from keepbest.core_logic import (Group, RunContext, Stats, UserQuit, resume_review, review_groups,
+                                stats_from_session, tighten_groups, validate_groups)
 from keepbest.session import IgnoreList, SessionStore
+from test_front import Scripted
 
 
 def meta(path: Path) -> dict:
@@ -122,6 +125,36 @@ def test_a_stricter_limit_takes_out_images_above_it():
 def test_a_looser_limit_changes_nothing():
     groups, removed = tighten_groups([group(5, 15)], 28)
     assert removed == 0 and groups[0].limit == 20
+
+
+def real_groups(library, count):
+    """*count* groups of two real files each, keepers a.png, b.png, ..."""
+    groups = []
+    for i, name in enumerate("abcd"[:count]):
+        keeper, copy = library.photo(f"{name}.png", 2 * i + 1), library.photo(f"{name} copy.png", 2 * i + 2)
+        groups.append(group(5, images=[{**FIELDS, **meta(keeper)}, {**FIELDS, **meta(copy)}]))
+    return groups
+
+
+def review_context(folder, dry=True, store=None):
+    ctx = RunContext(store=store, dry=dry)
+    ctx.ignores, ctx.stats = IgnoreList(folder, enabled=False), Stats()
+    return ctx
+
+
+def test_a_resumed_session_starts_at_its_group_when_earlier_ones_are_gone(library):
+    groups = real_groups(library, 4)
+    saved = {"groups": [g.to_dict() for g in groups], "index": 2}          # stopped at group c
+    (library / "a copy.png").unlink()                                      # group a is dropped on resume
+    answers = Scripted(["q"])
+    front.use(answers)
+    try:
+        with pytest.raises(UserQuit):
+            resume_review(saved, {**DEFAULT_CONFIG, "delete_mode": "dry_run"}, "always", Stats(), str,
+                          review_context(library.path))
+    finally:
+        front.use(None)
+    assert [screen.group.images[0]["path"].name for screen in answers.asked] == ["c.png"]
 
 
 def test_statistics_continue_from_the_session():

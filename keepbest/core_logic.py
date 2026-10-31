@@ -1397,8 +1397,8 @@ def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel
     banner("Stage 3 · Visually identical images (" + ("opened" if open_overview else "resumed")
            + (") - dry run" if ctx.dry else ")"))
     ctx.exact_groups = [ExactGroup.from_dict(e) for e in data.get("exact_groups", [])]
-    groups = [Group.from_dict(g) for g in data["groups"]]
-    groups, dropped_groups, dropped_images = validate_groups(groups)
+    loaded = [Group.from_dict(g) for g in data["groups"]]
+    groups, dropped_groups, dropped_images = validate_groups(loaded)
     ctx.groups = groups
     if dropped_groups or dropped_images:
         warn(f"Files changed on disk since the session was saved: {dropped_groups} group(s) and "
@@ -1427,7 +1427,9 @@ def resume_review(data: dict, config: dict, confirm_mode: str, stats: Stats, rel
         return False
     done = len(groups) - len(open_groups)
     info(f"Resuming: {done} of {len(groups)} groups already done, {len(open_groups)} to go.")
-    saved_index = int(data.get("index", 0))
+    # The saved index counts every group saved; the ones left out above moved the rest up.
+    remaining = set(map(id, groups))
+    saved_index = sum(id(g) in remaining for g in loaded[:int(data.get("index", 0))])
     start = saved_index if saved_index in open_groups else open_groups[0]
     return review_groups(groups, config, confirm_mode, stats, rel, ctx, start=start)
 

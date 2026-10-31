@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Choosing a strictness on the page while a custom limit was set landed on the option after the one
   clicked (*loose* for *normal*).
+- A resumed session started one group too late when groups before the saved one had been dropped
+  (files changed, marked as not duplicates, a stricter limit).
 
 ## [1.1.2] — 2026-10-30
 
