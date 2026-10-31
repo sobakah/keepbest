@@ -15,6 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead of being called "skipped" without ever being shown.
 - Saving a video larger than 4 MB from the page gave only its first 4 MB: a request without a range
   now gets the whole file.
+- A scan stopped by an unexpected error ends its run in the journal, so picktag doesn't treat the
+  folder as busy while the error is on the page.
 
 ## [1.1.2] — 2026-10-30
 

@@ -807,6 +807,11 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         blank()
         show_summary(stats, config["delete_mode"], action_log, note, totals_note)
         raise
+    except Exception:  # the page stays to show it, so the run must not look unfinished
+        ctx.flush()
+        journal.end(1, interrupted=False)
+        action_log.end(f"stopped on an error · {_summary_text(stats)}")
+        raise
 
     journal.end(1 if stats.failed else 0, interrupted=False)
     note = None

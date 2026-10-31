@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -633,6 +634,28 @@ def test_a_big_video_without_a_range_comes_whole(library, serve, monkeypatch):
         assert answer.read() == video.read_bytes()[:50]
     page.post("/api/close")
     result["thread"].join(timeout=10)
+
+
+def test_a_scan_that_stops_on_an_error_ends_its_run_in_the_journal(library, serve, monkeypatch):
+    """keepbest stays for the error page, so picktag would see the folder as busy."""
+    from keepbest import app
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "a copy.png")
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("a bug")
+    monkeypatch.setattr(app, "find_exact_duplicates", fail)
+    page, result = serve(library.path)
+    page.answer(page.question(), "")
+    journal = Path(os.environ["KEEPBEST_STATE_DIR"]) / "journal.jsonl"
+    deadline = time.monotonic() + 10
+    while not any(e["kind"] == "error" for e in page.get("/api/state")["events"]) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert result["thread"].is_alive()                                   # still showing the error
+    events = [json.loads(line) for line in journal.read_text().splitlines()]
+    assert [e["event"] for e in events] == ["run_start", "run_end"]
+    assert (events[1]["code"], events[1]["interrupted"]) == (1, False)
+    assert finish(page, result) == 1
 
 
 @pytest.fixture
