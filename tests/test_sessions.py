@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import pictures
 from conftest import asked, shown, summary
 from keepbest import front
 from keepbest import session as session_mod
@@ -228,6 +229,22 @@ def test_the_start_screen_locks_the_session_settings(three_groups, run_cli):
     assert stages["locked"] and before["primary"].startswith("Resume saved session")
     strictness = {o["label"]: o for o in next(row for row in after["rows"] if row.get("label") == "Strictness")["options"]}
     assert strictness["strict (12)"]["current"] and strictness["loose (28)"]["unavailable"]   # after pressing 2
+
+
+def test_the_start_screen_says_when_exclude_does_not_apply(library, run_cli):
+    """A saved session keeps the folders it was scanned with, and says so."""
+    library.photo("in/a.png", 1, size=(640, 480))
+    library.variant("in/a.png", "in/a small.jpg", change=pictures.downscaled)
+    library.photo("other/b.png", 2, size=(640, 480))
+    library.variant("other/b.png", "other/b small.jpg", change=pictures.downscaled)
+    run_cli(library.path, "-r", "-i", keys=["", "q", ""])                  # all folders, saved
+
+    def notes(*args):
+        rows = asked(run_cli(library.path, *args, keys=["q"]), "StartScreen")[0]["rows"]
+        return [row["text"] for row in rows if row["type"] == "note"]
+
+    assert any("--exclude" in text for text in notes("-r", "--exclude=other"))
+    assert not any("--exclude" in text for text in notes("-r"))             # nothing was asked for
 
 
 def test_n_discards_the_session_and_unlocks_everything(three_groups, run_cli):

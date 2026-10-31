@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Ctrl+C in the terminal while media-optimizer's page has the tab ends keepbest too, within seconds.
   It used to wait half a minute for a tab left on a page that was gone.
+- The start screen says when `--exclude` differs from a saved session's folders, which the session
+  keeps (picktag's runs on the folders with copies use `--exclude`).
 
 ### Fixed
 

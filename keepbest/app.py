@@ -554,6 +554,9 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         if session:
             rows.append(Note("Locked settings belong to the saved session. "
                              "Start over to change them all.", style="hint"))
+            if settings["excluded"] and settings["excluded"] != shown["excluded"]:
+                rows.append(Note("--exclude doesn't apply to this session: it keeps the folders it was scanned "
+                                 "with. Start over to use yours."))
         if mode == "dry_run":
             rows.append(Note("Dry runs change nothing and are not logged; their progress is saved."))
 
