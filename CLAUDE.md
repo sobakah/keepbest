@@ -105,6 +105,12 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     `find_groups(hints=…)`: candidate pairs are the pairs within a group (`hint_pairs`), no hash filter,
     the aspect check stays (the comparison squeezes each picture into a square). Marks: `IgnoreList(Path("/"),
     file=state_dir()/GROUPS_IGNORE_FILE)`. Tests: `tests/test_groups.py`.
+    Speed: pairs of a group are first checked on pictures loaded at `COARSE_LOAD` (32 px) and averaged to
+    16² (`image_utils.coarse`, `coarse_apart`: a pair within the limit has every channel's mean within it,
+    and averaging only lowers it; margin ×1.25 + 3); only pictures with a pair left are loaded at 512.
+    Folders: `FolderIndex.fix(target, files)` makes the folder tree list only the groups' files (never
+    walks `target`); `settings["excluded"]` filters `group_files`; remembered in `groups_excluded.json`
+    (`load_groups_excluded` / `save_groups_excluded`, absolute paths); `--exclude` works with `--groups`.
   - `desktop.py` is the app-menu entry (from lyrembed; `Exec=… --web %f`). `running.py` is the
     lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
     in `resolve_directory` and with `--auto`. It does nothing on Windows.
@@ -112,7 +118,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 382 tests, ~125 s (see below for which Python)
+python3 -m pytest                 # 390 tests, ~130 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

@@ -17,7 +17,7 @@ from pathlib import Path
 from send2trash import send2trash
 
 from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, Blurred, analyze_image,
-                         aspect_ratio_close, comparison_thumbnail,
+                         aspect_ratio_close, coarse, coarse_apart, comparison_thumbnail,
                          difference_spot, has_copy_number, ignore_sigint,
                          rename_target, score_image, sha256_file)
 from .front import (DecisionScreen, HandledScreen, OverviewScreen, RemuxScreen, ask, banner, blank, confirm,
@@ -757,6 +757,9 @@ def report_ignored(hidden: int, groups: list[Group]) -> None:
             f"(--no-ignore shows them again).")
 
 
+COARSE_LOAD = 32             # --groups: the size pictures are loaded at for the pre-check
+
+
 def hint_pairs(metas: list[dict], hints: list[list[Path]]) -> set[tuple[int, int]]:
     """Every pair of images that share a group of *hints* (``--groups``): those are
     the candidates instead of the hash's, and each is compared pixel by pixel."""
@@ -813,7 +816,15 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         if hints is None:
             pairs = _candidate_pairs([m["hash"] for m in metas], 2 * hash_size * hash_size, max_hash)
         else:
+            # every pair of a group, but not those whose pictures, averaged down,
+            # already differ by more than the limit allows (coarse_apart): loaded
+            # small first, so only pictures with a pair left are loaded in full
             pairs = hint_pairs(metas, hints)
+            seen = sorted({i for pair in pairs for i in pair})
+            small = _parallel(executor, _safe_thumbnail, [metas[i]["path"] for i in seen], "Looking at groups",
+                              COARSE_LOAD)
+            rough = {i: coarse(t) for i, t in zip(seen, small)}
+            pairs = {(a, b) for a, b in pairs if not coarse_apart(rough[a], rough[b], limit)}
         components = _components(len(metas), pairs)
         involved = sorted({i for comp in components for i in comp})
 

@@ -7,7 +7,7 @@ import re
 import signal
 import threading
 
-from PIL import Image, ImageChops, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageFilter, ImageOps, ImageStat
 
 try:  # Colour-profile conversion (bundled with the official Pillow wheels)
     from PIL import ImageCms
@@ -373,6 +373,28 @@ def preview_jpeg(path, max_side, quality=85):
     out = io.BytesIO()
     norm.save(out, "JPEG", quality=quality, optimize=True)
     return out.getvalue()
+
+
+COARSE_SIDE = 16             # the pre-check's pictures: averaged down to 16 x 16
+
+
+def coarse(thumb):
+    """The comparison thumbnail averaged down to ``COARSE_SIDE``² (8-bit ones only;
+    None for greyscale with more than 8 bits, which is always compared in full)."""
+    if thumb is None or thumb[2] is not None:
+        return None
+    return _rgb(thumb).resize((COARSE_SIDE, COARSE_SIDE), Image.BOX)
+
+
+def coarse_apart(a, b, limit: float) -> bool:
+    """True when two pictures can't be within *limit*: a pair passes when every
+    8x8 cell's mean difference (worst channel) is within it, so each channel's mean
+    over the whole picture is within it too, and averaging both pictures down can
+    only make that mean smaller. A margin covers the blur and resampling of the full
+    comparison. False when either has no coarse picture: compared in full."""
+    if a is None or b is None:
+        return False
+    return max(ImageStat.Stat(ImageChops.difference(a, b)).mean) > limit * 1.25 + 3
 
 
 def aspect_ratio_close(a, b, tolerance):

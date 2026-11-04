@@ -146,10 +146,54 @@ def groups_folder(groups: list[list[Path]]) -> Path:
 
 
 def group_files(settings: dict) -> list[Path]:
-    """The files of a --groups run that are still there, without videos when they are left out."""
+    """The files of a --groups run that are still there, without videos when they are left
+    out, and without those in folders switched off (relative to ``groups_base``)."""
     extensions = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS if settings["videos"] else IMAGE_EXTENSIONS
-    found = dict.fromkeys(f for g in settings["groups"] for f in g if f.suffix.lower() in extensions)
+    base, excluded = settings.get("groups_base"), settings.get("excluded") or set()
+    found = dict.fromkeys(f for g in settings["groups"] for f in g if f.suffix.lower() in extensions
+                          and not (base is not None and folder_of(f, base) in excluded))
     return sorted((f for f in found if f.is_file() and not f.is_symlink()), key=natural_key)
+
+
+GROUPS_FOLDERS_FILE = "groups_excluded.json"   # in the state folder: folders left out of --groups runs
+
+
+def load_groups_excluded(target: Path) -> set[str]:
+    """The folders left out last time that are below *target*, relative ('.' = *target*'s own files)."""
+    try:
+        data = json.loads((state_dir() / GROUPS_FOLDERS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    out = set()
+    for folder in data.get("excluded", []) if isinstance(data, dict) else []:
+        if not isinstance(folder, str):
+            continue
+        try:
+            rel = Path(folder).relative_to(target).as_posix()
+        except ValueError:
+            continue
+        out.add(ROOT if rel in ("", ".") else rel)
+    return out
+
+
+def save_groups_excluded(target: Path, excluded: set[str], before: set[str]) -> None:
+    """Remember the folders left out (absolute), for the next --groups run: the choice for
+    folders below *target* replaces the old one there, the rest is kept."""
+    path = state_dir() / GROUPS_FOLDERS_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        old = [f for f in data.get("excluded", []) if isinstance(f, str)]
+    except (OSError, ValueError, AttributeError):
+        old = []
+    mine = {str(target / r) if r != ROOT else str(target) for r in before}
+    kept = [f for f in old if f not in mine]
+    new = sorted(set(kept) | {str(target / r) if r != ROOT else str(target) for r in excluded})
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"about": f"Folders left out of {NAME} --groups runs (picktag's Find Duplicates).",
+                                    "excluded": new}, indent=1, ensure_ascii=True), encoding="utf-8")
+    except OSError as exc:
+        warn(f"Could not remember the folders left out ({path}): {exc}")
 
 
 class FolderIndex:
@@ -157,9 +201,16 @@ class FolderIndex:
 
     def __init__(self):
         self._cache: dict[Path, list[Path]] = {}
+        self._fixed: dict[Path, list[Path]] = {}
+
+    def fix(self, base_dir: Path, files: list[Path]) -> None:
+        """Only these files below *base_dir* (``--groups``): the folder itself is never walked."""
+        self._fixed[base_dir] = sorted(files, key=natural_key)
 
     def images(self, base_dir: Path) -> list[Path]:
         """All images and videos below *base_dir* (filtered by the callers)."""
+        if base_dir in self._fixed:          # those still there: a run may have removed some
+            return [p for p in self._fixed[base_dir] if p.is_file()]
         if base_dir not in self._cache:
             with transient("Counting files..."):
                 self._cache[base_dir] = find_images(base_dir, recursive=True, videos=True)
@@ -461,6 +512,8 @@ def matching_settings(config: dict, settings: dict, target: Path, index: FolderI
     limit, preset = resolve_limit(config)
     if settings.get("groups") is not None:
         folders = f"{len(settings['groups'])} groups from {settings['groups_from']}"
+        if settings["excluded"]:
+            folders += f", {len(settings['excluded'])} folder(s) left out"
     elif not settings["recursive"]:
         folders = "this folder only"
     else:
@@ -621,7 +674,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         if session and matching.get("recursive"):
             description = matching.get("description", "").split(" · ", 1)[-1]
             rows.append(SettingRow("f", "Folders", {"d": description}, "d", locked=fixed))
-        elif not session and settings["recursive"]:
+        elif not session and (settings["recursive"] or grouped):
             entries = folder_entries(target, index)
             rows.append(FolderRow("f", "Folders", main_on=ROOT not in settings["excluded"],
                                   chosen=sum(1 for rel, _ in entries if rel not in settings["excluded"]),
@@ -662,7 +715,7 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         if session:
             settings_menu = [("1-7", "Next choice (not greyed-out ones)")]
         elif grouped:
-            settings_menu = [("1-7", "Next choice for a setting")]
+            settings_menu = [("1-7", "Next choice for a setting"), ("f", "Choose folders to leave out")]
         else:
             settings_menu = [("1-7", "Next choice for a setting"), ("r", "Toggle subfolders")]
             if settings["recursive"]:
@@ -693,7 +746,9 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 return "start", None
         elif choice == "q":
             exit_script()
-        elif grouped and choice in ("c", "r", "f"):
+        elif grouped and choice == "f":
+            choose_folders(target, index, settings)
+        elif grouped and choice in ("c", "r"):
             warn("Unknown option.")
         elif choice == "c":
             return "change", None
@@ -970,7 +1025,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
     index = FolderIndex()
     use_sessions = bool(base_config.get("save_sessions", True)) and not auto
     if groups is not None:
-        return run_groups(*groups, base_config, base_settings, auto, index)
+        return run_groups(*groups, base_config, base_settings, auto, index, exclude)
 
     if auto:
         target = initial.expanduser().resolve()
@@ -1054,7 +1109,7 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
 
 
 def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_settings: dict, auto: bool,
-               index: FolderIndex) -> int:
+               index: FolderIndex, exclude=()) -> int:
     """A ``--groups`` run: the files another program (picktag) found together. No
     folder to choose or change and no saved sessions; the folder lock covers the
     folder all files are in, so no other run deletes among them meanwhile."""
@@ -1066,13 +1121,22 @@ def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_se
     if other is not None:
         error(running.busy_message(other))
         return 2
-    settings = {**base_settings, "recursive": False, "excluded": set(), "groups": groups, "groups_from": sender}
+    index.fix(target, list(dict.fromkeys(f for g in groups for f in g)))
+    remembered = load_groups_excluded(target)
+    excluded = normalize_excluded(target, exclude) if exclude else set(remembered)
+    settings = {**base_settings, "recursive": True, "excluded": excluded, "groups": groups,
+                "groups_from": sender, "groups_base": target}
+    if excluded:
+        info(f"Left out: {len(excluded)} folder(s)" + (" (as last time)" if not exclude else "") + ".")
     if auto:
         stats, _, _ = run_scan(target, dict(base_config), settings, index, store=None)
         return 1 if stats.failed else 0
     config = dict(base_config)
     while True:
         action, _ = start_screen(target, config, settings, index, None)
+        if settings["excluded"] != remembered:
+            save_groups_excluded(target, settings["excluded"], remembered)
+            remembered = set(settings["excluded"])
         if config["delete_mode"] == "permanent" and not confirm_permanent():
             continue
         stats, quit_requested, dry_result = run_scan(target, config, settings, index, None)

@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Folders to leave out of a `--groups` run**: *Choose folders to leave out* on the start screen lists the
+  folders the groups' files are in; files in a folder switched off are neither compared nor removed. The
+  choice is remembered for the next groups run. `--exclude DIR` works with `--groups` too.
+
+### Changed
+
+- **`--groups` runs are much faster**: pictures are loaded small first, and pairs that already differ by
+  more than the limit allows are skipped before the full comparison (on 264 photos in 6 groups: 6.4 s →
+  0.7 s, the same duplicates found; a normal run of the folder takes 0.5 s).
+
 ## [1.3.0] — 2026-11-04
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page. picktag's

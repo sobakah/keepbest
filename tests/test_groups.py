@@ -115,7 +115,7 @@ def test_the_page_names_the_groups_and_has_no_folder_to_change(pairs, run_cli, t
     assert start["groups"] == 1 and start["groupsFrom"] == "picktag"
     assert start["target"] == str(lib.path)
     assert start["inScope"] == 2
-    assert "c" not in start["keys"] and "r" not in start["keys"] and "f" not in start["keys"]
+    assert "c" not in start["keys"] and "r" not in start["keys"] and "f" in start["keys"]
     assert "Only files in the same group are compared" in shown(result)
     assert summary(result)["visual"] == 1
     assert all("c" not in q["keys"] for q in asked(result, "EndScreen"))
@@ -141,3 +141,69 @@ def test_the_journal_names_the_kept_file(pairs, run_cli, isolated, tmp_path):
     assert len(removed) == 1
     assert removed[0]["path"] == str(lib / "two/a.jpg") and removed[0]["kept"] == str(lib / "one/a.png")
     assert removed[0]["match"] == "visual"
+
+
+@pytest.mark.parametrize("how", ["absolute", "relative"])
+def test_exclude_leaves_a_folder_of_the_groups_out(pairs, run_cli, tmp_path, how):
+    lib = pairs
+    groups = groups_file(tmp_path, [lib / "one/a.png", lib / "two/a.jpg"], [lib / "one/b.png", lib / "two/b small.jpg"])
+    folder = str(lib / "two") if how == "absolute" else "two"
+    result = run_cli("--groups", groups, "--exclude", folder, "--auto")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert summary(result)["visual"] == 0                    # their copies are in two/: nothing to compare
+    assert "two/a.jpg" in lib.files() and "two/b small.jpg" in lib.files()
+
+
+def test_folders_left_out_on_the_page_are_remembered(pairs, run_cli, isolated, tmp_path):
+    lib = pairs
+    groups = groups_file(tmp_path, [lib / "one/a.png", lib / "two/a.jpg"], [lib / "one/b.png", lib / "two/b small.jpg"])
+    # f: the folder tree (one/, two/), 2 switches two/ off, Enter: done; Enter starts; q at the end
+    result = run_cli("--groups", groups, "--dry-run", keys=["f", "2", "", "", "q"])
+    tree = asked(result, "FolderScreen")[0]
+    assert [e["rel"] for e in tree["entries"]] == ["one", "two"]   # only the groups' folders
+    assert summary(result)["visual"] == 0
+    saved = json.loads((isolated / "state" / app.GROUPS_FOLDERS_FILE).read_text())
+    assert saved["excluded"] == [str(lib / "two")]
+    again = run_cli("--groups", groups, "--auto", "--dry-run")
+    assert "as last time" in again.stdout and summary(again)["visual"] == 0
+    # back on: forgotten
+    run_cli("--groups", groups, "--dry-run", keys=["f", "2", "", "", "q", "q"])
+    assert json.loads((isolated / "state" / app.GROUPS_FOLDERS_FILE).read_text())["excluded"] == []
+    assert summary(run_cli("--groups", groups, "--auto", "--dry-run"))["visual"] == 2
+
+
+def test_remembered_folders_elsewhere_are_kept(tmp_path, isolated):
+    a, b = tmp_path / "a", tmp_path / "b"
+    (b / "x").mkdir(parents=True)
+    (a / "y").mkdir(parents=True)
+    app.save_groups_excluded(b, {"x"}, set())
+    app.save_groups_excluded(a, {"y"}, set())
+    assert app.load_groups_excluded(b) == {"x"} and app.load_groups_excluded(a) == {"y"}
+    app.save_groups_excluded(a, set(), {"y"})                       # switched back on below a only
+    assert app.load_groups_excluded(b) == {"x"} and app.load_groups_excluded(a) == set()
+    assert app.load_groups_excluded(tmp_path) == {"b/x"}
+
+
+@pytest.mark.parametrize("limit", [12, 20, 28])
+def test_the_pre_check_never_skips_a_copy(library, limit):
+    """Copies the full comparison finds (re-encoded, smaller, another format) pass the
+    pre-check at every strictness; other photos don't."""
+    from keepbest import core_logic, image_utils as iu
+    library.photo("a.png", 1, size=(1200, 900))
+    copies = [library.variant("a.png", "a.jpg", quality=70), library.variant("a.png", "small.jpg", pictures.downscaled),
+              library.variant("a.png", "a.webp", quality=80), library.variant("a.png", "re.jpg", pictures.reencoded)]
+    others = [library.photo(f"o{i}.jpg", 10 + i, size=(1200, 900)) for i in range(5)]
+    small = lambda p: iu.coarse(iu.comparison_thumbnail(p, core_logic.COARSE_LOAD))   # noqa: E731
+    full = lambda p: iu.comparison_thumbnail(p, 512)                                   # noqa: E731
+    a = small(library / "a.png")
+    for c in copies:
+        assert iu.pixel_difference(full(library / "a.png"), full(c)) <= 16
+        assert not iu.coarse_apart(a, small(c), limit), c.name
+    assert all(iu.coarse_apart(a, small(o), limit) for o in others)
+
+
+def test_groups_count_only_pairs_that_pass_the_pre_check(pairs, run_cli, tmp_path):
+    lib = pairs
+    groups = groups_file(tmp_path, [lib / "one/a.png", lib / "two/a.jpg", lib / "one/b.png", lib / "two/b small.jpg"])
+    result = run_cli("--groups", groups, "--auto", "--dry-run")
+    assert "2 candidate pair(s)" in result.stdout and summary(result)["visual"] == 2

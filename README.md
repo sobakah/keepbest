@@ -161,7 +161,7 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | Option | Meaning |
 |---|---|
 | `-r`, `--recursive` | Include subfolders |
-| `--exclude DIR` | With `-r`: skip this subfolder and everything in it (repeatable); `--exclude .` skips only the main folder |
+| `--exclude DIR` | With `-r`: skip this subfolder and everything in it (repeatable); `--exclude .` skips only the main folder. With `--groups`: leave out the groups' files in it |
 | `--stages STAGES` | Stages to run, e.g. `1,2` or `3`: 1 identical files, 2 remuxed videos, 3 visually identical images (default `all`) |
 | `--groups FILE` | Instead of a folder: compare only files in the same group of this file, every pair by its pixels (see [Groups from picktag](#groups-from-picktag)) |
 | `--strictness {strict,normal,loose}` | Visual limit 12 / 20 / 28 |
@@ -183,7 +183,9 @@ Exit codes: `0` success (also when you quit), `1` some files could not be remove
 
 [picktag](https://github.com/sobakah/picktag)'s *Find Duplicates* sends pictures with the same specific tags as groups: `keepbest --groups FILE`, with no folder. keepbest then compares only the files within each group. Stage 3 compares every pair in a group pixel by pixel, without the hash filter that otherwise chooses which pairs to compare, so copies the hash misses are found too. The pixel limit, the aspect-ratio check, the keeper's ranking and the questions stay as in a folder run. Stages 1 and 2 run over all the groups' files.
 
-The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
+Comparing every pair is the slow part (a group of 300 files has 44 850 pairs), so the groups' pictures are first loaded small: a pair whose pictures, averaged down to 16 × 16, already differ by more than the limit allows can't be a duplicate (each 8 × 8 cell within the limit means the whole picture is too), and only the pictures with a pair left are loaded and compared in full.
+
+The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. *Choose folders to leave out* (`f`) lists only the folders the groups' files are in: the files in a folder switched off are neither compared nor removed. keepbest remembers the choice (`groups_excluded.json` in the state folder, as absolute paths) for the next groups run. `--exclude DIR` does the same from the command line, for that run only (absolute, or relative to the files' common folder). There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
 
 The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
 

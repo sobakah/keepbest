@@ -43,7 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan = parser.add_argument_group("scanning")
     scan.add_argument("-r", "--recursive", action="store_true", help="include subdirectories")
     scan.add_argument("--exclude", action="append", metavar="DIR", default=[],
-                      help="with -r, skip this subfolder (relative to the scanned folder; repeatable)")
+                      help="with -r, skip this subfolder (relative to the scanned folder; repeatable); "
+                           "with --groups, leave out the groups' files in it (absolute or relative to their "
+                           "common folder)")
     scan.add_argument("--groups", type=Path, metavar="FILE",
                       help="compare only files in the same group of this JSON file (from picktag), "
                            "every pair by its pixels; instead of a folder")
@@ -139,8 +141,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.terminal:
         parser.error(f"there are no terminal screens: {NAME} asks on its page in the "
                      "browser (--no-browser only prints its address), or asks nothing with --auto")
-    if args.groups and (args.path or args.recursive or args.exclude):
-        parser.error("--groups names the files itself: no folder, -r or --exclude with it")
+    if args.groups and (args.path or args.recursive):
+        parser.error("--groups names the files itself: no folder or -r with it")
     configure_logging(args.verbose)
 
     moved, migration_warnings = migrate_old_locations()  # before the config is looked for
