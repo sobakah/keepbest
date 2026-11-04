@@ -98,6 +98,13 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
     the new process keeps the pid (picktag waits on it) and the tab's address; the page reloads
     when `boot` changes. pipx: `upgrade` for an install from the repo, `install --force` with the new
     tag plus `inject` again for a pinned one, nothing for `pipx pin`. `--auto` prints the command.
+  - **`--groups FILE`** (2026-11-04, for picktag's *Find Duplicates*): `app.load_groups` (format `v` 1,
+    absolute paths, `from`), `run_groups` instead of the folder flow (target = `groups_folder`, the files'
+    common folder, for names and the lock; never counted with `FolderIndex`, it can be `/`; no sessions;
+    start screen without `c`/`r`/`f`, `StartScreen.groups`); `run_scan` takes `group_files(settings)`;
+    `find_groups(hints=…)`: candidate pairs are the pairs within a group (`hint_pairs`), no hash filter,
+    the aspect check stays (the comparison squeezes each picture into a square). Marks: `IgnoreList(Path("/"),
+    file=state_dir()/GROUPS_IGNORE_FILE)`. Tests: `tests/test_groups.py`.
   - `desktop.py` is the app-menu entry (from lyrembed; `Exec=… --web %f`). `running.py` is the
     lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
     in `resolve_directory` and with `--auto`. It does nothing on Windows.
@@ -105,7 +112,7 @@ Fedora, installed with pipx (Python 3.15). The local checkout is in `~/Projekte/
 ## Commands
 
 ```bash
-python3 -m pytest                 # 369 tests, ~120 s (see below for which Python)
+python3 -m pytest                 # 382 tests, ~125 s (see below for which Python)
 python3 -m pytest -k video        # a subset
 ./run.py ~/Pictures --dry-run                # run from the checkout
 ```

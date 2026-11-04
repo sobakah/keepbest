@@ -202,6 +202,8 @@ class StartScreen(Screen):
     rows: list                     # SettingRow, FolderRow and Note, in order
     blocked: str | None            # why Enter can't start anything
     nothing_to_scan: bool
+    groups: int = 0                # --groups: how many (no folder to change), and from which program
+    groups_from: str = ""
 
 
 @dataclass

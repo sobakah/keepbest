@@ -229,7 +229,7 @@ def screen_data(screen, file_id=None) -> dict:
                     moreInSubfolders=screen.more_in_subfolders,
                     panel=asdict(screen.panel) if screen.panel is not None else None, mode=screen.mode,
                     rows=[_row(r) for r in screen.rows], blocked=screen.blocked,
-                    nothingToScan=screen.nothing_to_scan)
+                    nothingToScan=screen.nothing_to_scan, groups=screen.groups, groupsFrom=screen.groups_from)
     elif isinstance(screen, FolderScreen):
         data.update(header=asdict(screen.header), chosen=screen.chosen, scopeText=screen.scope_text,
                     entries=[{"key": str(n), "rel": e.rel, "name": e.name.strip().rstrip("/"),

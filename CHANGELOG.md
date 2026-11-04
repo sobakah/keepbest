@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **`--groups FILE`**: instead of a folder, files another program found together, compared only within
+  their group, every pair by its pixels without the hash filter first. picktag's *Find Duplicates* sends
+  pictures with the same specific tags this way. No folder to change, no saved sessions; "not duplicates"
+  marks of such runs are kept in the state folder (`groups_ignore.json`). See the README, *Groups from
+  picktag*.
+
 ## [1.2.0] — 2026-10-31
 
 Upgrade with `pipx upgrade keepbest`, or with the *Update* button on keepbest's page.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -22,7 +23,7 @@ from .image_utils import IMAGE_EXTENSIONS, STRICTNESS_PRESETS
 from .video import VIDEO_EXTENSIONS, is_video
 from .video import tools_available as video_tools_available
 from .journal import Journal, resolve_journal_path
-from .session import ActionLog, IgnoreList, SessionStore, resolve_log_path
+from .session import ActionLog, IgnoreList, SessionStore, resolve_log_path, state_dir
 
 _NATURAL_RE = re.compile(r"(\d+)")
 ROOT = "."
@@ -86,6 +87,69 @@ def find_images(base_dir: Path, recursive: bool, excluded=frozenset(), videos: b
             if path.suffix.lower() in extensions and not path.is_symlink():
                 found.append(path)
     return sorted(found, key=natural_key)
+
+
+# --- groups from another program (--groups) -------------------------------------
+GROUPS_VERSION = 1
+GROUPS_IGNORE_FILE = "groups_ignore.json"   # in the state folder: "not duplicates" marks of --groups runs
+
+
+class GroupsError(ValueError):
+    """A --groups file keepbest can't use; the message says why."""
+
+
+def load_groups(path: Path) -> tuple[list[list[Path]], str]:
+    """Read a ``--groups`` file: ``{"v": 1, "from": "picktag", "groups": [[path, ...], ...]}``
+    with absolute paths (non-UTF-8 bytes as ``\\udcXX``, like the journal). Returns the
+    groups of at least two usable files and the sender's name. Symlinks, hidden files,
+    files of unknown kinds and files in system folders are left out."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise GroupsError(f"--groups: no such file: {path}") from None
+    except (OSError, ValueError) as exc:
+        raise GroupsError(f"--groups: can't read {path}: {exc}") from None
+    if not isinstance(data, dict) or not isinstance(data.get("groups"), list):
+        raise GroupsError(f"--groups: {path} has no list of groups")
+    if data.get("v") != GROUPS_VERSION:
+        raise GroupsError(f"--groups: {path} is format version {data.get('v')!r}; this {NAME} reads "
+                          f"version {GROUPS_VERSION} (an update may help)")
+    extensions = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+    groups: list[list[Path]] = []
+    for raw in data["groups"]:
+        if not isinstance(raw, list):
+            continue
+        files = []
+        for name in raw:
+            if not isinstance(name, str) or not name.startswith("/"):
+                continue
+            file = Path(os.path.normpath(name))
+            if (file.name.startswith(".") or file.suffix.lower() not in extensions or file.is_symlink()
+                    or not file.is_file() or _in_system_folder(file)):
+                continue
+            files.append(file)
+        files = list(dict.fromkeys(files))
+        if len(files) >= 2:
+            groups.append(files)
+    sender = data.get("from")
+    return groups, sender if isinstance(sender, str) and sender else "another program"
+
+
+def _in_system_folder(path: Path) -> bool:
+    resolved = path.resolve()
+    return any(resolved.as_posix() == f or resolved.as_posix().startswith(f + "/") for f in SYSTEM_FOLDERS)
+
+
+def groups_folder(groups: list[list[Path]]) -> Path:
+    """The folder all files of the groups are in: names in the log and on the page are relative to it."""
+    return Path(os.path.commonpath([str(f.parent) for g in groups for f in g]))
+
+
+def group_files(settings: dict) -> list[Path]:
+    """The files of a --groups run that are still there, without videos when they are left out."""
+    extensions = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS if settings["videos"] else IMAGE_EXTENSIONS
+    found = dict.fromkeys(f for g in settings["groups"] for f in g if f.suffix.lower() in extensions)
+    return sorted((f for f in found if f.is_file() and not f.is_symlink()), key=natural_key)
 
 
 class FolderIndex:
@@ -395,7 +459,9 @@ def carry_out_mode(config: dict) -> str:
 def matching_settings(config: dict, settings: dict, target: Path, index: FolderIndex) -> dict:
     """What decided the groups of a session; stored with it and shown on resume."""
     limit, preset = resolve_limit(config)
-    if not settings["recursive"]:
+    if settings.get("groups") is not None:
+        folders = f"{len(settings['groups'])} groups from {settings['groups_from']}"
+    elif not settings["recursive"]:
         folders = "this folder only"
     else:
         entries = folder_entries(target, index)
@@ -481,9 +547,14 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
         # "n" discards the session and unlocks everything for a new scan.
         session = bool(saved and (open_groups or saved_finished))
         shown = session_settings(settings, saved) if session else settings
-        counts = index.folder_counts(target, videos=shown["videos"])
-        direct, total = counts.get(ROOT, 0), sum(counts.values())
-        scope_files = index.in_scope_files(target, shown)
+        grouped = settings.get("groups") is not None
+        if grouped:   # never counted in the folder: it can be a drive or the whole home folder
+            direct = total = 0
+            scope_files = group_files(shown)
+        else:
+            counts = index.folder_counts(target, videos=shown["videos"])
+            direct, total = counts.get(ROOT, 0), sum(counts.values())
+            scope_files = index.in_scope_files(target, shown)
         in_scope = len(scope_files)
         scope_videos = sum(1 for p in scope_files if is_video(p))
 
@@ -542,7 +613,11 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             rows.append(SettingRow("7", "Videos", VIDEO_OPTIONS, settings["videos"]))
             if settings["videos"] and not video_tools_available():
                 rows.append(Note("ffmpeg not found: identical video copies are found, remuxes are not."))
-            rows.append(SettingRow("r", "Subfolders", SUBFOLDER_OPTIONS, settings["recursive"]))
+            if not grouped:
+                rows.append(SettingRow("r", "Subfolders", SUBFOLDER_OPTIONS, settings["recursive"]))
+        if grouped:
+            rows.append(Note(f"Only files in the same group are compared, every pair by its pixels: "
+                             f"{len(settings['groups'])} groups from {settings['groups_from']}.", style="hint"))
         if session and matching.get("recursive"):
             description = matching.get("description", "").split(" · ", 1)[-1]
             rows.append(SettingRow("f", "Folders", {"d": description}, "d", locked=fixed))
@@ -577,6 +652,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             primary = f"Resume saved {label} ({open_groups} open group(s))"
         elif in_scope >= 2:
             primary = f"Start scan ({in_scope} files)"
+        elif grouped:
+            rows.append(Note("Fewer than two files of the groups are still there - nothing to compare."))
         else:
             hidden_videos = 0 if shown["videos"] else index.in_scope(target, {**shown, "videos": True}) - in_scope
             rows.append(Note(f"Nothing to scan here - {'include videos, ' if hidden_videos else ''}"
@@ -584,6 +661,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
 
         if session:
             settings_menu = [("1-7", "Next choice (not greyed-out ones)")]
+        elif grouped:
+            settings_menu = [("1-7", "Next choice for a setting")]
         else:
             settings_menu = [("1-7", "Next choice for a setting"), ("r", "Toggle subfolders")]
             if settings["recursive"]:
@@ -594,14 +673,15 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
             if saved_finished and not forced_dry:
                 session_menu.insert(0, ("a", f"Carry it out: {what}"))
             groups_menu.append(("Session", session_menu))
-        groups_menu.append(("Navigate", [("c", "Change directory"), ("q", "Quit")]))
+        groups_menu.append(("Navigate", [("q", "Quit")] if grouped else [("c", "Change directory"), ("q", "Quit")]))
 
         choice = ask(StartScreen(
             prompt="Action: ", primary=primary, menu=groups_menu, target=target, in_scope=in_scope,
             scope_videos=scope_videos,
             more_in_subfolders=total - direct if not shown["recursive"] and total > direct and not session else 0,
             panel=session_panel(saved, saved_rename(saved, config)) if saved else None,
-            mode=mode, rows=rows, blocked=blocked, nothing_to_scan=in_scope < 2))
+            mode=mode, rows=rows, blocked=blocked, nothing_to_scan=in_scope < 2,
+            groups=len(settings["groups"]) if grouped else 0, groups_from=settings.get("groups_from", "")))
         if choice == "" and blocked:
             warn(blocked)
         elif choice == "":
@@ -613,6 +693,8 @@ def start_screen(target: Path, config: dict, settings: dict, index: FolderIndex,
                 return "start", None
         elif choice == "q":
             exit_script()
+        elif grouped and choice in ("c", "r", "f"):
+            warn("Unknown option.")
         elif choice == "c":
             return "change", None
         elif choice == "a" and saved and saved_finished and not forced_dry:
@@ -714,7 +796,13 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
     ctx_store = None if applying else store
 
     fresh = resume is None and from_dry is None
-    files = find_images(target, settings["recursive"], settings["excluded"], settings["videos"]) if fresh else []
+    grouped = settings.get("groups") is not None
+    if not fresh:
+        files = []
+    elif grouped:
+        files = group_files(settings)
+    else:
+        files = find_images(target, settings["recursive"], settings["excluded"], settings["videos"])
     if fresh:
         scanned = len(files)
     else:
@@ -738,7 +826,11 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         created=resume.get("created") if resume else None,
         rename=config["rename_numbered"], dry=dry, scanned=scanned, journal=journal,
     )
-    ctx.ignores = IgnoreList(target, enabled=not settings.get("no_ignore", False))
+    if grouped:   # the files can be anywhere: marks by their whole path, in the state folder
+        ctx.ignores = IgnoreList(Path("/"), enabled=not settings.get("no_ignore", False),
+                                 file=state_dir() / GROUPS_IGNORE_FILE)
+    else:
+        ctx.ignores = IgnoreList(target, enabled=not settings.get("no_ignore", False))
     ctx.stats = stats
     totals_note = None
     if resume and resume.get("stats"):
@@ -766,7 +858,11 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
             apply_dry_run(from_dry.exact_groups, from_dry.groups, config, stats, rel, ctx)
         else:
             videos = sum(1 for f in files if is_video(f))
-            info(f"\nScanning {len(files) - videos} images and {videos} videos in {target}")
+            if grouped:
+                info(f"\nComparing {len(files) - videos} images and {videos} videos in "
+                     f"{len(settings['groups'])} groups from {settings['groups_from']}, below {target}")
+            else:
+                info(f"\nScanning {len(files) - videos} images and {videos} videos in {target}")
             stages = set(settings["stages"].split(","))
             remaining, exact_groups, remux_groups = files, [], []
             if "1" in stages:
@@ -779,7 +875,7 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
             if "3" in stages:
                 if len(remaining) > 1:
                     keep_session, groups = find_similar_images(remaining, config, settings["confirm"],
-                                                               stats, rel, ctx)
+                                                               stats, rel, ctx, settings.get("groups"))
                     ctx.groups = groups
                 else:
                     warn("\nNot enough images left for a visual comparison.")
@@ -866,11 +962,15 @@ def normalize_excluded(target: Path, folders) -> set[str]:
     return result
 
 
-def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool, exclude=()) -> int:
+def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool, exclude=(),
+        groups: tuple[list[list[Path]], str] | None = None) -> int:
     """The whole program after the command line. *initial* None (a page started
-    from the app menu) asks for the folder first."""
+    from the app menu) asks for the folder first. *groups* (``--groups``, from
+    ``load_groups``): only files in the same group are compared, no folder."""
     index = FolderIndex()
     use_sessions = bool(base_config.get("save_sessions", True)) and not auto
+    if groups is not None:
+        return run_groups(*groups, base_config, base_settings, auto, index)
 
     if auto:
         target = initial.expanduser().resolve()
@@ -953,7 +1053,44 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
             exit_script(1 if stats.failed else 0)
 
 
-def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: bool, freed: int = 0) -> str:
+def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_settings: dict, auto: bool,
+               index: FolderIndex) -> int:
+    """A ``--groups`` run: the files another program (picktag) found together. No
+    folder to choose or change and no saved sessions; the folder lock covers the
+    folder all files are in, so no other run deletes among them meanwhile."""
+    if not groups:
+        info(f"No groups from {sender} with two or more files left - nothing to compare.")
+        return 0
+    target = groups_folder(groups)
+    other = running.claim(target)
+    if other is not None:
+        error(running.busy_message(other))
+        return 2
+    settings = {**base_settings, "recursive": False, "excluded": set(), "groups": groups, "groups_from": sender}
+    if auto:
+        stats, _, _ = run_scan(target, dict(base_config), settings, index, store=None)
+        return 1 if stats.failed else 0
+    config = dict(base_config)
+    while True:
+        action, _ = start_screen(target, config, settings, index, None)
+        if config["delete_mode"] == "permanent" and not confirm_permanent():
+            continue
+        stats, quit_requested, dry_result = run_scan(target, config, settings, index, None)
+        if quit_requested:
+            exit_script(1 if stats.failed else 0)
+        choice = None
+        if dry_result is not None and dry_result.has_changes and not config.get("_cli_dry_run"):
+            outcome = continue_after_dry_run(target, config, base_config, settings, index, None, dry_result,
+                                             can_change=False)
+            choice = None if isinstance(outcome, Stats) else outcome
+        if choice is None:
+            choice = end_menu(target, settings, index, offer_optimizer=False, can_change=False)
+        if choice != "back":
+            exit_script(1 if stats.failed else 0)
+
+
+def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: bool, freed: int = 0,
+             can_change: bool = True) -> str:
     """The menu after a run. Returns 'back', 'change' or 'quit'.
 
     After a real run, media-optimizer is offered for the same folder if it is
@@ -970,15 +1107,15 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
         groups = []
         if optimizer:
             groups.append(("Next", [("m", label)]))
-        groups.append(("Navigate", [("b", "Back to settings (scan again)"),
-                                    ("c", "Change directory"), ("q", "Quit")]))
+        groups.append(("Navigate", [("b", "Back to settings (scan again)")]
+                       + ([("c", "Change directory")] if can_change else []) + [("q", "Quit")]))
         answer = ask(EndScreen(prompt="Action: ", primary="Quit", menu=groups))
         if answer == "m" and optimizer:
             run_optimizer(target, settings, freed)
             index.clear()  # media-optimizer converts and renames files
             optimizer = False
             continue
-        if answer in ("", "q", "b", "c"):
+        if answer in ("", "q", "b") or (answer == "c" and can_change):
             return {"b": "back", "c": "change"}.get(answer, "quit")
         warn("Unknown option.")  # a typo must not end the program
 
@@ -1049,7 +1186,7 @@ def carry_out_dry_run(target: Path, config: dict, base_config: dict, settings: d
     else:
         what = _fate(real_mode, dry.to_remove) + (f" and rename {dry.to_rename}" if dry.to_rename else "")
         if not confirm(f"Carry out the dry run: {what}?", tone="warn"):
-            info("Nothing changed - the dry run stays saved.")
+            info("Nothing changed - the dry run stays saved." if store is not None else "Nothing changed.")
             return None
     real_config = {**config, "delete_mode": real_mode}
     stats, quit_requested, _ = run_scan(target, real_config, settings, index, store, from_dry=dry)
@@ -1060,7 +1197,7 @@ def carry_out_dry_run(target: Path, config: dict, base_config: dict, settings: d
 
 
 def continue_after_dry_run(target: Path, config: dict, base_config: dict, settings: dict,
-                           index: FolderIndex, store, dry: DryRun) -> str | Stats:
+                           index: FolderIndex, store, dry: DryRun, can_change: bool = True) -> str | Stats:
     """Offer to carry out a finished dry run without rescanning.
 
     Returns 'back' or 'change' when the user navigates away, the real run's
@@ -1068,7 +1205,7 @@ def continue_after_dry_run(target: Path, config: dict, base_config: dict, settin
     """
     real_mode = real_delete_mode(base_config)
     while True:
-        choice = after_dry_run_menu(dry, real_mode, can_open=store is not None)
+        choice = after_dry_run_menu(dry, real_mode, can_open=store is not None, can_change=can_change)
         if choice == "quit":
             if store is not None:
                 info("The dry run stays saved - choose this folder again to carry it out.")
@@ -1091,14 +1228,17 @@ def continue_after_dry_run(target: Path, config: dict, base_config: dict, settin
             return stats
 
 
-def after_dry_run_menu(dry: DryRun, real_mode: str, can_open: bool = True) -> str:
+def after_dry_run_menu(dry: DryRun, real_mode: str, can_open: bool = True, can_change: bool = True) -> str:
     """Offer to carry out the dry run (asked first). Returns 'apply', 'open', 'back', 'change' or 'quit'."""
     what = _fate(real_mode, dry.to_remove)
     if dry.to_rename:
         what += f", rename {dry.to_rename}"
-    menu = [("Navigate", [("b", "Back to settings"), ("c", "Change directory"), ("q", "Quit")])]
+    menu = [("Navigate", [("b", "Back to settings")] + ([("c", "Change directory")] if can_change else [])
+             + [("q", "Quit")])]
     if can_open:
         menu.insert(0, ("Dry run", [("o", "Open its groups again (still a dry run, changes nothing)")]))
     answer = ask(AfterDryRunScreen(
         prompt="Action: ", primary=f"Carry it out: {what}", menu=menu, real_mode=real_mode))
+    if answer == "c" and not can_change:
+        return "unknown"
     return {"": "apply", "o": "open", "b": "back", "c": "change", "q": "quit"}.get(answer, "unknown")

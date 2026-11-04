@@ -44,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("-r", "--recursive", action="store_true", help="include subdirectories")
     scan.add_argument("--exclude", action="append", metavar="DIR", default=[],
                       help="with -r, skip this subfolder (relative to the scanned folder; repeatable)")
+    scan.add_argument("--groups", type=Path, metavar="FILE",
+                      help="compare only files in the same group of this JSON file (from picktag), "
+                           "every pair by its pixels; instead of a folder")
     scan.add_argument("--stages", type=parse_stages, default="1,2,3", metavar="STAGES",
                       help="stages to run: 1 identical files, 2 remuxed videos, 3 visually identical "
                            "images; e.g. 1,2 or 3 (default: all)")
@@ -136,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.terminal:
         parser.error(f"there are no terminal screens: {NAME} asks on its page in the "
                      "browser (--no-browser only prints its address), or asks nothing with --auto")
+    if args.groups and (args.path or args.recursive or args.exclude):
+        parser.error("--groups names the files itself: no folder, -r or --exclude with it")
     configure_logging(args.verbose)
 
     moved, migration_warnings = migrate_old_locations()  # before the config is looked for
@@ -183,16 +188,23 @@ def main(argv: list[str] | None = None) -> int:
 
     from . import app  # imports Pillow/send2trash, so only after the dependency check
     stop_on_signals()
+    groups = None
+    if args.groups:
+        try:
+            groups = app.load_groups(args.groups)
+        except app.GroupsError as exc:
+            ui.error(str(exc))
+            return 2
 
     if not args.auto:  # questions: the page asks them
         from . import web
         initial = Path(args.path) if args.path else None  # from the app menu: the page asks
-        return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude),
+        return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude, groups=groups),
                          open_browser=not args.no_browser and graphical_session(),
                          check_updates=config["check_for_updates"])
     update = _UpdateCheck() if config["check_for_updates"] else None
     try:
-        code = app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude)
+        code = app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude, groups=groups)
     except KeyboardInterrupt:
         print("\n\nProgram aborted by user.")
         return 130

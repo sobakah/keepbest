@@ -219,10 +219,10 @@ class IgnoreList:
     left out, but new marks are still saved.
     """
 
-    def __init__(self, base: Path, enabled: bool = True):
+    def __init__(self, base: Path, enabled: bool = True, file: Path | None = None):
         self.base = base
-        self.path = base / IGNORE_FILE
-        self._old_path = base / OLD_IGNORE_FILE
+        self.path = file or base / IGNORE_FILE   # *file*: ``--groups`` runs keep theirs in the state folder
+        self._old_path = base / OLD_IGNORE_FILE if file is None else self.path
         self.enabled = enabled
         self._pairs: dict[tuple, dict] = {}
         self._warned = False
@@ -281,12 +281,15 @@ class IgnoreList:
             "pairs": list(self._pairs.values()),
         }
         try:
-            fd, tmp = tempfile.mkstemp(dir=self.base, prefix=f".{NAME}_ignore-", suffix=".tmp")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=f".{NAME}_ignore-", suffix=".tmp")
             _write_atomically(fd, tmp, self.path, lambda handle: json.dump(payload, handle, indent=1))
         except OSError as exc:
             if not self._warned:
                 self._warned = True
                 warn(f"Could not save the 'not duplicates' marks to {self.path}: {exc}")
+            return
+        if self._old_path == self.path:
             return
         try:  # the new file has every mark of the old one: it replaces it
             self._old_path.unlink()

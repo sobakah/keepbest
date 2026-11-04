@@ -163,6 +163,7 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `-r`, `--recursive` | Include subfolders |
 | `--exclude DIR` | With `-r`: skip this subfolder and everything in it (repeatable); `--exclude .` skips only the main folder |
 | `--stages STAGES` | Stages to run, e.g. `1,2` or `3`: 1 identical files, 2 remuxed videos, 3 visually identical images (default `all`) |
+| `--groups FILE` | Instead of a folder: compare only files in the same group of this file, every pair by its pixels (see [Groups from picktag](#groups-from-picktag)) |
 | `--strictness {strict,normal,loose}` | Visual limit 12 / 20 / 28 |
 | `--dry-run` | Show what would be deleted; change nothing |
 | `-i`, `--interactive` | Ask for every group |
@@ -177,6 +178,14 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
 
 Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path, a refused folder (see [First run](#first-run)) or a folder another keepbest works on with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C or by closing the page. Without `--auto`, a bad path is asked for again instead.
+
+### Groups from picktag
+
+[picktag](https://github.com/sobakah/picktag)'s *Find Duplicates* sends pictures with the same specific tags as groups: `keepbest --groups FILE`, with no folder. keepbest then compares only the files within each group. Stage 3 compares every pair in a group pixel by pixel, without the hash filter that otherwise chooses which pairs to compare, so copies the hash misses are found too. The pixel limit, the aspect-ratio check, the keeper's ranking and the questions stay as in a folder run. Stages 1 and 2 run over all the groups' files.
+
+The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
+
+The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
 
 ## Configuration
 

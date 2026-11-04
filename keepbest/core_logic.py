@@ -757,14 +757,28 @@ def report_ignored(hidden: int, groups: list[Group]) -> None:
             f"(--no-ignore shows them again).")
 
 
+def hint_pairs(metas: list[dict], hints: list[list[Path]]) -> set[tuple[int, int]]:
+    """Every pair of images that share a group of *hints* (``--groups``): those are
+    the candidates instead of the hash's, and each is compared pixel by pixel."""
+    index = {m["path"]: i for i, m in enumerate(metas)}
+    pairs = set()
+    for hint in hints:
+        members = sorted({index[p] for p in hint if p in index})
+        pairs.update((a, b) for n, a in enumerate(members) for b in members[n + 1:])
+    return pairs
+
+
 def find_groups(files: list[Path], config: dict, rel, ignores=None,
-                planned: dict[Path, Path] | None = None) -> tuple[list[Group], int]:
+                planned: dict[Path, Path] | None = None,
+                hints: list[list[Path]] | None = None) -> tuple[list[Group], int]:
     """Group visually identical images around the best one of each cluster.
 
     Images marked "not duplicates" of an anchor (*ignores*) stay out of its group
     and are compared with the rest again, so two copies of each other are still
     found next to a better image they were both marked against. *planned*: the
     names a dry run's Stage 1 would give files, which rank like in a real run.
+    *hints* (``--groups``): only images in the same group are compared, every
+    such pair by its pixels, without the hash as a filter first.
     Returns (groups, images left out of every group by such a mark)."""
     limit, _ = resolve_limit(config)
     borderline_above = limit * float(config["uncertain_ratio"])
@@ -796,7 +810,10 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         if animated:
             dim(f"{len(animated)} animated image(s) skipped (only exact duplicates are handled for those).")
 
-        pairs = _candidate_pairs([m["hash"] for m in metas], 2 * hash_size * hash_size, max_hash)
+        if hints is None:
+            pairs = _candidate_pairs([m["hash"] for m in metas], 2 * hash_size * hash_size, max_hash)
+        else:
+            pairs = hint_pairs(metas, hints)
         components = _components(len(metas), pairs)
         involved = sorted({i for comp in components for i in comp})
 
@@ -840,6 +857,8 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
         out by a mark). Clusters share no image, so they are settled in parallel,
         and a big cluster's anchor is compared with the others in parallel too."""
         found, marked, blurred = [], set(), Blurred()
+        candidate = (lambda a, i: i in near[a]) if hints is not None else (
+            lambda a, i: _popcount(metas[a]["hash"] ^ metas[i]["hash"]) <= max_hash)
         comp = [i for i in comp if i in thumbs]
         comp.sort(key=lambda i: score_image(metas[i]), reverse=True)
         while len(comp) > 1:
@@ -854,7 +873,7 @@ def find_groups(files: list[Path], config: dict, rel, ignores=None,
                     pass
                 # Every deleted image is checked directly against the image that is
                 # KEPT, so A~B and B~C can never chain into deleting a C unlike A.
-                elif (_popcount(metas[anchor]["hash"] ^ metas[i]["hash"]) <= max_hash
+                elif (candidate(anchor, i)
                       and aspect_ratio_close(metas[anchor], metas[i], config["max_aspect_diff"])):
                     candidates.append(i)
             count(len(near[anchor].intersection(rest)) - len(candidates))   # those not compared
@@ -1328,13 +1347,13 @@ def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: S
 
 
 def find_similar_images(files: list[Path], config: dict, confirm_mode: str, stats: Stats, rel,
-                        ctx: RunContext) -> tuple[bool, list[Group]]:
+                        ctx: RunContext, hints: list[list[Path]] | None = None) -> tuple[bool, list[Group]]:
     """Returns (keep the saved session?, the groups found)."""
     limit, preset = resolve_limit(config)
     banner("Stage 3 · Visually identical images")
     show("stage3_header", limit=limit, preset=preset, confirm_mode=confirm_mode, delete_mode=config["delete_mode"])
 
-    groups, hidden = find_groups(files, config, rel, ctx.ignores, ctx.planned)
+    groups, hidden = find_groups(files, config, rel, ctx.ignores, ctx.planned, hints)
     report_ignored(hidden, groups)
     if not groups:
         dim("No visually identical images found.")

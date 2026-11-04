@@ -410,9 +410,12 @@ function StartForm({ question, answer, sending }) {
   const set = (key, index) => answer(index === undefined ? key : { set: [key, index] });
   return html`<div class="stack">
     <dl class="facts">
-      <dt>Folder</dt><dd class="row"><span class="mono" title=${q.target}>${q.targetShort}</span>
+      ${q.groups
+        ? html`<dt>Groups</dt><dd><b>${q.groups}</b> from ${q.groupsFrom}
+            <span class="muted">· below <span class="mono" title=${q.target}>${q.targetShort}</span></span></dd>`
+        : html`<dt>Folder</dt><dd class="row"><span class="mono" title=${q.target}>${q.targetShort}</span>
         <button class="btn btn-small" disabled=${sending} title=${keyTitle('c')} onClick=${() => answer('c')}>
-          <${Icon} name="folder" size=${14} /><${Label} text="Change directory" k="c" /></button></dd>
+          <${Icon} name="folder" size=${14} /><${Label} text="Change directory" k="c" /></button></dd>`}
       <dt>Files</dt><dd><b>${q.inScope}</b> in scope <span class="muted">(${q.inScope - q.scopeVideos} images, ${q.scopeVideos} videos)</span>
         ${q.moreInSubfolders > 0 && html` <span class="muted">· ${q.moreInSubfolders} more in subfolders</span>`}</dd>
     </dl>
