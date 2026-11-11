@@ -6,6 +6,16 @@ All notable changes to keepbest are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`--permanent`** deletes permanently instead of moving files to the trash, for that run.
+
+### Changed
+
+- **`--auto` deletes permanently only with `--permanent`.** With `delete_mode` `permanent` in the
+  config file alone, an `--auto` run moves files to the trash and says so: it asks nothing, not even
+  for borderline groups, so a config meant for the page no longer deletes for good in a script.
+
 ## [1.0.0] — 2026-11-11
 
 The first release. keepbest finds duplicate pictures and videos in a folder and removes the

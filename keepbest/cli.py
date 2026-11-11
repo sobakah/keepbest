@@ -61,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("-y", "--auto", action="store_true",
                       help="no start screen and no questions; resolve every group automatically")
     review.add_argument("--dry-run", action="store_true", help="show what would be deleted, delete nothing")
+    review.add_argument("--permanent", action="store_true",
+                        help="delete permanently instead of moving to the trash; --auto needs it for "
+                             "permanent deletion, a delete_mode in the config file is not enough")
     review.add_argument("--no-rename", action="store_true",
                         help='keep "(1)" in the names of kept copies')
     review.add_argument("--no-ignore", action="store_true",
@@ -141,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.terminal:
         parser.error(f"there are no terminal screens: {NAME} asks on its page in the "
                      "browser (--no-browser only prints its address), or asks nothing with --auto")
+    if args.permanent and args.dry_run:
+        parser.error("--permanent and --dry-run don't go together")
     if args.groups and (args.path or args.recursive):
         parser.error("--groups names the files itself: no folder or -r with it")
     configure_logging(args.verbose)
@@ -150,6 +155,14 @@ def main(argv: list[str] | None = None) -> int:
     warnings = migration_warnings + warnings
     if args.color:
         config["color"] = args.color
+    if args.permanent:
+        config["delete_mode"] = "permanent"
+    elif args.auto and config["delete_mode"] == "permanent":
+        # --auto asks nothing, borderline groups included: a config set up for the
+        # page must not delete for good in a script.
+        config["delete_mode"] = "trash"
+        warnings.append("delete_mode is \"permanent\" in the config file, but --auto deletes permanently "
+                        "only with --permanent: files go to the trash.")
     config["_configured_delete_mode"] = config["delete_mode"]  # what "for real" means after a dry run
     if args.dry_run:
         config["delete_mode"] = "dry_run"

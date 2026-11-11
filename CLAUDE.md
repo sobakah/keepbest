@@ -192,10 +192,15 @@ against media-optimizer's parser unless `media_optimizer` is importable.
 - Files go to the trash by default; nothing is deleted without being compared against the file
   that is **kept** (stage 3 compares each member with the keeper, never via chains).
 - Enter keeps the recommended file; in `permanent` mode deletions in interactive screens ask
-  `[y/N]` (default No), and `confirm_permanent` asks once before an interactive run starts. Refused
-  in every mode (`is_protected`, one shared message): the home folder, every folder above it, the
-  root folder and `SYSTEM_FOLDERS`; compared with symlinks resolved (`/home -> /var/home` on Fedora
-  Atomic).
+  `[y/N]` (default No), and `confirm_permanent` asks once before an interactive run starts.
+  Refused in every mode (`is_protected`, one shared message): the home folder, every folder above
+  it, the root folder and `SYSTEM_FOLDERS`; compared with symlinks resolved (`/home -> /var/home`
+  on Fedora Atomic).
+- `--auto` deletes permanently only with `--permanent` on the command line; `delete_mode`
+  `permanent` from the config alone becomes `trash` there, with a warning (`cli.main`): `--auto`
+  decides borderline groups without asking.
+- "Not duplicates" marks are saved in dry runs too (the owner's choice: a mark is a judgement
+  about the pictures, not a change to them; the README says so).
 - Choosing another keeper (`regroup_around`) compares every other image with the chosen one
   afresh; images above the limit stay on disk and leave the group. Declining the permanent-mode
   `[y/N]` after that restores the group as found.
@@ -364,9 +369,6 @@ check don't see the change.
 
 ## Open items
 
-- **Ask the owner:** `--auto` with `permanent` – only a warning, or an extra explicit option?
-  Dry-run "not duplicates" marks write `.keepbest_ignore.json` into the picture folder, which
-  contradicts "changes nothing": change the README wording or store marks elsewhere (see E3).
 - **Small fixes:** don't group 0-byte files; warn on `--exclude` without `-r`; a friendlier
   goodbye than "Program terminated."; summary label "Visually identical images" (adjust
   `_SUMMARY_FIELDS` in `tests/conftest.py`); pytest should stop early with a clear message naming

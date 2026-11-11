@@ -71,8 +71,24 @@ def test_permanent_removals_say_so(library, run_cli, config_file, journal):
     config_file({"delete_mode": "permanent"})
     library.photo("a.png", 1)
     library.copy_of("a.png", "b.png")
-    run_cli(library.path, "--auto")
+    run_cli(library.path, "--auto", "--permanent")
     assert [r["how"] for r in changes(journal())] == ["permanent"]
+
+
+def test_auto_deletes_permanently_only_with_the_option(library, run_cli, config_file, journal):
+    """delete_mode "permanent" in the config is for the page, where it asks: --auto alone uses the trash."""
+    config_file({"delete_mode": "permanent"})
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "b.png")
+    result = run_cli(library.path, "--auto")
+    assert "deletes permanently only with --permanent" in result.stdout + result.stderr
+    assert [r["how"] for r in changes(journal())] == ["trash"]
+
+
+def test_permanent_and_dry_run_are_refused_together(library, run_cli):
+    library.photo("a.png", 1)
+    result = run_cli(library.path, "--auto", "--permanent", "--dry-run")
+    assert result.returncode == 2 and "don't go together" in result.stderr
 
 
 @requires_ffmpeg

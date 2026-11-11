@@ -37,7 +37,7 @@ The package and the command are both called `keepbest`. Other ways to install or
 keepbest ~/Pictures --dry-run
 ```
 
-`--dry-run` shows what would be deleted and changes nothing. To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and carry it out from the start screen.
+`--dry-run` shows what would be deleted and changes no pictures or videos; only pairs you mark as "not duplicates" are saved, as in any run (see below). To carry out exactly what it showed, without scanning again, start keepbest on the same folder without `--dry-run` and carry it out from the start screen.
 
 keepbest opens a page in your browser (see [The page](#the-page)) with a **start screen**: the folder, the number of files in scope and all settings, each with its choices. Click a choice, and **Enter** (or the blue button) starts. Without a folder, the page first lets you choose one. For scripts, `--auto` runs without the page and without questions.
 
@@ -99,9 +99,9 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By def
 | `u` | Dry runs only: a group you already decided can still change. Open it from the overview (`t`, then its number) and keep another file with its *Keep* button (or its number), or skip it instead (`s`); `u` undoes the decision and asks again, for the other choices (a key only, the page has no button for it). Its images, including any a chosen file had left out, come back. Real runs can't change a decision: trashed files are restored from the trash (the log has their paths). |
 | `q` | Quit (asks whether to keep your progress) |
 
-In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing.
+In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing, borderline groups included, so it deletes permanently only with `--permanent` on the command line: with `delete_mode` `permanent` in the config file alone, it moves files to the trash and says so.
 
-**"Not duplicates" marks** (`i`) are saved in a hidden file, `.keepbest_ignore.json`, in the scanned folder, so they stay with your pictures. A mark separates two images, not a whole group: images you marked against #0 are still compared with each other, and two of them that are copies are shown as a group of their own. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
+**"Not duplicates" marks** (`i`) are saved in a hidden file, `.keepbest_ignore.json`, in the scanned folder, so they stay with your pictures; a dry run saves them too. A mark separates two images, not a whole group: images you marked against #0 are still compared with each other, and two of them that are copies are shown as a group of their own. A mark stops applying when one of its files changes. `--no-ignore` shows marked pairs again for one run; deleting the file forgets all marks.
 
 ## Dry runs and saved progress
 
@@ -163,7 +163,8 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `--stages STAGES` | Stages to run, e.g. `1,2` or `3`: 1 identical files, 2 remuxed videos, 3 visually identical images (default `all`) |
 | `--groups FILE` | Instead of a folder: compare only files in the same group of this file, every pair by its pixels (see [Groups from picktag](#groups-from-picktag)) |
 | `--strictness {strict,normal,loose}` | Visual limit 12 / 20 / 28 |
-| `--dry-run` | Show what would be deleted; change nothing |
+| `--dry-run` | Show what would be deleted; change no pictures or videos |
+| `--permanent` | Delete permanently instead of moving to the trash (needed for permanent deletion with `--auto`) |
 | `-i`, `--interactive` | Ask for every group |
 | `-y`, `--auto` | No start screen, no questions, no saved progress (for scripts) |
 | `--no-rename` | Keep "(1)" in the names of kept copies |
@@ -183,7 +184,7 @@ All settings can be stored in `config.json`; copy `config.example.json` to start
 
 | Key | Default | Meaning |
 |---|---|---|
-| `delete_mode` | `trash` | `trash`, `permanent` or `dry_run` |
+| `delete_mode` | `trash` | `trash`, `permanent` or `dry_run` (`--auto` deletes permanently only with `--permanent`) |
 | `confirm` | `uncertain` | ask for `uncertain` (borderline) groups, `always` or `never` |
 | `viewer` | `auto` | see [Viewers](#viewers) |
 | `strictness` | `normal` | visual limit: `strict` 12, `normal` 20, `loose` 28 |
