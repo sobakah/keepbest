@@ -6,6 +6,8 @@ All notable changes to keepbest are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-11-11
+
 ### Added
 
 - **`--permanent`** deletes permanently instead of moving files to the trash, for that run.
@@ -66,5 +68,6 @@ a page in your browser; `--auto` runs in the terminal without questions.
   `pipx install "keepbest[jxl] @ git+https://github.com/sobakah/keepbest.git"`. Needs Python 3.9 or
   newer, and ffmpeg for remuxed videos.
 
-[Unreleased]: https://github.com/sobakah/keepbest/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/sobakah/keepbest/compare/1.0.1...HEAD
+[1.0.1]: https://github.com/sobakah/keepbest/compare/1.0.0...1.0.1
 [1.0.0]: https://github.com/sobakah/keepbest/releases/tag/1.0.0
