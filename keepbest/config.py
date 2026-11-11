@@ -1,4 +1,4 @@
-"""Configuration loading (lrckit-style: defaults + user overrides + warnings)."""
+"""Configuration loading: defaults + user overrides + warnings."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.3.1"
+__version__ = "1.0.0"
 NAME = "keepbest"
 OLD_NAME = "img_dedupe"           # the old name; its folders are moved over (migrate.py)
 PROJECT_URL = "https://github.com/sobakah/keepbest"

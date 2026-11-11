@@ -8,7 +8,7 @@ Finds duplicate images and videos in a folder and removes the redundant copies, 
 
 keepbest shows a page in your browser, where you choose the settings and decide on each group, with its pictures side by side on request.
 
-It is deliberately cautious: pictures that merely *look similar* (an edited version, an added watermark, a crop, the next frame of a burst) are left alone. Files go to the system trash by default, every change is logged, and a dry run shows everything before anything happens.
+It is deliberately cautious: pictures that merely *look similar* (an edited version, an added watermark, a crop, the next frame of a burst) are left alone. Files go to the trash by default, every change is logged, and a dry run shows everything before anything happens.
 
 ## Installation
 
@@ -96,7 +96,7 @@ The groups are numbered (`[3/12]`) and the file to keep is marked `KEEP`. By def
 | `n` | Remove "(1)" from the kept name: on/off for this group |
 | `v` | Open the images in the viewer (see [Viewers](#viewers)) |
 | `p` / `t` | Previous open group / overview of all groups (*‹ Groups overview* above each group). A group opened from the overview leads back to it once it is decided or skipped |
-| `u` | Dry runs only: a group you already decided can still change. Open it from the overview (`t`, then its number) and keep another file with its *Keep* button (or its number), or skip it instead (`s`); `u` undoes the decision and asks again, for the other choices (a key only, the page has no button for it). Its images, including any a chosen file had left out, come back. Real runs can't change a decision: trashed files are restored from the system trash (the log has their paths). |
+| `u` | Dry runs only: a group you already decided can still change. Open it from the overview (`t`, then its number) and keep another file with its *Keep* button (or its number), or skip it instead (`s`); `u` undoes the decision and asks again, for the other choices (a key only, the page has no button for it). Its images, including any a chosen file had left out, come back. Real runs can't change a decision: trashed files are restored from the trash (the log has their paths). |
 | `q` | Quit (asks whether to keep your progress) |
 
 In `permanent` mode, you are asked once before the run starts, since identical copies, remuxes and clear matches are then deleted without further questions. Every decision you make on a group's screen asks `[y/N]` again, with No as the default, so pressing Enter twice never deletes anything permanently. `--auto` asks nothing.
@@ -124,9 +124,7 @@ When you open the same folder again, the start screen offers to **resume** (Ente
 
 ## After a run
 
-The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter).
-
-**media-optimizer:** if [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It is a step of its own on the page, after the summary. media-optimizer 0.8 and newer opens its own page in the same tab, where you choose its settings and follow the run; its last button leads back to keepbest's end screen. An older one runs with the settings of its own config (`-y`), its output is shown on keepbest's page, and *Stop* stops it as Ctrl+C would. Back in keepbest, its numbers are shown next to keepbest's own: converted, space saved, skipped and failed, a line per stage, and the space both freed together as a tile of its own, *Freed together*, with a line saying how much each freed (needs media-optimizer 1.1.0 or newer; an older one only shows its exit code). media-optimizer gets the same folder choice as the run (without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`), so it starts with those folders selected (needs media-optimizer 0.6 or newer; older versions include all subfolders).
+The end screen offers to scan again with other settings (`b`), change the folder (`c`) or quit (Enter). After a run that removed files, it also offers [media-optimizer](#media-optimizer) (`m`).
 
 ## Viewers
 
@@ -138,7 +136,7 @@ Each file of a group has *Open* (in a group's table the picture opens below its 
 | `imagecompare` | [Image Compare](https://github.com/gimletlove/imagecompare): side by side or in a grid, synchronised zoom; recommended. `flatpak install flathub io.github.gimletlove.imagecompare` |
 | `identity` | [Identity](https://apps.gnome.org/Identity/): tabs or side by side. `flatpak install flathub org.gnome.gitlab.YaLTeR.Identity` |
 
-If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximized: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
+If the chosen app is missing, keepbest says so and uses your default viewer; if no viewer can be started at all, it says so and the review goes on. Neither app can be told to open maximised: on KDE use a window rule (*System Settings → Window Management → Window Rules*), on GNOME press Super+↑.
 
 ## The page
 
@@ -178,16 +176,6 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
 
 Exit codes: `0` success (also when you quit), `1` some files could not be removed, `2` a bad path, a refused folder (see [First run](#first-run)) or a folder another keepbest works on with `--auto`, a bad config file or missing packages, `130` stopped with Ctrl+C or by closing the page. Without `--auto`, a bad path is asked for again instead.
-
-### Groups from picktag
-
-[picktag](https://github.com/sobakah/picktag)'s *Find Duplicates* sends pictures with the same specific tags as groups: `keepbest --groups FILE`, with no folder. keepbest then compares only the files within each group. Stage 3 compares every pair in a group pixel by pixel, without the hash filter that otherwise chooses which pairs to compare, so copies the hash misses are found too. The pixel limit, the aspect-ratio check, the keeper's ranking and the questions stay as in a folder run. Stages 1 and 2 run over all the groups' files.
-
-Comparing every pair is the slow part (a group of 300 files has 44 850 pairs), so the groups' pictures are first loaded small: a pair whose pictures, averaged down to 16 × 16, already differ by more than the limit allows can't be a duplicate (each 8 × 8 cell within the limit means the whole picture is too), and only the pictures with a pair left are loaded and compared in full.
-
-The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. *Choose folders to leave out* (`f`) lists only the folders the groups' files are in: the files in a folder switched off are neither compared nor removed. keepbest remembers the choice (`groups_excluded.json` in the state folder, as absolute paths) for the next groups run. `--exclude DIR` does the same from the command line, for that run only (absolute, or relative to the files' common folder). There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
-
-The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
 
 ## Configuration
 
@@ -237,13 +225,31 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 
 `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\keepbest`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
 
-**The log** records every change, one line per file: what happened, the full path, the file kept instead, and why. Trashed files can be restored from the system trash using these paths. Dry runs are not logged.
+**The log** records every change, one line per file: what happened, the full path, the file kept instead, and why. Trashed files can be restored from the trash using these paths. Dry runs are not logged.
 
 ```
 2026-09-23 20:39:37 | TRASHED  | /pics/a (1).png | kept /pics/a.png | exact copy (identical bytes), automatic
 2026-09-23 20:39:37 | TRASHED  | /pics/photo.jpg | kept /pics/photo (1).jpg | visual match (worst diff 5/20), automatic
 2026-09-23 20:39:37 | RENAMED  | /pics/photo (1).jpg | new name /pics/photo.jpg
 ```
+
+## Working with the other programs
+
+### media-optimizer
+
+If [media-optimizer](https://github.com/sobakah/media-optimizer) is installed, `m` on the end screen runs it on the same folder after a run that removed files (not after a dry run), to convert what is left to more efficient formats. It is a step of its own on the page, after the summary. Its page opens in the same tab, where you choose its settings and follow the run; its last button leads back to keepbest's end screen. It starts with the same folder choice as the run: without `r` only the main folder, otherwise the subfolders chosen with `f` or `--exclude`.
+
+Back in keepbest, its numbers are shown next to keepbest's own: converted, space saved, skipped and failed, a line per stage, and *Freed together*, the space both freed, with a line saying how much each freed. Ctrl+C in the terminal stops media-optimizer and then keepbest, since the tab is on media-optimizer's page.
+
+### Groups from picktag
+
+[picktag](https://github.com/sobakah/picktag)'s *Find Duplicates* sends pictures with the same specific tags as groups: `keepbest --groups FILE`, with no folder. keepbest then compares only the files within each group. Stage 3 compares every pair in a group pixel by pixel, without the hash filter that otherwise chooses which pairs to compare, so copies the hash misses are found too. The pixel limit, the aspect-ratio check, the keeper's ranking and the questions stay as in a folder run. Stages 1 and 2 run over all the groups' files.
+
+Comparing every pair is the slow part (a group of 300 files has 44 850 pairs), so the groups' pictures are first loaded small: a pair whose pictures, averaged down to 16 × 16, already differ by more than the limit allows can't be a duplicate (each 8 × 8 cell within the limit means the whole picture is too), and only the pictures with a pair left are loaded and compared in full.
+
+The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. *Choose folders to leave out* (`f`) lists only the folders the groups' files are in: the files in a folder switched off are neither compared nor removed. keepbest remembers the choice (`groups_excluded.json` in the state folder, as absolute paths) for the next groups run. `--exclude DIR` does the same from the command line, for that run only (absolute, or relative to the files' common folder). There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
+
+The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
 
 ### The file journal
 
@@ -269,13 +275,6 @@ Paths are absolute. File names that aren't valid UTF-8 appear as `\udcXX` escape
 
 **From a local clone:** `git clone https://github.com/sobakah/keepbest.git`, then `pipx install .` in that folder. To update, `git pull` and `pipx install --force .`.
 
-**For development:** an editable install, where code changes take effect immediately:
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[jxl]"
-```
-
 **Without installing:** get the code (clone it, or *Code → Download ZIP* on GitHub and rename `keepbest-main` to `keepbest`), set up the two packages once, and start it with `run.py`:
 
 ```bash
@@ -299,59 +298,6 @@ alias keepbest='~/keepbest/.venv/bin/python ~/keepbest/run.py'
 
 On Windows (not tested yet): `py -m venv .venv`, `.venv\Scripts\pip install Pillow send2trash`, `.venv\Scripts\python run.py C:\Pictures`.
 
-## Running the tests
-
-The tests belong to the repository, not to the installed program: pipx installs only keepbest itself, without the tests or pytest. So you need a clone of the repository, and the tests check the code in that clone.
-
-**With your pipx installation.** It already has Pillow and send2trash; add pytest to it once, then run the tests of a clone with its Python:
-
-```bash
-pipx inject keepbest pytest
-git clone https://github.com/sobakah/keepbest.git
-cd keepbest
-git checkout 1.0.0       # optional: the version you have installed (see keepbest --version)
-"$(pipx environment --value PIPX_LOCAL_VENVS)/keepbest/bin/python" -m pytest
-```
-
-`pipx uninject keepbest pytest` removes pytest again; the program keeps working. (`pipx run pytest` does *not* work: it starts pytest in a separate environment without Pillow.)
-
-**In a development setup**, independent of any pipx installation:
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-.venv/bin/python -m pytest              # everything, about 15 seconds
-.venv/bin/python -m pytest -k video     # only tests with "video" in their name
-```
-
-Video tests are skipped if ffmpeg isn't installed, and the H.264 cases if your ffmpeg has no H.264 encoder (like Fedora's `ffmpeg-free`). Every test runs in its own temporary home, config and state folder, so your real settings, log, sessions and trash are never touched.
-
-**Writing a test** is quick with the helpers in `tests/conftest.py`: `library` builds a picture folder (`photo`, `variant`, `copy_of`), `run_cli` runs keepbest like a user would and answers its page with the keys of the buttons (`keys=[...]`; `asked()` and `shown()` read what the page showed), and `summary()` reads the final numbers:
-
-```python
-from conftest import summary
-
-def test_a_backup_copy_is_found(library, run_cli):
-    library.photo("a.png", seed=1)
-    library.copy_of("a.png", "backup/a copy.png")
-    result = run_cli(library.path, "-r", "--auto", "--dry-run")
-    assert summary(result)["exact"] == 1
-```
-
-`tests/pictures.py` makes deterministic photo-like pictures and edited versions (`with_text`, `with_patch`, `brighter`, `downscaled`); `fake_command` puts stand-in programs on the PATH, e.g. to test viewers.
-
-## Releasing a new version
-
-Versions have three parts: a new feature or changed behaviour raises the middle number (1.1.0), a pure fix the last one (1.0.1). Tags are the plain version, without `v`. Raise `__version__` in `keepbest/config.py` (the only place the version is set), add the changes to `CHANGELOG.md`, run the tests, commit, then tag and push:
-
-```bash
-git tag -a 1.1.0 -m "keepbest 1.1.0"
-git push && git push --tags
-gh release create 1.1.0 --title "keepbest 1.1.0" --notes-file notes.md   # that version's changelog section
-```
-
-Without the version bump, `pipx upgrade keepbest` doesn't see the new release. Never move or delete a published tag; release a fix as a new version instead.
-
 ## Known limitations
 
 - An upscaled copy counts as the better one, because it has the higher resolution.
@@ -359,3 +305,7 @@ Without the version bump, `pipx upgrade keepbest` doesn't see the new release. N
 - During the visual comparison, a thumbnail of every candidate image is kept in memory (about 768 KB each), so thousands of candidates can need several GB of RAM. Up to 32 blurred copies per CPU core come on top while the pixels are compared.
 - Videos are only compared by content; a re-encoded copy is not recognised. MPEG-4 (DivX/Xvid) video inside an MPEG-TS file can't be read by ffmpeg and is left alone.
 - Developed and tested on Linux; macOS and Windows are supported by the code but untested.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

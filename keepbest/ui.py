@@ -1,10 +1,8 @@
 """Terminal presentation: colours, tables and progress.
 
-Follows the same conventions as lrckit's ui module: plain ANSI styling via
-StyleUI, banners, [BADGE] tags and transient status lines. The
-terminal only shows messages (--auto, startup errors and the log of a run on
-the page); the questions are the page's.
-No third-party dependencies.
+Plain ANSI styling via StyleUI, banners, [BADGE] tags and transient status
+lines. The terminal only shows messages (--auto, startup errors and the log of
+a run on the page); the questions are the page's. No third-party dependencies.
 """
 
 from __future__ import annotations
@@ -174,7 +172,7 @@ class Column:
 
 def print_table(columns: list[Column], rows: list[list], indent: int = 2, gap: int = 2) -> None:
     """Print aligned rows. A cell is plain text or ``(text, style)``; the special
-    style ``"key"`` renders ``[n]`` with a green number, like lrckit's lists."""
+    style ``"key"`` renders ``[n]`` with a green number."""
 
     def split(cell):
         return (cell, "") if isinstance(cell, str) else cell

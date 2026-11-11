@@ -1,6 +1,6 @@
-"""Offering media-optimizer after a run and coming back from it: one with a
-page of its own takes over keepbest's tab, an older one runs without
-questions with its output on keepbest's page."""
+"""Offering media-optimizer after a run and coming back from it: its page
+takes over keepbest's tab and leads back, and its results are shown next to
+keepbest's numbers."""
 
 import re
 
@@ -10,11 +10,8 @@ from conftest import asked, shown
 
 OFFER = "Optimize this folder with media-optimizer"
 BACK = "Back in keepbest"
-OLD_HELP = "usage: media-optimizer run [-h] [-y] [source]"
-PAGE_HELP = "usage: media-optimizer run [-h] [-y] [--web] [--no-browser] [--return-url URL] [--return-name NAME]"
-RESULTS_HELP = PAGE_HELP + " [--results FILE]"
 # What a media-optimizer that converted 3 pictures and saved 2048 bytes writes (its results.py).
-RESULTS = {"v": 1, "program": "media-optimizer", "version": "1.1.0", "code": 3, "dry_run": False,
+RESULTS = {"v": 1, "program": "media-optimizer", "version": "1.0.0", "code": 3, "dry_run": False,
            "source": "/x", "target": None, "converted": 3, "failed": 1, "before": 5120, "after": 3072,
            "stages": [{"stage": "images", "title": "Images", "state": "done", "code": 3, "total": 4, "done": 4,
                        "outcomes": {"converted": 3, "failed": 1}, "before": 5120, "after": 3072, "elapsed": 1.0},
@@ -34,13 +31,10 @@ def optimizer(fake_command, tmp_path):
     """A stand-in media-optimizer that also records the variables it was given."""
     env_log = tmp_path / "optimizer.env"
 
-    def make(script: str = "", exit_code: int = 0, page: bool = False, help_text: str = ""):
+    def make(script: str = "", exit_code: int = 0):
         folders_log = tmp_path / "optimizer.folders"
-        # `run --help` tells keepbest whether it has a page (not recorded as a run)
-        help_text = help_text or (PAGE_HELP if page else OLD_HELP)
         command = fake_command("media-optimizer", exit_code=exit_code,
-                               script=f"[ \"$2\" = --help ] && {{ echo '{help_text}'; exit 0; }}\n"
-                                      f"echo \"$MO_CALLER $MO_HOLD\" >> '{env_log}'\n"
+                               script=f"echo \"$MO_CALLER\" >> '{env_log}'\n"
                                       f"echo \"$MO_SUBFOLDERS $MO_EXCLUDE_FOLDERS\" >> '{folders_log}'\n{script}")
         command.env = lambda: env_log.read_text().split() if env_log.exists() else []
         command.folders = lambda: folders_log.read_text().strip() if folders_log.exists() else None
@@ -52,11 +46,12 @@ def test_real_run_offers_media_optimizer_for_the_same_folder(one_copy, run_cli, 
     command = optimizer()
     result = run_cli(one_copy.path, keys=["", "m", "q"])            # start, optimizer, quit
     assert len(one_copy.files()) == 1                           # the copy is gone
-    assert command.calls() == [["run", str(one_copy.path), "-y"]]   # an old one: no questions
-    assert command.env() == ["keepbest", "0"]                       # caller known, no hold-open
+    (call,) = command.calls()
+    assert call[:2] == ["run", str(one_copy.path)] and "-y" not in call
+    assert command.env() == ["keepbest"]                            # caller known
     assert BACK in result.stdout
     first, again = asked(result, "EndScreen")
-    assert "no questions" in dict(first["menu"][0][1])["m"]
+    assert dict(first["menu"][0][1])["m"] == "Optimize this folder with media-optimizer (on its page)"
     assert "m" in first["keys"] and "m" not in again["keys"]        # not offered twice
     assert result.returncode == 0
 
@@ -66,7 +61,7 @@ def test_carrying_out_a_dry_run_offers_it_too(one_copy, run_cli, optimizer):
     result = run_cli(one_copy.path, keys=["4", "", "", "y", "m", "q"])   # dry run, start, carry out, yes, optimizer
     assert len(one_copy.files()) == 1                           # the copy is gone
     assert OFFER in shown(result)
-    assert command.calls() == [["run", str(one_copy.path), "-y"]]
+    assert [call[:2] for call in command.calls()] == [["run", str(one_copy.path)]]
 
 
 def test_dry_run_does_not_offer_it(one_copy, run_cli, optimizer):
@@ -120,13 +115,16 @@ def test_failing_optimizer_still_returns_to_keepbest(one_copy, run_cli, optimize
     assert result.returncode == 0
 
 
-def test_ctrl_c_in_media_optimizer_does_not_stop_keepbest(one_copy, run_cli, optimizer):
-    # Ctrl+C goes to the whole foreground process group; the stand-in sends it to keepbest.
-    optimizer(script="kill -INT $PPID; sleep 0.5")
+def test_ctrl_c_waits_for_media_optimizer_then_ends_keepbest(one_copy, run_cli, optimizer, tmp_path):
+    """Ctrl+C goes to the whole foreground process group: media-optimizer stops on
+    its own, keepbest waits for it and then ends, since the tab is on a page that
+    is gone. The stand-in sends it to keepbest only."""
+    finished = tmp_path / "finished"
+    optimizer(script=f"kill -INT $PPID; sleep 0.5; echo yes > '{finished}'")
     result = run_cli(one_copy.path, keys=["", "m", "q"])
-    assert "aborted by user" not in result.stdout
-    assert BACK in result.stdout
-    assert result.returncode == 0
+    assert finished.read_text().strip() == "yes"                    # not stopped or killed by keepbest
+    assert BACK not in result.stdout
+    assert result.returncode == 130
 
 
 def test_sigterm_to_keepbest_is_passed_on(one_copy, run_cli, optimizer, tmp_path):
@@ -160,7 +158,7 @@ def test_sigterm_while_starting_is_passed_on(fake_command, monkeypatch, tmp_path
     previous = signal.signal(signal.SIGTERM, stop)
     try:
         try:
-            code = handoff.run(tmp_path, lambda line: None)
+            code = handoff.run(tmp_path, lambda line: None, "http://127.0.0.1:1/")
         except KeyboardInterrupt:
             pytest.fail("keepbest stopped on a SIGTERM meant for media-optimizer")
         assert signal.getsignal(signal.SIGTERM) is stop                # restored afterwards
@@ -189,26 +187,24 @@ def test_m_after_media_optimizer_ran_is_not_offered_again(one_copy, run_cli, opt
     assert len(command.calls()) == 1
 
 
-# --- media-optimizer with a page of its own ---------------------------------------------------
-def test_media_optimizer_with_a_page_gets_the_tab(one_copy, run_cli, optimizer, tmp_path):
+# --- its page --------------------------------------------------------------------------------
+def test_media_optimizer_gets_the_tab(one_copy, run_cli, optimizer, tmp_path):
     """It is started with its page and keepbest's address to lead back to; keepbest
     reads its address from its output and the page moves the tab there."""
-    command = optimizer(page=True, script="echo 'media-optimizer is running at "
-                                          "http://127.0.0.1:9/?token=abc_DEF-1'\nsleep 0.5")
+    command = optimizer(script="echo 'media-optimizer is running at "
+                               "http://127.0.0.1:9/?token=abc_DEF-1'\nsleep 0.5")
     result = run_cli(one_copy.path, keys=["", "m", "q"])
     assert result.returncode == 0 and BACK in result.stdout
-    first = asked(result, "EndScreen")[0]
-    assert dict(first["menu"][0][1])["m"] == "Optimize this folder with media-optimizer (on its page)"
     (call,) = command.calls()
     assert call[:7] == ["run", str(one_copy.path), "--web", "--no-browser", "--return-url", call[5], "--return-name"]
     assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", call[5]) and call[7] == "keepbest" and "-y" not in call
-    assert command.env() == ["keepbest", "0"]
+    assert command.env() == ["keepbest"]
     (tool,) = [e for e in result.events if e["kind"] == "tool"]
     assert tool["handoff"] and tool["url"] == "http://127.0.0.1:9/?token=abc_DEF-1" and tool["code"] == 0
 
 
 def test_only_a_page_on_this_computer_is_followed(one_copy, run_cli, optimizer):
-    optimizer(page=True, script="echo 'media-optimizer is running at http://example.com:80/?token=abc'")
+    optimizer(script="echo 'media-optimizer is running at http://example.com:80/?token=abc'")
     result = run_cli(one_copy.path, keys=["", "m", "q"])
     (tool,) = [e for e in result.events if e["kind"] == "tool"]
     assert tool["url"] is None
@@ -263,9 +259,8 @@ def test_its_results_are_shown_next_to_keepbests(one_copy, run_cli, optimizer):
     """One that writes its results gets a file for them; its numbers come back
     on the page and in the log, with the space both freed together."""
     from keepbest import handoff
-    command = optimizer(help_text=RESULTS_HELP,
-                        script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'\n"
-                               + _writes_results(RESULTS))
+    command = optimizer(script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'\n"
+                     + _writes_results(RESULTS))
     result = run_cli(one_copy.path, keys=["", "m", "q"])
     assert result.returncode == 0 and BACK in result.stdout, result.stdout
     (call,) = command.calls()
@@ -286,16 +281,9 @@ def test_its_results_are_shown_next_to_keepbests(one_copy, run_cli, optimizer):
             f"{handoff.format_size(freed + 2048)} · Skipped 0 · Failed 1") in result.stdout
 
 
-def test_an_older_one_gets_no_results_file(one_copy, run_cli, optimizer):
-    command = optimizer(page=True)
-    result = run_cli(one_copy.path, keys=["", "m", "q"])
-    assert "--results" not in command.calls()[0]
-    assert "without a run" not in result.stdout, "it may have run: it just writes no results"
-
-
 def test_closed_without_a_run(one_copy, run_cli, optimizer):
     """Its page was closed before anything ran: no results file, and keepbest says so."""
-    optimizer(help_text=RESULTS_HELP, script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'")
+    optimizer(script="echo 'media-optimizer is running at http://127.0.0.1:9/?token=abc'")
     result = run_cli(one_copy.path, keys=["", "m", "q"])
     assert "media-optimizer was closed without a run." in result.stdout
     (tool,) = [e for e in result.events if e["kind"] == "tool"]

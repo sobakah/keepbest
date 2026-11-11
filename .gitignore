@@ -14,3 +14,6 @@ dist/
 /img_dedupe.log
 /sessions/
 /running/
+
+# Notes on the owner's machine for Claude Code
+/CLAUDE.local.md

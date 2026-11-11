@@ -280,7 +280,7 @@ def protected_message(path: Path) -> str:
 
 def resolve_directory(initial: Path | None, index: FolderIndex,
                       allow_cancel: bool = False, start: Path | None = None) -> Path | None:
-    """Find a usable folder, prompting until one is given (lrckit behaviour).
+    """Find a usable folder, asking until one is given.
 
     With *allow_cancel* an empty answer returns None instead of quitting.
     *start*: the folder the picker opens (the current one when changing).
@@ -1158,19 +1158,15 @@ def end_menu(target: Path, settings: dict, index: FolderIndex, offer_optimizer: 
     """The menu after a run. Returns 'back', 'change' or 'quit'.
 
     After a real run, media-optimizer is offered for the same folder if it is
-    installed; when it exits, this menu comes back for a new run. *freed* is
-    what the run freed, added up with what media-optimizer saves.
+    installed; its page leads back to this one, so it needs keepbest's page.
+    When it exits, this menu comes back for a new run. *freed* is what the run
+    freed, added up with what media-optimizer saves.
     """
-    executable = handoff.available() if offer_optimizer else None
-    optimizer = executable is not None
-    # One with a page of its own asks its questions there; an older one runs with its config's settings.
-    label = ("Optimize this folder with media-optimizer (on its page)"
-             if optimizer and handoff.has_page(executable) and page_address()
-             else "Optimize this folder with media-optimizer (its config's settings, no questions)")
+    optimizer = bool(offer_optimizer and page_address() and handoff.available())
     while True:
         groups = []
         if optimizer:
-            groups.append(("Next", [("m", label)]))
+            groups.append(("Next", [("m", "Optimize this folder with media-optimizer (on its page)")]))
         groups.append(("Navigate", [("b", "Back to settings (scan again)")]
                        + ([("c", "Change directory")] if can_change else []) + [("q", "Quit")]))
         answer = ask(EndScreen(prompt="Action: ", primary="Quit", menu=groups))
@@ -1194,24 +1190,21 @@ def run_optimizer(target: Path, settings: dict, freed: int = 0) -> None:
         info("It gets the same choice: only the main folder, no subfolders.")
     elif settings["excluded"]:
         info(f"It gets the same folder choice: {len(settings['excluded'])} folder(s) left out.")
-    executable = handoff.available()
-    # Its own page takes over this tab and leads back here; else its output shows here.
-    back = page_address() if executable and handoff.has_page(executable) else ""
-    show("tool_start", name="media-optimizer", handoff=bool(back),
-         command=f"media-optimizer run {target} --web" if back else f"media-optimizer run -y {target}")
+    # Its page takes over this tab and leads back here.
+    show("tool_start", name="media-optimizer", handoff=True, command=f"media-optimizer run {target} --web")
     with tempfile.TemporaryDirectory(prefix=f"{NAME}_mo_") as tmp:
         results_file = Path(tmp) / "results.json"
-        code = handoff.run(target, lambda line: show("tool_line", text=line), settings["recursive"],
-                           settings["excluded"], return_url=back, results_file=results_file)
+        code = handoff.run(target, lambda line: show("tool_line", text=line), page_address(),
+                           settings["recursive"], settings["excluded"], results_file=results_file)
         results = handoff.summary(handoff.read_results(results_file), freed)
     show("tool_end", code=code, results=results)
     blank()
-    if back and handoff.stopped_from_terminal():
+    if handoff.stopped_from_terminal():
         raise KeyboardInterrupt  # the tab is on the page that just went away: nobody would answer here
     if code == 127:
         error("media-optimizer could not be started.")
-    elif results is None and back and code == 0 and handoff.has_results(executable):
-        info("media-optimizer was closed without a run.")  # one that writes its results ran nothing
+    elif results is None and code == 0:
+        info("media-optimizer was closed without a run.")  # a run writes its results
     success(f"Back in {NAME}. Scan again, change the directory or quit.")
 
 

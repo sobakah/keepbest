@@ -7,7 +7,7 @@ it waits on; the page asks for what is new and sends the key of the button
 pressed (its keyboard shortcuts are the same keys). The terminal keepbest was
 started in keeps a log of the messages. Only this machine can connect, and
 only with the token from the printed address, which the first visit turns
-into a cookie (as in lyrembed and cdimport).
+into a cookie (as in lyrembed and cdport).
 
 A page that is closed stops the flow at its next question, as Ctrl+C would
 there; work in progress (a scan, a deletion) is never cut off.
@@ -79,7 +79,7 @@ PREVIEW_CACHE = 40
 # Lines of a tool's output the page keeps.
 TOOL_LINES = 500
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
-# media-optimizer prints its page's address like this (its web.ADDRESS_LINE), as lyrembed does for cdimport.
+# media-optimizer prints its page's address like this (its web.ADDRESS_LINE), as lyrembed does for cdport.
 _HANDOFF = re.compile(r"is running at (http://(?:127\.0\.0\.1|localhost):\d+/\?token=[A-Za-z0-9_-]+)")
 # The tab is on media-optimizer's page while it runs; coming back takes a moment.
 HANDOFF_GRACE = 30.0

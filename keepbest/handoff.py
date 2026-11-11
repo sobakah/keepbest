@@ -3,11 +3,9 @@
 media-optimizer (github.com/sobakah/media-optimizer) converts pictures and
 videos to more efficient formats; running it after the duplicates are gone
 saves converting copies. It runs as a child process, so keepbest's end menu
-returns when it exits. A media-optimizer with a page of its own (0.8 and
-newer) takes over keepbest's tab and leads back to it; an older one runs
-without questions and its output is shown on keepbest's page. One that
-writes its results (--results, 1.1.0 and newer) has its numbers shown next to
-keepbest's own when it is done.
+returns when it exits. Its page takes over keepbest's tab and leads back to
+it; the results it writes (--results) are shown next to keepbest's own
+numbers when it is done.
 """
 from __future__ import annotations
 
@@ -26,35 +24,11 @@ from .core_logic import format_size
 COMMAND = "media-optimizer"
 _child: subprocess.Popen | None = None   # the media-optimizer running now, for interrupt()
 _stopped = False                         # Ctrl+C or a closed terminal reached the last run()
-_run_help: dict[str, str] = {}
 
 
 def available() -> str | None:
     """The path of media-optimizer if it is installed, else None."""
     return shutil.which(COMMAND)
-
-
-def _help(executable: str) -> str:
-    """What this media-optimizer's `run --help` says: which options it has."""
-    if executable not in _run_help:
-        try:
-            result = subprocess.run([executable, "run", "--help"], capture_output=True, text=True, timeout=30,
-                                    env={**os.environ, "MO_HOLD": "0"})
-            _run_help[executable] = result.stdout
-        except (OSError, subprocess.SubprocessError):
-            _run_help[executable] = ""
-    return _run_help[executable]
-
-
-def has_page(executable: str) -> bool:
-    """Whether this media-optimizer can show its page and lead back to keepbest's
-    (--return-url, media-optimizer 0.8 and newer), as its help says."""
-    return "--return-url" in _help(executable)
-
-
-def has_results(executable: str) -> bool:
-    """Whether this media-optimizer writes its results for keepbest (--results)."""
-    return "--results" in _help(executable)
 
 
 def folder_env(recursive: bool, excluded) -> dict[str, str]:
@@ -67,35 +41,30 @@ def folder_env(recursive: bool, excluded) -> dict[str, str]:
     return {"MO_SUBFOLDERS": "include", "MO_EXCLUDE_FOLDERS": json.dumps(sorted(excluded))}
 
 
-def run(target: Path, output, recursive: bool = True, excluded=(), return_url: str = "",
+def run(target: Path, output, return_url: str, recursive: bool = True, excluded=(),
         results_file: Path | None = None) -> int:
     """Run media-optimizer on *target* and return its exit code; *output* gets
-    each line it prints. With *results_file*, one that can writes its results
-    there when its run ends (read_results).
+    each line it prints. It shows its own page, whose address it prints, and
+    its last button leads back to *return_url* (keepbest's page). With
+    *results_file*, it writes its results there when its run ends
+    (read_results).
 
-    With *return_url* (keepbest's page) it shows its own page, whose address it
-    prints, and its last button leads back there. Without, it asks nothing
-    (-y: its config's settings) and its output is all there is to show.
     interrupt() stops it as Ctrl+C would; stopped_from_terminal() tells a
     Ctrl+C in the terminal from a run stopped on a page, also an exit code of 130.
 
-    MO_CALLER tells media-optimizer who started it; MO_HOLD=0 stops it from
-    keeping a window open at the end. The folder choice of this run is passed
-    on (folder_env).
+    MO_CALLER tells media-optimizer who started it. The folder choice of this
+    run is passed on (folder_env).
     """
     global _child, _stopped
     _stopped = False
     executable = available()
     if executable is None:
         return 127
-    env = {**os.environ, "MO_CALLER": "keepbest", "MO_HOLD": "0", **folder_env(recursive, excluded),
+    env = {**os.environ, "MO_CALLER": "keepbest", **folder_env(recursive, excluded),
            "PYTHONUNBUFFERED": "1"}  # lines as they come, not when a pipe's buffer is full
-    argv = [executable, "run", str(target)]
-    if return_url:
-        argv += ["--web", "--no-browser", "--return-url", return_url, "--return-name", "keepbest"]
-    else:
-        argv.append("-y")
-    if results_file is not None and has_results(executable):
+    argv = [executable, "run", str(target), "--web", "--no-browser", "--return-url", return_url,
+            "--return-name", "keepbest"]
+    if results_file is not None:
         argv += ["--results", str(results_file)]
     captured = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     # Ctrl+C and a closed terminal (where keepbest was started) reach
@@ -138,7 +107,7 @@ def run(target: Path, output, recursive: bool = True, excluded=(), return_url: s
 
 def read_results(path: Path) -> dict | None:
     """media-optimizer's results file (format 1), or None: none written (no run
-    started, an older media-optimizer) or not one keepbest can read."""
+    started) or not one keepbest can read."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):

@@ -244,7 +244,7 @@ function ToolResults({ results }) {
   </div>`;
 }
 
-// Another program's output (media-optimizer), as in cdimport: it follows new
+// Another program's output (media-optimizer), as in cdport: it follows new
 // lines only while scrolled to its end; Stop is Ctrl+C for that program. One
 // with a page of its own (handoff) gets this tab while it runs: its page leads
 // back here, and until it has ended this box links to it.
@@ -1035,7 +1035,7 @@ function App() {
 
   // Like a terminal: new content scrolls the page only for a reader who was
   // at its end; one who scrolled up to read stays where they are. Only the
-  // reader's own scrolling decides (cdimport's ownScroll).
+  // reader's own scrolling decides (cdport's ownScroll).
   const follow = () => {
     const height = document.documentElement.scrollHeight;
     if (height !== lastHeight.current && stick.current) {

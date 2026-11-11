@@ -686,24 +686,23 @@ def tool_event(page, running=False, timeout=20):
     raise AssertionError("no such tool event")
 
 
-def test_media_optimizer_runs_on_the_page_without_questions(library, cli_page, fake_command, tmp_path):
+def test_media_optimizer_runs_with_its_output_on_the_page(library, cli_page, fake_command, tmp_path):
     library.photo("a.png", 1)
     library.copy_of("a.png", "a copy.png")
     env = tmp_path / "optimizer.env"
-    command = fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\n"   # no page of its own
-                                                     f"echo \"$MO_CALLER $MO_SUBFOLDERS\" > '{env}'\n"
+    command = fake_command("media-optimizer", script=f"echo \"$MO_CALLER $MO_SUBFOLDERS\" > '{env}'\n"
                                                      "printf 'converting\\033[1;32m a.png\\033[0m\\n'\necho done")
     page, proc = cli_page(library.path)
     start, end = page.walk("", "m")
-    offer = dict(end["menu"][0][1])["m"]
-    assert "no questions" in offer
+    assert dict(end["menu"][0][1])["m"] == "Optimize this folder with media-optimizer (on its page)"
     tool = tool_event(page)
-    assert tool["name"] == "media-optimizer" and tool["code"] == 0
+    assert tool["name"] == "media-optimizer" and tool["code"] == 0 and tool["handoff"]
     assert tool["lines"] == ["converting a.png", "done"]          # colours taken out
-    assert command.calls() == [["run", str(library.path), "-y"]]
+    (call,) = command.calls()
+    assert call[:4] == ["run", str(library.path), "--web", "--no-browser"] and "-y" not in call
     assert env.read_text().split() == ["keepbest", "exclude"]
     again = page.question(end["id"])
-    assert again["screen"] == "EndScreen" and "m" not in again["keys"]   # once per run, as in the terminal
+    assert again["screen"] == "EndScreen" and "m" not in again["keys"]   # once per run
     page.answer(again, "q")
     page.post("/api/close")
     assert proc.wait(timeout=20) == 0
@@ -714,8 +713,7 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
     library.photo("a.png", 1)
     library.copy_of("a.png", "a copy.png")
     got = tmp_path / "got-int"
-    fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\n"
-                                           f"trap 'echo INT > \"{got}\"; exit 130' INT\necho started\nsleep 20 & wait")
+    fake_command("media-optimizer", script=f"trap 'echo INT > \"{got}\"; exit 130' INT\necho started\nsleep 20 & wait")
     page, proc = cli_page(library.path)
     start, end = page.walk("", "m")
     tool_event(page, running=True)
@@ -728,10 +726,8 @@ def test_media_optimizer_can_be_stopped_from_the_page(library, cli_page, fake_co
 
 
 def page_optimizer(fake_command, exit_code=130):
-    """A media-optimizer with a page: prints its address, ends a moment later."""
-    from test_handoff import PAGE_HELP
-    return fake_command("media-optimizer", script=f"[ \"$2\" = --help ] && {{ echo '{PAGE_HELP}'; exit 0; }}\n"
-                                                  "echo 'media-optimizer is running at "
+    """A media-optimizer that prints its page's address and ends a moment later."""
+    return fake_command("media-optimizer", script="echo 'media-optimizer is running at "
                                                   "http://127.0.0.1:1/?token=abc'\nsleep 1\n"
                                                   f"exit {exit_code}")
 
@@ -754,20 +750,6 @@ def test_a_run_stopped_on_media_optimizers_page_leads_back(library, cli_page, fa
     page_optimizer(fake_command)                        # 130 too, but keepbest wasn't stopped
     page, proc = cli_page(library.path)
     start, end = page.walk("", "m")
-    assert tool_event(page)["code"] == 130
-    page.answer(page.question(end["id"]), "q")
-    page.post("/api/close")
-    assert proc.wait(timeout=20) == 0
-
-
-def test_ctrl_c_leaves_keepbest_on_its_page_without_a_handoff(library, cli_page, fake_command):
-    library.photo("a.png", 1)
-    library.copy_of("a.png", "a copy.png")
-    fake_command("media-optimizer", script="[ \"$2\" = --help ] && exit 0\necho started\nsleep 1\nexit 130")
-    page, proc = cli_page(library.path)
-    start, end = page.walk("", "m")
-    tool_event(page, running=True)
-    proc.send_signal(signal.SIGINT)
     assert tool_event(page)["code"] == 130
     page.answer(page.question(end["id"]), "q")
     page.post("/api/close")

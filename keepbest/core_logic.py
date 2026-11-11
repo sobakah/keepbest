@@ -1050,8 +1050,8 @@ def _decision_screen(group: Group, position: str, config: dict, stats: Stats, re
     others = "1" if count == 2 else f"1-{count - 1}"
     renamable = any(rename_target(p, group.paths) for p in group.paths)
     while True:
-        # Always redraw the group: inline viewers (timg, kitty) and messages push
-        # the list off screen, and the options are useless without it.
+        # Always show the group again: messages in between push it away, and the
+        # options are useless without it.
         resolve = [(others, "Keep that image instead"), ("s", "Skip, keep all files"),
                    ("i", "Not duplicates of #0 - don't show them together again")]
         if count > 2:
@@ -1261,7 +1261,7 @@ def _next_open(groups: list[Group], after: int) -> int | None:
 
 def review_groups(groups: list[Group], config: dict, confirm_mode: str, stats: Stats, rel,
                   ctx: RunContext, start: int = 0, overview_first: bool = False) -> bool:
-    """Walk through the groups like lrckit walks through tracks.
+    """Walk through the groups.
 
     Groups that need no confirmation are resolved as the walk reaches them;
     the others get a full screen. Numbers ([3/12]) always refer to the

@@ -25,7 +25,7 @@ NEWER = f"{MAJOR + 1}.0.0"
 @pytest.fixture
 def newer_release(tmp_path, monkeypatch):
     """GitHub has a release newer than this keepbest."""
-    url = releases(tmp_path / "releases", "0.5.1", __version__, NEWER, "not-a-version", "9.9")
+    url = releases(tmp_path / "releases", "0.9.0", __version__, NEWER, "not-a-version", "9.9")
     monkeypatch.setenv(selfupdate.REPO_ENV, url)
     return url
 
@@ -43,7 +43,7 @@ def write_metadata(prefix, package_or_url, injected=(), venv_args=(), pinned=Fal
 # --- the check ----------------------------------------------------------------------
 def test_the_newest_release_tag_counts(newer_release):
     assert selfupdate.latest() == NEWER
-    assert selfupdate.newer(NEWER) and not selfupdate.newer(__version__) and not selfupdate.newer("0.5.1")
+    assert selfupdate.newer(NEWER) and not selfupdate.newer(__version__) and not selfupdate.newer("0.9.0")
 
 
 def test_a_repository_that_cant_be_read_is_an_error(tmp_path):
@@ -73,7 +73,7 @@ def test_a_failed_check_is_quiet_and_tried_again(tmp_path, monkeypatch):
 
 
 def test_no_newer_release_offers_nothing(tmp_path, monkeypatch):
-    monkeypatch.setenv(selfupdate.REPO_ENV, releases(tmp_path / "releases", "0.5.1", __version__))
+    monkeypatch.setenv(selfupdate.REPO_ENV, releases(tmp_path / "releases", "0.9.0", __version__))
     assert selfupdate.available() is None
 
 
