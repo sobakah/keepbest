@@ -1,4 +1,6 @@
-"""Opening the images of a duplicate group in a viewer, and a file in its folder."""
+"""Opening the images of a duplicate group in a viewer, and a file in its folder.
+In a toolbox or distrobox, Flatpak, the default viewer and the file manager are
+the host's (container.py)."""
 
 from __future__ import annotations
 
@@ -8,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import container
 from .front import warn  # on the page when it runs there
 
 # Comparison apps: viewer name -> (display name, Flatpak app id, native command or None).
@@ -22,12 +25,16 @@ _flatpak_state: dict[str, bool | None] = {}
 def _flatpak_installed(app_id: str) -> bool | None:
     """True/False whether the Flatpak app is installed; None if Flatpak itself is missing."""
     if app_id not in _flatpak_state:
-        if shutil.which("flatpak") is None:
+        if shutil.which("flatpak") is None and container.container() is None:
             _flatpak_state[app_id] = None
         else:
-            result = subprocess.run(["flatpak", "info", app_id],
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            _flatpak_state[app_id] = result.returncode == 0
+            try:
+                result = subprocess.run(container.host_command(["flatpak", "info", app_id]),
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                _flatpak_state[app_id] = None
+            else:
+                _flatpak_state[app_id] = result.returncode == 0
     return _flatpak_state[app_id]
 
 
@@ -56,7 +63,7 @@ def _open_compare_app(viewer: str, paths: list[str]) -> str | None:
         return None
     # The sandbox cannot see your folders; --file-forwarding with @@ ... @@ hands
     # exactly these files to the app through the document portal.
-    if not _start(["flatpak", "run", "--file-forwarding", app_id, "@@", *paths, "@@"]):
+    if not _start(container.flatpak_on_host(["flatpak", "run", "--file-forwarding", app_id, "@@", *paths, "@@"])):
         warn(f"{name} could not be started. Falling back to the default viewer.")
         return None
     return name
@@ -81,7 +88,7 @@ def open_image_viewer(filepaths, viewer_mode: str = "auto") -> str | None:
                 continue
             except OSError:
                 pass
-        elif _start([opener, path]):
+        elif _start(container.host_command([opener, path])):
             continue
         warn(f"No viewer could be started ({'no default app' if sys.platform == 'win32' else opener + ' not found'}). "
              f"Set \"viewer\" in the config to one that is installed.")
@@ -104,4 +111,4 @@ def show_in_folder(path) -> str | None:
              "--method", "org.freedesktop.FileManager1.ShowItems", f"['{path.as_uri()}']", ""],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10).returncode == 0:
         return "the file manager"
-    return "the file manager" if _start(["xdg-open", str(path.parent)]) else None
+    return "the file manager" if _start(container.host_command(["xdg-open", str(path.parent)])) else None

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 
+from . import container
 from .image_utils import (JXL_SUPPORTED, STRICTNESS_PRESETS, Blurred, analyze_image,
                          aspect_ratio_close, coarse, coarse_apart, comparison_thumbnail,
                          difference_spot, has_copy_number, ignore_sigint,
@@ -161,9 +162,11 @@ def jxl_install_hint() -> list[str]:
     else:
         command = f"{sys.executable} -m pip install pillow-jxl-plugin"
     version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    compilers = (", which an image-based system such as Fedora Silverblue doesn't have: install keepbest in "
+                 "a toolbox for it" if container.image_based_host() else " (Fedora: sudo dnf install gcc-c++ cmake)")
     return [f"JPEG XL needs the optional plugin: {command}",
             f"If there is no ready-made package for Python {version} yet, pip builds it, which needs a "
-            f"C++ compiler and cmake (Fedora: sudo dnf install gcc-c++ cmake)."]
+            f"C++ compiler and cmake{compilers}."]
 
 
 def _same_file(a: Path, b: Path) -> bool:

@@ -26,13 +26,13 @@ import sys
 import threading
 import time
 import traceback
-import webbrowser
 from collections import OrderedDict
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from . import container
 from . import front as front_mod
 from . import selfupdate
 from .config import NAME, PROJECT_URL, __version__
@@ -1042,7 +1042,7 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
     running.set_address(url)
     threading.Thread(target=server.serve_forever, name=f"{NAME}-web", daemon=True).start()
     announce(f"{NAME} is running at {url}")
-    opened = open_browser and webbrowser.open(url)
+    opened = open_browser and container.open_url(url)
     if not opened and not restarted:  # after an update the tab is still open
         announce("Open that address in your browser.")
         if os.environ.get("SSH_CONNECTION"):

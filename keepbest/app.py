@@ -10,7 +10,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-from . import handoff, running
+from . import container, handoff, running
 from .config import NAME, __version__
 from .core_logic import (ExactGroup, Group, RunContext, Stats, UserQuit, stats_from_session,
                         apply_dry_run, find_exact_duplicates, find_remuxes, find_similar_images,
@@ -1202,7 +1202,9 @@ def run_optimizer(target: Path, settings: dict, freed: int = 0) -> None:
     if handoff.stopped_from_terminal():
         raise KeyboardInterrupt  # the tab is on the page that just went away: nobody would answer here
     if code == 127:
-        error("media-optimizer could not be started.")
+        # The home folder is shared: one installed on the host is on PATH here, its Python isn't.
+        error("media-optimizer could not be started." + (
+            " It is installed outside this container: install it inside it too." if container.container() else ""))
     elif results is None and code == 0:
         info("media-optimizer was closed without a run.")  # a run writes its results
     success(f"Back in {NAME}. Scan again, change the directory or quit.")

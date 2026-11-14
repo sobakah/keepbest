@@ -27,6 +27,16 @@ share its look (libadwaita's design language): `static/base.css` and `static/ico
 lyrembed's, copied unchanged into cdport, keepbest and media-optimizer; change them in lyrembed and
 copy them back. Setup details of the owner's machine are in `CLAUDE.local.md` (not in git).
 
+On image-based systems (Fedora Silverblue, Bluefin) the programs run on the host where the image
+has what they need (pipx from its zipapp, or layered with `rpm-ostree`); cdport runs in a toolbox,
+where cyanrip can be built, and Jewelcase comes as a Flatpak bundle on its releases. In a toolbox
+or distrobox, what the host starts (app-menu entry, D-Bus service) enters the container, and what
+a program opens in other apps (browser, Flatpaks, file manager) leaves it: `container.py`,
+lyrembed's, copied unchanged into cdport, keepbest and media-optimizer; picktag's
+`core/desktop.py`. The suites of the four make no container unless a test asks (an autouse
+fixture), so they run alike in a toolbox. Each README has a section *Fedora Silverblue, Bluefin
+and other image-based systems* under its installation.
+
 ### Working rules
 
 - **Commits**: commit finished work once its tests pass, locally, on the default branch;
@@ -103,7 +113,8 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
   Further: `session.py` (log, saved sessions, "not duplicates" marks), `config.py` (defaults,
   validation, version), `journal.py`, `front.py` / `terminal.py` / `ui.py` / `web.py` (see
   Conventions), `selfupdate.py`, `viewer.py` (comparison apps for `v`, `show_in_folder`),
-  `handoff.py` (media-optimizer), `desktop.py` (app-menu entry, `Exec=… --web %f`), `running.py`
+  `handoff.py` (media-optimizer), `desktop.py` (app-menu entry, `Exec=… --web %f`), `container.py`
+  (toolbox and distrobox, lyrembed's, unchanged; see the family block), `running.py`
   (the lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
   in `resolve_directory` and with `--auto`; does nothing on Windows).
 - `migrate.py` moves the config and state folders kept under the old name img_dedupe on every
@@ -324,6 +335,7 @@ against media-optimizer's parser unless `media_optimizer` is importable.
 ## Testing
 
 - `tests/conftest.py`: autouse isolation (own HOME, XDG folders, trash and `KEEPBEST_STATE_DIR`,
+  no container (`not_in_a_container`; the `toolbox` fixture makes one),
   `KEEPBEST_UPDATE_REPO` pointing at a missing repo; `releases` makes one). `library` builds
   picture folders (`photo`, `variant`, `copy_of`). `run_cli(folder, *args, keys=[...])` runs the
   real CLI with `--no-browser` and answers its page over the API, one key per question (a screen

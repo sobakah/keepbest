@@ -31,6 +31,32 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
 
+### Fedora Silverblue, Bluefin and other image-based systems
+
+keepbest runs on the host: Silverblue's image has Python, git, ffmpeg and Flatpak, only pipx is
+missing. pipx installs itself without changing the image:
+
+```bash
+curl -LO https://github.com/pypa/pipx/releases/latest/download/pipx.pyz
+python3 pipx.pyz install pipx && rm pipx.pyz
+~/.local/bin/pipx install git+https://github.com/sobakah/keepbest.git
+```
+
+(`rpm-ostree install pipx` and a restart work too.)
+
+- **JPEG XL**: pip has to build `pillow-jxl-plugin` for Python 3.15, and the image has no
+  compiler. Build it once in a toolbox: pipx's folders are in the home folder, which the host
+  and its toolboxes share, so the plugin lands in the host's keepbest.
+
+  ```bash
+  toolbox create
+  toolbox run sh -c 'sudo dnf install -y gcc-c++ cmake && ~/.local/bin/pipx inject keepbest pillow-jxl-plugin'
+  ```
+- **In a toolbox** (or a distrobox) instead, the app menu entry made there starts keepbest in
+  the container (`toolbox run --container NAME …`), and the page, the viewers and the file
+  manager are the host's. media-optimizer and picktag start keepbest or are started by it, so
+  run them in the same place.
+
 ## First run
 
 ```bash

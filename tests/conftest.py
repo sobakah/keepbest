@@ -55,6 +55,31 @@ def isolated(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def not_in_a_container(monkeypatch, tmp_path):
+    """The suite runs alike on the host and in a toolbox: no container and no
+    image-based host, unless a test makes them (toolbox)."""
+    from keepbest import container
+    for name in ("TOOLBOX_ENV", "CONTAINER_ENV", "HOST_ROOT", "OSTREE_BOOTED"):
+        monkeypatch.setattr(container, name, tmp_path / f"not-{name.lower()}")
+    monkeypatch.delenv("CONTAINER_ID", raising=False)
+
+
+@pytest.fixture
+def toolbox(monkeypatch, tmp_path):
+    """Running in a toolbox called "my box", with toolbox in the host's /usr/bin."""
+    from keepbest import container
+    (tmp_path / "toolboxenv").touch()
+    (tmp_path / "containerenv").write_text('engine="podman-5.6"\nname="my box"\nid="abc"\n')
+    host_bin = tmp_path / "host" / "usr" / "bin"
+    host_bin.mkdir(parents=True)
+    (host_bin / "toolbox").touch()
+    monkeypatch.setattr(container, "TOOLBOX_ENV", tmp_path / "toolboxenv")
+    monkeypatch.setattr(container, "CONTAINER_ENV", tmp_path / "containerenv")
+    monkeypatch.setattr(container, "HOST_ROOT", tmp_path / "host")
+    return container
+
+
 def releases(folder: Path, *tags: str) -> str:
     """A git repository with these release tags, for the update check (KEEPBEST_UPDATE_REPO)."""
     git = ["git", "-C", str(folder), "-c", "user.name=test", "-c", "user.email=test@example.invalid"]

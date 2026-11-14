@@ -6,6 +6,18 @@ All notable changes to keepbest are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Fedora Silverblue, Bluefin and other image-based systems:** keepbest runs on the host with
+  pipx, or in a toolbox or distrobox, whose app menu entry starts it in the container; from
+  there the page, the viewers and the file manager are the host's. The README has a section for
+  these systems, also on building the JPEG XL plugin there.
+- In a container, a media-optimizer installed only on the host is reported as such.
+
+### Fixed
+
+- The JPEG XL hint no longer offers `dnf` on an image-based system.
+
 ## [1.0.1] — 2026-11-11
 
 ### Added
