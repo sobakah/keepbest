@@ -446,6 +446,61 @@ def test_answers_what_came_while_it_let_go_of_its_name():
     assert bus.sent[2].header.fields[HeaderFields.reply_serial] == 7
 
 
+def test_a_run_started_while_letting_go_of_the_name_takes_it_back(folders):
+    """A call routed here just before the bus confirmed the release starts a run:
+    the name comes back, or Stop and ShowPage would reach a new keepbest."""
+    pytest.importorskip("jeepney")
+    from jeepney import DBusAddress, HeaderFields, MessageType, new_method_call
+
+    call = new_method_call(DBusAddress(dbus_service.OBJECT_PATH, dbus_service.BUS_NAME, dbus_service.INTERFACE),
+                           "OpenPage", "ay", (fs(folders / "pics"),))
+    call.header.serial = 7
+    process = FakeRun(PAGE_URL)
+    service = bus_service(process)
+    bus = FakeBus(after=[call], end=TimeoutError())
+    threading.Timer(1.0, process.release.set).start()
+    assert dbus_service._answer(bus, service, idle_exit=-1) == 0
+    members = [m.header.fields.get(HeaderFields.member) for m in bus.sent
+               if m.header.message_type == MessageType.method_call]
+    assert members == ["RequestName", "ReleaseName", "RequestName", "ReleaseName"]
+    replies = [m for m in bus.sent if m.header.fields.get(HeaderFields.reply_serial) == 7]
+    assert replies[0].body == ("1", True)
+
+
+def test_a_service_that_stops_answering_lets_go_of_its_name_and_starts_nothing_more(folders, monkeypatch):
+    pytest.importorskip("jeepney")
+    import jeepney.io.blocking
+    from jeepney import HeaderFields
+
+    class Conn(contextlib.nullcontext):
+        sent = []
+
+        def send(self, message, serial=None):
+            self.sent.append(message)
+    first = FakeRun(PAGE_URL)
+    service = bus_service(first, FakeRun(OTHER_URL))
+    service.call("RemoveCopies", "a(ayaay)a{sv}", ([(fs(folders / "pics"), []), (fs(folders / "other"), [])], {}),
+                 "call")
+    drain(service)
+    monkeypatch.setattr(jeepney.io.blocking, "open_dbus_connection", lambda bus: Conn())
+    monkeypatch.setattr(dbus_service, "_answer", lambda conn, service, idle_exit: 0)   # the bus went away
+    threading.Timer(0.3, first.release.set).start()
+    assert dbus_service.serve(service) == 0
+    assert [m.header.fields.get(HeaderFields.member) for m in Conn.sent] == ["ReleaseName"]
+    assert len(service.started) == 1 and service.runs == {}   # the second folder isn't started any more
+
+
+def test_groups_through_a_symlinked_folder_are_busy_with_the_real_one(tmp_path):
+    real = tmp_path / "data" / "Pictures"
+    real.mkdir(parents=True)
+    link = tmp_path / "Pictures"
+    link.symlink_to(real)
+    service = bus_service(FakeRun(PAGE_URL), FakeRun(OTHER_URL))
+    service.call("RemoveCopies", "a(ayaay)a{sv}", ([(fs(real), [])], {}), "call")
+    busy = refused(service, "CompareGroups", "aaaya{sv}", [[fs(link / "a.jpg"), fs(link / "b.jpg")]], {})
+    assert busy.name.endswith(".Busy")
+
+
 # --- the real keepbest -------------------------------------------------------------------
 def test_groups_from_the_service_are_compared_on_the_page(library, checkout):
     """CompareGroups starts the real keepbest: its page shows the groups and the dry run finds the copy."""
