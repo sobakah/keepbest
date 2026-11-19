@@ -83,6 +83,9 @@ def build_parser() -> argparse.ArgumentParser:
     install = setup.add_mutually_exclusive_group()
     install.add_argument("--install", action="store_true",
                          help="both of the following: --install-desktop-entry and --install-dbus-service")
+    install.add_argument("--uninstall", action="store_true",
+                         help="remove what --install wrote, then exit (keepbest itself stays: "
+                              "pipx uninstall keepbest removes it)")
     install.add_argument("--install-desktop-entry", action="store_true",
                          help="add keepbest to the app menu (it opens the page) and exit")
     install.add_argument("--remove-desktop-entry", action="store_true", help="remove that entry and exit")
@@ -174,6 +177,12 @@ def _install() -> int:
     return max(codes)
 
 
+def _uninstall() -> int:
+    """--uninstall: what --install wrote, the app-menu entry and the D-Bus service; both are tried."""
+    codes = [_desktop_entry(install=False), _dbus_service(install=False)]
+    return max(codes)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -223,8 +232,8 @@ def main(argv: list[str] | None = None) -> int:
         config["strictness"], config["max_pixel_diff"] = args.strictness, None
     ui.apply_color_settings(config["color"])
 
-    if args.install:
-        return _install()
+    if args.install or args.uninstall:
+        return _install() if args.install else _uninstall()
     if args.install_desktop_entry or args.remove_desktop_entry:
         return _desktop_entry(install=args.install_desktop_entry)
     if args.install_dbus_service or args.remove_dbus_service:

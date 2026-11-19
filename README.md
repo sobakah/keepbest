@@ -25,7 +25,7 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 | Task | Command |
 |---|---|
 | Update | *Update* on the page when it says a new version is out (see [Updates](#updates)), or `pipx upgrade keepbest` (new version) or `pipx reinstall keepbest` (latest commit) |
-| Uninstall | `pipx uninstall keepbest` |
+| Uninstall | `keepbest --uninstall` (removes the app menu entry and the D-Bus service), then `pipx uninstall keepbest` |
 | `keepbest` not found | run `pipx ensurepath` once and open a new terminal |
 | Add it to the app menu (Linux) | `keepbest --install`: the app menu entry (see [The page](#the-page)) and the [D-Bus service](#d-bus) other programs start keepbest with |
 
@@ -172,7 +172,7 @@ keepbest shows a page in your browser: it prints a local address and opens it, a
 
 **The overview** (`t`) shows every group, with its kept picture when pictures are on; click one to go there.
 
-**App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere. `keepbest --install` writes the entry and the [D-Bus service](#d-bus) together.
+**App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere. `keepbest --install` writes the entry and the [D-Bus service](#d-bus) together, `keepbest --uninstall` removes both.
 
 **One keepbest per folder:** keepbest refuses a folder that another running keepbest works on, or a folder inside or above it, and names that keepbest's process and page.
 
@@ -199,6 +199,7 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `-c FILE`, `--config FILE` | Use this config file |
 | `--no-browser` | Only print the page's address, don't open a browser (see [The page](#the-page)) |
 | `--install` | Both of the following, then exit: the app menu entry and the D-Bus service |
+| `--uninstall` | Remove what `--install` wrote, then exit; keepbest itself stays (`pipx uninstall keepbest` removes it) |
 | `--install-desktop-entry`, `--remove-desktop-entry` | Add keepbest to the app menu, or remove it, and exit |
 | `--install-dbus-service`, `--remove-dbus-service` | Let the session bus start keepbest when a program calls it, or undo that, and exit; see [D-Bus](#d-bus) |
 | `--dbus` | Serve the D-Bus interface until idle (what the session bus starts) |
@@ -288,7 +289,7 @@ The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b
 keepbest --install-dbus-service    # or keepbest --install, with the app menu entry
 ```
 
-lets the session bus start keepbest when a program calls it on `io.github.sobakah.keepbest`. That is how a program inside a Flatpak, which can't start host programs, can still use keepbest (it needs `--talk-name=io.github.sobakah.keepbest`). The command writes `~/.local/share/dbus-1/services/io.github.sobakah.keepbest.service`, starting the keepbest that wrote it with `--dbus`; run it again after installing keepbest somewhere else. `--remove-dbus-service` removes it. The service needs the Python package `jeepney`, which pipx installs with keepbest.
+lets the session bus start keepbest when a program calls it on `io.github.sobakah.keepbest`. That is how a program inside a Flatpak, which can't start host programs, can still use keepbest (it needs `--talk-name=io.github.sobakah.keepbest`). The command writes `~/.local/share/dbus-1/services/io.github.sobakah.keepbest.service`, starting the keepbest that wrote it with `--dbus`; run it again after installing keepbest somewhere else. `--remove-dbus-service` removes it (`--uninstall` with the app menu entry). The service needs the Python package `jeepney`, which pipx installs with keepbest.
 
 The interface (`io.github.sobakah.keepbest1` on `/io/github/sobakah/keepbest`). Paths are byte strings (`ay`), since file names need not be UTF-8:
 

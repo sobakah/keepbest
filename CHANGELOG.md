@@ -13,7 +13,8 @@ All notable changes to keepbest are documented here. The format follows
   other, or on groups of files to compare. Every call only opens the page; you decide there what
   is removed. `--install-dbus-service` lets the session bus start keepbest when a program calls
   it, `--remove-dbus-service` undoes that.
-- **`--install`** writes the app menu entry and the D-Bus service in one go.
+- **`--install`** writes the app menu entry and the D-Bus service in one go, **`--uninstall`**
+  removes both again (before `pipx uninstall keepbest`).
 
 ## [1.0.2] — 2026-11-14
 

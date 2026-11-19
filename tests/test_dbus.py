@@ -480,7 +480,8 @@ def test_a_page_nobody_opens_ends(library, config_file):
 
 def test_dbus_takes_no_other_options(capsys):
     for argv in (["--dbus", "--dry-run"], ["--dbus", "/pics"], ["--unvisited-timeout", "-1"],
-                 ["--unvisited-timeout", "5", "--auto"], ["--install", "--remove-desktop-entry"]):
+                 ["--unvisited-timeout", "5", "--auto"], ["--install", "--remove-desktop-entry"],
+                 ["--install", "--uninstall"]):
         with pytest.raises(SystemExit):
             cli.main(argv)
 
@@ -498,6 +499,31 @@ def test_install_adds_the_app_menu_entry_and_the_dbus_service(run_cli, tmp_path,
     assert entry.exists()                                   # each removal only its own
     assert run_cli(library.path, "--install-dbus-service").returncode == 0 and service.exists()
     assert run_cli(library.path, "--remove-desktop-entry").returncode == 0 and not entry.exists() and service.exists()
+
+
+def test_uninstall_removes_what_install_wrote(run_cli, tmp_path, library):
+    data = tmp_path / "home" / ".local" / "share"
+    entry = data / "applications" / "keepbest.desktop"
+    icon = data / "icons" / "hicolor" / "scalable" / "apps" / "keepbest.svg"
+    service = data / "dbus-1" / "services" / f"{dbus_service.BUS_NAME}.service"
+    assert run_cli(library.path, "--install").returncode == 0 and entry.exists() and service.exists()
+    result = run_cli(library.path, "--uninstall")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not entry.exists() and not icon.exists() and not service.exists()
+    assert str(entry) in result.stdout and str(service) in result.stdout
+    again = run_cli(library.path, "--uninstall")
+    assert again.returncode == 0
+    assert "There was no app-menu entry." in again.stdout and "There was no D-Bus service file." in again.stdout
+
+
+def test_uninstall_removes_the_service_also_when_the_entry_cannot_go(run_cli, tmp_path, library):
+    data = tmp_path / "home" / ".local" / "share"
+    service = data / "dbus-1" / "services" / f"{dbus_service.BUS_NAME}.service"
+    assert run_cli(library.path, "--install-dbus-service").returncode == 0
+    (data / "applications" / "keepbest.desktop").mkdir(parents=True)   # can't be unlinked
+    result = run_cli(library.path, "--uninstall")
+    assert result.returncode == 2 and "Could not remove" in result.stdout + result.stderr
+    assert not service.exists()
 
 
 def test_the_service_file_starts_this_keepbest(tmp_path, monkeypatch, checkout):

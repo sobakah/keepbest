@@ -136,7 +136,7 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
   own (`stepOf`). The pipe is not read to its end once the child exited (a stray grandchild can't
   block).
 - **`dbus_service.py`** (`--dbus`; `--install-dbus-service`/`--remove-dbus-service`, `--install`
-  = it and the app-menu entry): `io.github.sobakah.keepbest`, activated by a service file, for a
+  / `--uninstall` = it and the app-menu entry, both tried, the worse exit code): `io.github.sobakah.keepbest`, activated by a service file, for a
   caller in a Flatpak (picktag). The bus loop, the service file and the shape of `Service` are
   lyrembed's, copied (its `FakeBus`/`FakeRun` tests too). Calls only start keepbest's page
   (`run_command`: `--no-browser --color never --unvisited-timeout 600`) and open the browser
@@ -195,7 +195,7 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
 ## Commands
 
 ```bash
-python3 -m pytest -q                  # 420 tests, about 2 minutes
+python3 -m pytest -q                  # 422 tests, about 2 minutes
 python3 -m pytest -q -k video         # a subset
 python3 -m pyflakes keepbest tests run.py
 ./run.py ~/Pictures --dry-run         # run from the checkout
