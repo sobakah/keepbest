@@ -6,6 +6,8 @@ All notable changes to keepbest are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-19
+
 ### Added
 
 - **A D-Bus interface** (`io.github.sobakah.keepbest`), so a program inside a Flatpak, such as
