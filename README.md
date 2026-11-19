@@ -27,7 +27,7 @@ With JPEG XL support: `pipx install "keepbest[jxl] @ git+https://github.com/soba
 | Update | *Update* on the page when it says a new version is out (see [Updates](#updates)), or `pipx upgrade keepbest` (new version) or `pipx reinstall keepbest` (latest commit) |
 | Uninstall | `pipx uninstall keepbest` |
 | `keepbest` not found | run `pipx ensurepath` once and open a new terminal |
-| Add it to the app menu (Linux) | `keepbest --install-desktop-entry` (see [The page](#the-page)) |
+| Add it to the app menu (Linux) | `keepbest --install`: the app menu entry (see [The page](#the-page)) and the [D-Bus service](#d-bus) other programs start keepbest with |
 
 The package and the command are both called `keepbest`. Other ways to install or run it are described in [Other ways to run it](#other-ways-to-run-it).
 
@@ -52,9 +52,9 @@ python3 pipx.pyz install pipx && rm pipx.pyz
   toolbox create
   toolbox run sh -c 'sudo dnf install -y gcc-c++ cmake && ~/.local/bin/pipx inject keepbest pillow-jxl-plugin'
   ```
-- **In a toolbox** (or a distrobox) instead, the app menu entry made there starts keepbest in
-  the container (`toolbox run --container NAME …`), and the page, the viewers and the file
-  manager are the host's. media-optimizer and picktag start keepbest or are started by it, so
+- **In a toolbox** (or a distrobox) instead, the app menu entry and the D-Bus service made
+  there (`keepbest --install`) start keepbest in the container (`toolbox run --container NAME
+  …`), and the page, the viewers and the file manager are the host's. media-optimizer and picktag start keepbest or are started by it, so
   run them in the same place.
 
 ## First run
@@ -172,7 +172,7 @@ keepbest shows a page in your browser: it prints a local address and opens it, a
 
 **The overview** (`t`) shows every group, with its kept picture when pictures are on; click one to go there.
 
-**App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere.
+**App menu:** `keepbest --install-desktop-entry` adds keepbest to your desktop's app menu (Linux); it opens the page, and file managers offer *Open with keepbest* for folders. `--remove-desktop-entry` removes it. The entry starts the keepbest that wrote it, so run the command again after installing keepbest elsewhere. `keepbest --install` writes the entry and the [D-Bus service](#d-bus) together.
 
 **One keepbest per folder:** keepbest refuses a folder that another running keepbest works on, or a folder inside or above it, and names that keepbest's process and page.
 
@@ -198,7 +198,10 @@ At every start keepbest looks for a newer release, in the background, so the sta
 | `--no-ignore` | Show pairs marked "not duplicates" again |
 | `-c FILE`, `--config FILE` | Use this config file |
 | `--no-browser` | Only print the page's address, don't open a browser (see [The page](#the-page)) |
+| `--install` | Both of the following, then exit: the app menu entry and the D-Bus service |
 | `--install-desktop-entry`, `--remove-desktop-entry` | Add keepbest to the app menu, or remove it, and exit |
+| `--install-dbus-service`, `--remove-dbus-service` | Let the session bus start keepbest when a program calls it, or undo that, and exit; see [D-Bus](#d-bus) |
+| `--dbus` | Serve the D-Bus interface until idle (what the session bus starts) |
 | `--color {auto,always,never}` | Colours; `auto` respects `NO_COLOR` |
 | `-v`, `-vv`, `--verbose` | More log output on stderr |
 
@@ -249,6 +252,7 @@ Leave `hash_size` at 8. If different pictures get grouped, use `strict` or raise
 | The last update check and `update.log` | `~/.local/state/keepbest/` | the same |
 | "Not duplicates" marks | `.keepbest_ignore.json` in the scanned folder | the same |
 | Running keepbest processes and their folders | `~/.local/state/keepbest/running/` | `running/` in the project folder |
+| Output of the runs started over [D-Bus](#d-bus) (the newest 20) | `~/.local/state/keepbest/service/` | the same |
 
 `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` are respected; on Windows the state folder is `%LOCALAPPDATA%\keepbest`. In the project folder, `config.json`, the log and `sessions/` are ignored by git.
 
@@ -277,6 +281,34 @@ Comparing every pair is the slow part (a group of 300 files has 44 850 pairs), s
 The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. *Choose folders to leave out* (`f`) lists only the folders the groups' files are in: the files in a folder switched off are neither compared nor removed. keepbest remembers the choice (`groups_excluded.json` in the state folder, as absolute paths) for the next groups run. `--exclude DIR` does the same from the command line, for that run only (absolute, or relative to the files' common folder). There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
 
 The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
+
+### D-Bus
+
+```bash
+keepbest --install-dbus-service    # or keepbest --install, with the app menu entry
+```
+
+lets the session bus start keepbest when a program calls it on `io.github.sobakah.keepbest`. That is how a program inside a Flatpak, which can't start host programs, can still use keepbest (it needs `--talk-name=io.github.sobakah.keepbest`). The command writes `~/.local/share/dbus-1/services/io.github.sobakah.keepbest.service`, starting the keepbest that wrote it with `--dbus`; run it again after installing keepbest somewhere else. `--remove-dbus-service` removes it. The service needs the Python package `jeepney`, which pipx installs with keepbest.
+
+The interface (`io.github.sobakah.keepbest1` on `/io/github/sobakah/keepbest`). Paths are byte strings (`ay`), since file names need not be UTF-8:
+
+| Call | What it does |
+|---|---|
+| `GetInfo() → a{sv}` | `Version`, `InterfaceVersion` (1), `GroupsFormat` (the [groups format](#groups-from-picktag), 1), `JournalFile` (the [journal](#the-file-journal); empty when it is off), `DeleteMode` from the config (`trash`, `permanent` or `dry_run`) |
+| `OpenPage(ay folder) → (s run, b opened)` | starts keepbest's page on the folder (empty: the page asks for one) and opens it in your default browser; `opened` is false when no browser could be started. A page already open on that folder is shown again |
+| `RemoveCopies(a(ayaay) scans, a{sv} options) → (s run, b opened)` | one page after the other, each `keepbest FOLDER -r` with its `--exclude` folders (relative to it; `.` its own files). Closing a page at a question ends the rest. Option `DryRun` (`b`) |
+| `CompareGroups(aaay groups, a{sv} options) → (s run, b opened)` | `--groups` with these groups of absolute paths. Options `DryRun` (`b`) and `From` (`s`, the name the page shows) |
+| `ShowPage(s run) → b` | opens a run's page in the browser again, for a lost tab |
+| `Runs() → a(ssay)` | the runs still going: run, kind (`page`, `copies` or `groups`), the folder |
+| `Stop(s run)` | as Ctrl+C: progress is saved |
+| signal `Finished(s run, i exit_code, s log)` | a run ended, with keepbest's [exit code](#command-line-options) (for `RemoveCopies` the last error's) and the file with its output |
+
+Every call only opens keepbest's page: nothing is removed unless you decide it there. There is no call that runs a command, the calls take no other options (no `--auto`, `--permanent` or config file), and the folders keepbest refuses are refused at once, as is a folder another keepbest works on. A page's address never goes over the bus, and its logs leave out its token: the token opens everything the page can do, so keepbest opens the browser itself. A sandboxed program needs to read only `journal.jsonl` and `service/` in the state folder, not all of it (`running/` names the pages' addresses). A page nobody opens ends after ten minutes. Without calls or runs for a minute, the service ends, and the bus starts it again at the next call.
+
+```bash
+gdbus call --session -d io.github.sobakah.keepbest -o /io/github/sobakah/keepbest \
+  -m io.github.sobakah.keepbest1.OpenPage "b'$HOME/Pictures/Holiday'"
+```
 
 ### The file journal
 

@@ -6,6 +6,15 @@ All notable changes to keepbest are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A D-Bus interface** (`io.github.sobakah.keepbest`), so a program inside a Flatpak, such as
+  picktag, can start keepbest: its page on a folder, on the folders with copies one after the
+  other, or on groups of files to compare. Every call only opens the page; you decide there what
+  is removed. `--install-dbus-service` lets the session bus start keepbest when a program calls
+  it, `--remove-dbus-service` undoes that.
+- **`--install`** writes the app menu entry and the D-Bus service in one go.
+
 ## [1.0.2] — 2026-11-14
 
 ### Added

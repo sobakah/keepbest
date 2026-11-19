@@ -52,6 +52,9 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
     # The update check asks a repository that isn't there, never GitHub (tests/test_updates.py makes one).
     monkeypatch.setenv("KEEPBEST_UPDATE_REPO", str(tmp_path / "no-releases"))
+    # No session bus: --install-dbus-service must not tell the real one to reload (tests/test_dbus.py makes one).
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path={tmp_path / 'no-bus'}")
+    monkeypatch.delenv("DBUS_STARTER_ADDRESS", raising=False)
     return tmp_path
 
 

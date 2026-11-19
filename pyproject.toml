@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 dependencies = [
     "Pillow>=10.0",
     "send2trash",
+    "jeepney>=0.8",  # the D-Bus interface (--dbus); without it only that is missing
     "pyreadline3; sys_platform == 'win32'",  # Tab completion and prefilled prompts on Windows
 ]
 keywords = ["duplicates", "images", "photos", "dedupe", "perceptual-hash", "cli"]

@@ -1,8 +1,8 @@
 # keepbest – notes for Claude Code
 
 keepbest finds duplicate pictures and videos in a folder and removes the redundant copies, keeping
-the best one. Python 3.9+, dependencies Pillow and send2trash (optional `pillow-jxl-plugin`;
-ffmpeg/ffprobe for videos). It asks only on its page in the browser (`web.py` and `static/`,
+the best one. Python 3.9+, dependencies Pillow, send2trash and jeepney (D-Bus; optional
+`pillow-jxl-plugin`; ffmpeg/ffprobe for videos). It asks only on its page in the browser (`web.py` and `static/`,
 Preact+htm); `--auto` runs in the terminal without questions. User docs: `README.md`. The file
 journal's contract is picktag's `docs/JOURNAL_SPEC.md`.
 
@@ -16,7 +16,7 @@ CLAUDE.md. Other sessions work in the other repositories: change one only when t
 | Program | What it does | Works with |
 |---|---|---|
 | picktag | Tags and searches pictures, videos and documents (GTK 4, libadwaita) | reads keepbest's and media-optimizer's file journals; starts keepbest for *Find Duplicates* |
-| keepbest | Finds duplicate pictures and videos and keeps the best copy (page in the browser) | hands its tab to media-optimizer; writes a file journal |
+| keepbest | Finds duplicate pictures and videos and keeps the best copy (page in the browser) | hands its tab to media-optimizer; writes a file journal; D-Bus service for picktag |
 | media-optimizer | Converts pictures, GIFs and videos to smaller formats (page in the browser) | started from keepbest; writes a file journal |
 | cdport | Rips CDs, tags them and adds covers and lyrics (page in the browser) | starts lyrembed; D-Bus service for Jewelcase |
 | lyrembed | Finds lyrics, embeds them in music files, romanizes them (page in the browser) | started from cdport; D-Bus service for Jewelcase |
@@ -113,7 +113,8 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
   Further: `session.py` (log, saved sessions, "not duplicates" marks), `config.py` (defaults,
   validation, version), `journal.py`, `front.py` / `terminal.py` / `ui.py` / `web.py` (see
   Conventions), `selfupdate.py`, `viewer.py` (comparison apps for `v`, `show_in_folder`),
-  `handoff.py` (media-optimizer), `desktop.py` (app-menu entry, `Exec=… --web %f`), `container.py`
+  `handoff.py` (media-optimizer), `desktop.py` (app-menu entry, `Exec=… --web %f`),
+  `dbus_service.py` (see below), `container.py`
   (toolbox and distrobox, lyrembed's, unchanged; see the family block), `running.py`
   (the lock: one JSON file per process in `state_dir()/running/`; overlapping folders are refused
   in `resolve_directory` and with `--auto`; does nothing on Windows).
@@ -134,6 +135,18 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
   as `results`. `run_optimizer` starts with `OPTIMIZER_BANNER`, which the page makes a step of its
   own (`stepOf`). The pipe is not read to its end once the child exited (a stray grandchild can't
   block).
+- **`dbus_service.py`** (`--dbus`; `--install-dbus-service`/`--remove-dbus-service`, `--install`
+  = it and the app-menu entry): `io.github.sobakah.keepbest`, activated by a service file, for a
+  caller in a Flatpak (picktag). The bus loop, the service file and the shape of `Service` are
+  lyrembed's, copied (its `FakeBus`/`FakeRun` tests too). Calls only start keepbest's page
+  (`run_command`: `--no-browser --color never --unvisited-timeout 600`) and open the browser
+  themselves: `OpenPage`, `RemoveCopies` (scans in turn, as picktag's `sh -c` script did: 130
+  ends the rest, else the last error's code), `CompareGroups` (writes the `--groups` file into
+  `state_dir()/service/`, removed at the end). Paths are `ay` (`os.fsdecode`; GLib's trailing NUL
+  allowed). Busy: its own runs, then `running.other` (read-only). Each run's output goes to a log
+  in `service/` with page tokens blanked (`redacted`); `Finished(s i s)` names it and waits for
+  the run's browser replies. `Stop` is SIGINT to the run's process group (reaches a
+  media-optimizer started from the page). `web.serve(unvisited=…)` ends a page nobody opened (130).
 - **The page** (everything but `--auto`; `--web` is accepted and does nothing, `--terminal` is an
   error; without `DISPLAY`/`WAYLAND_DISPLAY` only the address is printed):
   - `serve(flow)` runs the flow in the **main thread** (`handoff.py`'s `signal.signal()` needs it);
@@ -182,7 +195,7 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
 ## Commands
 
 ```bash
-python3 -m pytest -q                  # 388 tests, about 2 minutes
+python3 -m pytest -q                  # 420 tests, about 2 minutes
 python3 -m pytest -q -k video         # a subset
 python3 -m pyflakes keepbest tests run.py
 ./run.py ~/Pictures --dry-run         # run from the checkout
@@ -288,6 +301,11 @@ against media-optimizer's parser unless `media_optimizer` is importable.
   (`match` exact/remux/visual, `hard_link`), `renamed` in `rename_kept` (`copy_number`). Those two
   functions are the only places that change media files; a new one needs an event too. A `kept`
   file may be renamed or removed by a later event of the same run, so consumers replay in order.
+- **A D-Bus call never deletes or decides anything**: it only opens the page. No call takes
+  `--auto`, `--permanent`, `--config` or free arguments (options are a fixed list: `DryRun`,
+  `From`); folders `is_protected` refuses are refused before anything starts. The page's address
+  and token never go over the bus or into a log the caller can read: a Flatpak shares the host's
+  127.0.0.1, and the token opens the page's whole API.
 - Don't change the package folder name, the default delete mode (trash) or Enter's meaning without
   asking.
 
@@ -335,7 +353,8 @@ against media-optimizer's parser unless `media_optimizer` is importable.
 ## Testing
 
 - `tests/conftest.py`: autouse isolation (own HOME, XDG folders, trash and `KEEPBEST_STATE_DIR`,
-  no container (`not_in_a_container`; the `toolbox` fixture makes one),
+  no container (`not_in_a_container`; the `toolbox` fixture makes one), no session bus
+  (`DBUS_SESSION_BUS_ADDRESS` points nowhere; `test_dbus.py` starts a private `dbus-daemon`),
   `KEEPBEST_UPDATE_REPO` pointing at a missing repo; `releases` makes one). `library` builds
   picture folders (`photo`, `variant`, `copy_of`). `run_cli(folder, *args, keys=[...])` runs the
   real CLI with `--no-browser` and answers its page over the API, one key per question (a screen

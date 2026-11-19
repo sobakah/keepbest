@@ -1024,12 +1024,19 @@ def _server(web: WebFront, port: int) -> tuple[_Server, bool]:
     return _Server(web, secrets.token_urlsafe(24), port), False
 
 
+# The page's first line: its address, which run_cli and dbus_service read
+# (again after an update on the page restarted keepbest).
+RUNNING_LINE = f"{NAME} is running at {{url}}"
+
+
 def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: bool = True,
-          check_updates: bool = False) -> int:
+          check_updates: bool = False, unvisited: float = 0) -> int:
     """Run *flow* (no arguments, returns an exit code) with the page as its
     front end, in this thread; returns its exit code. With *echo* the
     terminal gets a log of the messages; with *check_updates* the page offers
-    a newer keepbest, and after installing it this process becomes the new one."""
+    a newer keepbest, and after installing it this process becomes the new one.
+    *unvisited*: stop (130) when nobody opened the page for that many seconds
+    (0: wait for ever); dbus_service's pages, whose browser may not have come up."""
     from . import running
 
     web = WebFront(echo=echo)
@@ -1041,7 +1048,7 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
     web.page_url = f"http://127.0.0.1:{server.port}/"  # the cookie is set by then
     running.set_address(url)
     threading.Thread(target=server.serve_forever, name=f"{NAME}-web", daemon=True).start()
-    announce(f"{NAME} is running at {url}")
+    announce(RUNNING_LINE.format(url=url))
     opened = open_browser and container.open_url(url)
     if not opened and not restarted:  # after an update the tab is still open
         announce("Open that address in your browser.")
@@ -1065,9 +1072,13 @@ def serve(flow, open_browser: bool = True, port: int = 0, announce=_say, echo: b
     interrupted = False
     restart = False
     try:
+        began = time.monotonic()
         while not server.visited.wait(0.5):
             if server.stop.is_set():
                 return 0
+            if unvisited and time.monotonic() - began > unvisited:
+                announce(f"Nobody opened the page in {unvisited:.0f} s - stopping.")
+                return 130
         front_mod.use(web)
         try:
             code = flow()

@@ -76,10 +76,22 @@ def build_parser() -> argparse.ArgumentParser:
     page.add_argument("--terminal", action="store_true", help=argparse.SUPPRESS)
     page.add_argument("--no-browser", action="store_true",
                       help="only print the page's address, don't open it (without a display: always)")
-    entry = page.add_mutually_exclusive_group()
-    entry.add_argument("--install-desktop-entry", action="store_true",
-                       help="add keepbest to the app menu (it opens the page) and exit")
-    entry.add_argument("--remove-desktop-entry", action="store_true", help="remove that entry and exit")
+    # For dbus_service's pages: end when nobody opens the page.
+    page.add_argument("--unvisited-timeout", type=float, default=0, metavar="SECONDS", help=argparse.SUPPRESS)
+
+    setup = parser.add_argument_group("app menu and D-Bus (Linux)")
+    install = setup.add_mutually_exclusive_group()
+    install.add_argument("--install", action="store_true",
+                         help="both of the following: --install-desktop-entry and --install-dbus-service")
+    install.add_argument("--install-desktop-entry", action="store_true",
+                         help="add keepbest to the app menu (it opens the page) and exit")
+    install.add_argument("--remove-desktop-entry", action="store_true", help="remove that entry and exit")
+    install.add_argument("--install-dbus-service", action="store_true",
+                         help="let the session bus start this keepbest when a program calls it (picktag, "
+                              "also from a Flatpak), then exit")
+    install.add_argument("--remove-dbus-service", action="store_true", help="undo --install-dbus-service, then exit")
+    install.add_argument("--dbus", action="store_true",
+                         help="serve the D-Bus interface until idle (what the bus starts)")
 
     output = parser.add_argument_group("output")
     output.add_argument("--color", choices=("auto", "always", "never"), help="override colour handling")
@@ -136,9 +148,47 @@ def _desktop_entry(install: bool) -> int:
     return 0
 
 
+def _dbus_service(install: bool) -> int:
+    from . import dbus_service
+
+    try:
+        if install:
+            path, command, unreloaded = dbus_service.install_service_file()
+            ui.success(f"The session bus starts {NAME} for {dbus_service.BUS_NAME}: {path}")
+            ui.info(f"It starts: {' '.join(command)} --dbus")
+            if unreloaded:
+                ui.warn(f"Could not tell the bus to read it ({unreloaded}); it does at the next login.")
+            ui.info(f"Run this again after installing {NAME} elsewhere (pipx, another checkout).")
+        else:
+            removed = dbus_service.remove_service_file()
+            ui.success(f"Removed: {removed}" if removed else "There was no D-Bus service file.")
+    except OSError as exc:
+        ui.error(f"Could not {'write' if install else 'remove'} the D-Bus service file: {exc}")
+        return 2
+    return 0
+
+
+def _install() -> int:
+    """--install: the app-menu entry and the D-Bus service; both are tried."""
+    codes = [_desktop_entry(install=True), _dbus_service(install=True)]
+    return max(codes)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.dbus:
+        # The service starts each run with keepbest's own config; a path or
+        # a mode given with it would be silently ignored.
+        defaults = vars(parser.parse_args([]))
+        given = [key for key, value in vars(args).items()
+                 if key not in ("dbus", "verbose") and value != defaults[key]]
+        if given:
+            parser.error("--dbus takes no other options: it serves the D-Bus interface until idle")
+    if args.unvisited_timeout < 0:
+        parser.error("--unvisited-timeout must be 0 (wait for ever) or a positive number of seconds")
+    if args.unvisited_timeout and args.auto:
+        parser.error("--unvisited-timeout and --auto don't go together: --auto shows no page")
     if args.web and args.auto:
         parser.error("--web and --auto don't go together: --auto asks nothing, so there is no page to show")
     if args.terminal:
@@ -173,8 +223,12 @@ def main(argv: list[str] | None = None) -> int:
         config["strictness"], config["max_pixel_diff"] = args.strictness, None
     ui.apply_color_settings(config["color"])
 
+    if args.install:
+        return _install()
     if args.install_desktop_entry or args.remove_desktop_entry:
         return _desktop_entry(install=args.install_desktop_entry)
+    if args.install_dbus_service or args.remove_dbus_service:
+        return _dbus_service(install=args.install_dbus_service)
 
     for message in moved:
         ui.info(message)
@@ -193,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
         print("  .venv/bin/python run.py /path/to/pictures")
         print(f"Or install {NAME} with pipx, which takes care of this (see the README).")
         return 2
+    if args.dbus:
+        from . import dbus_service
+        return dbus_service.serve()
     settings = {
         "stages": args.stages,
         "recursive": args.recursive,
@@ -216,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         initial = Path(args.path) if args.path else None  # from the app menu: the page asks
         return web.serve(lambda: app.run(initial, config, settings, auto=False, exclude=args.exclude, groups=groups),
                          open_browser=not args.no_browser and graphical_session(),
-                         check_updates=config["check_for_updates"])
+                         check_updates=config["check_for_updates"], unvisited=args.unvisited_timeout)
     update = _UpdateCheck() if config["check_for_updates"] else None
     try:
         code = app.run(Path(args.path or "."), config, settings, auto=args.auto, exclude=args.exclude, groups=groups)

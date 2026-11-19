@@ -48,6 +48,40 @@ def set_address(url: str | None) -> None:
     _address = url
 
 
+def _overlapping(registry: Path, folder: Path) -> dict | None:
+    """(Under the lock.) Another live process's entry whose folder overlaps *folder*;
+    entries of processes that ended are removed on the way."""
+    for path in registry.glob("*.json"):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(entry["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if pid == os.getpid():
+            continue
+        if not _alive(pid):
+            path.unlink(missing_ok=True)
+            continue
+        if _overlaps(folder, Path(entry.get("folder", ""))):
+            return entry
+    return None
+
+
+def other(folder: Path) -> dict | None:
+    """The entry of another process working on a folder that overlaps *folder*,
+    without registering anything (dbus_service asks before it starts a run)."""
+    if fcntl is None:
+        return None
+    registry = _folder()
+    try:
+        registry.mkdir(parents=True, exist_ok=True)
+        with open(registry / ".lock", "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return _overlapping(registry, folder.resolve())
+    except OSError:
+        return None
+
+
 def claim(folder: Path) -> dict | None:
     """Register *folder* for this process (replacing its earlier folder).
     Returns the other process's entry ({pid, folder, address}) when one works on
@@ -61,19 +95,9 @@ def claim(folder: Path) -> dict | None:
         registry.mkdir(parents=True, exist_ok=True)
         with open(registry / ".lock", "a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            for path in registry.glob("*.json"):
-                try:
-                    entry = json.loads(path.read_text(encoding="utf-8"))
-                    pid = int(entry["pid"])
-                except (OSError, ValueError, KeyError, TypeError):
-                    continue
-                if pid == os.getpid():
-                    continue
-                if not _alive(pid):
-                    path.unlink(missing_ok=True)
-                    continue
-                if _overlaps(folder, Path(entry.get("folder", ""))):
-                    return entry
+            entry = _overlapping(registry, folder)
+            if entry is not None:
+                return entry
             own = registry / f"{os.getpid()}.json"
             own.write_text(json.dumps({"pid": os.getpid(), "folder": str(folder), "address": _address}),
                            encoding="utf-8")
