@@ -127,7 +127,9 @@ def load_groups(path: Path) -> tuple[list[list[Path]], str]:
             if (file.name.startswith(".") or file.suffix.lower() not in extensions or file.is_symlink()
                     or not file.is_file() or _in_system_folder(file)):
                 continue
-            files.append(file)
+            # The folder part resolved, as everywhere else in keepbest (the journal's paths,
+            # --exclude, the folder lock): a symlinked folder or Fedora Atomic's /home -> /var/home.
+            files.append(file.parent.resolve() / file.name)
         files = list(dict.fromkeys(files))
         if len(files) >= 2:
             groups.append(files)
@@ -135,14 +137,31 @@ def load_groups(path: Path) -> tuple[list[list[Path]], str]:
     return groups, sender if isinstance(sender, str) and sender else "another program"
 
 
+# Below system folders, but where pictures are: removable drives (/run/media, macOS's
+# /Volumes) and, on Fedora Atomic, the home folders and /mnt (/home -> /var/home, /mnt -> /var/mnt).
+USER_PLACES = ("/run/media", "/var/home", "/var/mnt", "/Volumes")
+
+
+def _is_inside(path: str, folder: str) -> bool:
+    return path == folder or path.startswith(folder.rstrip("/") + "/")
+
+
 def _in_system_folder(path: Path) -> bool:
-    resolved = path.resolve()
-    return any(resolved.as_posix() == f or resolved.as_posix().startswith(f + "/") for f in SYSTEM_FOLDERS)
+    resolved = path.resolve().as_posix()
+    homes = {Path.home().as_posix(), Path.home().resolve().as_posix()}
+    if any(_is_inside(resolved, place) for place in (*USER_PLACES, *homes)):
+        return False
+    return any(_is_inside(resolved, f) for f in SYSTEM_FOLDERS)
 
 
 def groups_folder(groups: list[list[Path]]) -> Path:
     """The folder all files of the groups are in: names in the log and on the page are relative to it."""
     return Path(os.path.commonpath([str(f.parent) for g in groups for f in g]))
+
+
+def renamed_groups(groups: list[list[Path]], renamed: dict[Path, Path]) -> list[list[Path]]:
+    """The groups with the files an earlier stage of a real run renamed under their new names."""
+    return [[renamed.get(f, f) for f in g] for g in groups] if renamed else groups
 
 
 def group_files(settings: dict) -> list[Path]:
@@ -929,8 +948,9 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
             remaining = [f for f in remaining if not is_video(f)]  # visual matching is for images only
             if "3" in stages:
                 if len(remaining) > 1:
+                    hints = renamed_groups(settings["groups"], ctx.renamed) if grouped else None
                     keep_session, groups = find_similar_images(remaining, config, settings["confirm"],
-                                                               stats, rel, ctx, settings.get("groups"))
+                                                               stats, rel, ctx, hints)
                     ctx.groups = groups
                 else:
                     warn("\nNot enough images left for a visual comparison.")
@@ -968,6 +988,9 @@ def run_scan(target: Path, config: dict, settings: dict, index: FolderIndex,
         raise
 
     journal.end(1 if stats.failed else 0, interrupted=False)
+    if grouped and ctx.renamed:   # the next pass (Back to settings) knows the kept files by their new names
+        settings["groups"] = renamed_groups(settings["groups"], ctx.renamed)
+        index.fix(target, list(dict.fromkeys(f for g in settings["groups"] for f in g)))
     note = None
     result = None
     if dry and from_dry is None:
@@ -1095,6 +1118,8 @@ def run(initial: Path | None, base_config: dict, base_settings: dict, auto: bool
                                                  dry_result)
                 real_run = isinstance(outcome, Stats)  # it was carried out
                 choice, freed = (None, outcome.space_saved) if real_run else (outcome, 0)
+                if real_run:
+                    stats = outcome   # the exit code says whether removing failed
 
         if choice is None:
             choice = end_menu(target, run_settings, index, offer_optimizer=real_run, freed=freed)
@@ -1124,6 +1149,7 @@ def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_se
     index.fix(target, list(dict.fromkeys(f for g in groups for f in g)))
     remembered = load_groups_excluded(target)
     excluded = normalize_excluded(target, exclude) if exclude else set(remembered)
+    shown = set(excluded)   # --exclude is for this run only: only a change on the page is remembered
     settings = {**base_settings, "recursive": True, "excluded": excluded, "groups": groups,
                 "groups_from": sender, "groups_base": target}
     if excluded:
@@ -1134,9 +1160,9 @@ def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_se
     config = dict(base_config)
     while True:
         action, _ = start_screen(target, config, settings, index, None)
-        if settings["excluded"] != remembered:
+        if settings["excluded"] != shown:
             save_groups_excluded(target, settings["excluded"], remembered)
-            remembered = set(settings["excluded"])
+            remembered = shown = set(settings["excluded"])
         if config["delete_mode"] == "permanent" and not confirm_permanent():
             continue
         stats, quit_requested, dry_result = run_scan(target, config, settings, index, None)
@@ -1146,7 +1172,10 @@ def run_groups(groups: list[list[Path]], sender: str, base_config: dict, base_se
         if dry_result is not None and dry_result.has_changes and not config.get("_cli_dry_run"):
             outcome = continue_after_dry_run(target, config, base_config, settings, index, None, dry_result,
                                              can_change=False)
-            choice = None if isinstance(outcome, Stats) else outcome
+            if isinstance(outcome, Stats):
+                stats = outcome   # the exit code says whether removing failed
+            else:
+                choice = outcome
         if choice is None:
             choice = end_menu(target, settings, index, offer_optimizer=False, can_change=False)
         if choice != "back":

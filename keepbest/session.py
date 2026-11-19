@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -11,6 +12,11 @@ from pathlib import Path
 
 from .config import NAME, OLD_NAME, project_dir
 from .ui import warn
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
 
 SESSION_VERSION = 2          # 2: dry-run sessions and exact-copy groups
 _READABLE_VERSIONS = (1, 2)
@@ -239,21 +245,39 @@ class IgnoreList:
     def _key(a: tuple, b: tuple) -> tuple:
         return tuple(sorted((a, b)))
 
-    def _load(self) -> None:
-        source = self.path if self.path.exists() or not self._old_path.exists() else self._old_path
+    def _read(self, source: Path) -> dict[tuple, dict]:
+        """The marks in *source*; raises OSError/ValueError (not FileNotFoundError: none then)."""
         try:
             data = json.loads(source.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return
-        except (OSError, ValueError) as exc:
-            warn(f"Could not read {source} ({exc}); marked pairs are ignored this time.")
-            return
+            return {}
+        pairs = {}
         for entry in data.get("pairs", []) if isinstance(data, dict) else []:
             try:
                 a, b = (tuple((f["path"], int(f["size"]), int(f["mtime_ns"]))) for f in entry["files"])
             except (KeyError, TypeError, ValueError):
                 continue
-            self._pairs[self._key(a, b)] = entry
+            pairs[self._key(a, b)] = entry
+        return pairs
+
+    def _load(self) -> None:
+        source = self.path if self.path.exists() or not self._old_path.exists() else self._old_path
+        try:
+            self._pairs.update(self._read(source))
+        except (OSError, ValueError) as exc:
+            warn(f"Could not read {source} ({exc}); marked pairs are ignored this time.")
+
+    @contextlib.contextmanager
+    def _locked(self):
+        """The state folder's file is shared by every --groups run (they may run at once on
+        different folders): its saves take turns. A folder's own file has one keepbest at a time."""
+        if fcntl is None or self._old_path != self.path:
+            yield
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.path.with_name(self.path.name + ".lock"), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
 
     def __len__(self) -> int:
         return len(self._pairs)
@@ -275,15 +299,22 @@ class IgnoreList:
         self._save()
 
     def _save(self) -> None:
-        payload = {
-            "about": f"Image pairs marked 'not duplicates' in {NAME}. Delete this file to see them again.",
-            "version": 1,
-            "pairs": list(self._pairs.values()),
-        }
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=f".{NAME}_ignore-", suffix=".tmp")
-            _write_atomically(fd, tmp, self.path, lambda handle: json.dump(payload, handle, indent=1))
+            with self._locked():
+                # Marks are only ever added: those another keepbest saved meanwhile stay.
+                try:
+                    for key, entry in self._read(self.path).items():
+                        self._pairs.setdefault(key, entry)
+                except ValueError:
+                    pass   # a broken file is replaced, as before
+                payload = {
+                    "about": f"Image pairs marked 'not duplicates' in {NAME}. Delete this file to see them again.",
+                    "version": 1,
+                    "pairs": list(self._pairs.values()),
+                }
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=f".{NAME}_ignore-", suffix=".tmp")
+                _write_atomically(fd, tmp, self.path, lambda handle: json.dump(payload, handle, indent=1))
         except OSError as exc:
             if not self._warned:
                 self._warned = True

@@ -44,6 +44,7 @@ def test_in_a_toolbox_the_page_opens_in_the_hosts_browser(toolbox, monkeypatch):
 def test_in_a_toolbox_viewers_are_the_hosts(toolbox, fake_command, images, tmp_path, monkeypatch):
     """Flatpak and the default viewer aren't in the container: both go through flatpak-spawn."""
     monkeypatch.setattr(viewer, "_flatpak_state", {})
+    (tmp_path / "host" / "usr" / "bin" / "flatpak").touch()
     log = tmp_path / "host.calls"
     fake_command("flatpak-spawn", script=f"printf '%s\\n' \"$*\" >> '{log}'; [ \"$3\" = info ] && exit 0")
     monkeypatch.setenv("PATH", str(tmp_path / "fakebin"))
@@ -58,6 +59,18 @@ def test_in_a_toolbox_viewers_are_the_hosts(toolbox, fake_command, images, tmp_p
         "--host flatpak run --file-forwarding org.gnome.gitlab.YaLTeR.Identity @@ "
         + " ".join(map(str, images)) + " @@",
         *(f"--host xdg-open {p}" for p in images)])
+
+
+def test_in_a_container_on_a_host_without_flatpak_flatpak_is_missing(toolbox, fake_command, images, tmp_path,
+                                                                    monkeypatch, capsys):
+    """`flatpak-spawn --host flatpak info` fails there like a missing app: the host's /usr/bin says which."""
+    monkeypatch.setattr(viewer, "_flatpak_state", {})
+    spawn = fake_command("flatpak-spawn", exit_code=1)
+    monkeypatch.setenv("PATH", str(tmp_path / "fakebin"))
+    viewer.open_image_viewer(images, "identity")
+    out = capsys.readouterr().out
+    assert "Identity needs Flatpak, which is not installed" in out and "flatpak install" not in out
+    assert not any(call[:3] == ["--host", "flatpak", "info"] for call in spawn.calls(wait=0.5))
 
 
 def test_in_a_toolbox_a_media_optimizer_from_the_host_is_named_as_such(toolbox, tmp_path, monkeypatch):

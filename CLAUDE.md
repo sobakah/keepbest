@@ -190,12 +190,18 @@ Program names are written as above (lower case, except Jewelcase). Terms used in
     `coarse_apart`: averaging only lowers a cell's difference; margin ×1.25 + 3); only pictures
     with a pair left are loaded at 512. `FolderIndex.fix(target, files)` makes the folder tree list
     only the groups' files; `settings["excluded"]` filters `group_files`, remembered in
-    `groups_excluded.json`. Marks: `IgnoreList(Path("/"), file=state_dir()/GROUPS_IGNORE_FILE)`.
+    `groups_excluded.json` (only a change on the page: `--exclude` is for one run). Marks:
+    `IgnoreList(Path("/"), file=state_dir()/GROUPS_IGNORE_FILE)`, shared by all `--groups` runs:
+    `_save` merges what is on disk (marks are only added) under a `flock` on `<file>.lock`.
+    `load_groups` resolves each file's folder part, like the journal (`--exclude`, the lock and
+    D-Bus compare real paths); `_in_system_folder` exempts the home folders and `USER_PLACES`
+    (`/run/media`, Atomic's `/var/home` and `/var/mnt`, `/Volumes`) before the prefix test. A real
+    run's renames (`ctx.renamed`) go into the hints and `settings["groups"]` (`renamed_groups`).
 
 ## Commands
 
 ```bash
-python3 -m pytest -q                  # 422 tests, about 2 minutes
+python3 -m pytest -q                  # 435 tests, about 2 minutes
 python3 -m pytest -q -k video         # a subset
 python3 -m pyflakes keepbest tests run.py
 ./run.py ~/Pictures --dry-run         # run from the checkout

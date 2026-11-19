@@ -74,6 +74,7 @@ class RunContext:
         self.ignores = None       # IgnoreList of pairs marked "not duplicates"
         self.planned: dict[Path, Path] = {}   # dry runs: renames a real run would make
         self.dropping: set[Path] = set()      # dry runs: files a real run would remove
+        self.renamed: dict[Path, Path] = {}   # real runs: renames made (old -> new), for --groups
         self.stats: Stats | None = None   # totals of the whole session, saved with it
         self._last_save = 0.0
         self._pending = False     # a throttled save is still due
@@ -257,6 +258,7 @@ def rename_kept(keep: Path, group_paths: list[Path], delete_mode: str, stats: St
     outcome("✎", "Renamed", "ok", f"{rel(keep)} → {target.name}")
     ctx.record("RENAMED", keep, detail=f"new name {target}")
     ctx.journal.renamed(keep, target, "copy_number")
+    ctx.renamed[keep] = target
     stats.renamed += 1
     return target
 

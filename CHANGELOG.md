@@ -16,6 +16,23 @@ All notable changes to keepbest are documented here. The format follows
 - **`--install`** writes the app menu entry and the D-Bus service in one go, **`--uninstall`**
   removes both again (before `pipx uninstall keepbest`).
 
+### Fixed
+
+- **Find Duplicates (`--groups`) left out every file on a removable drive**, and on Fedora
+  Silverblue and other image-based systems every file in the home folder: they were taken for
+  system files.
+- **A `--groups` run removed less than its dry run showed** when the kept file lost its copy
+  number in the first stage: the renamed file was no longer compared with the group's other
+  pictures.
+- After carrying out a dry run, keepbest ended with exit code 0 even when files could not be
+  removed; it is 1 now.
+- `--exclude` with `--groups` was remembered for later runs; it applies to that run only.
+- With `--groups`, an absolute `--exclude` in a folder reached through a symlink was ignored as
+  "not inside".
+- Two `--groups` runs at the same time could lose each other's "not duplicates" marks.
+- In a toolbox or distrobox on a host without Flatpak, a Flatpak comparison app was reported as
+  not installed instead of Flatpak as missing.
+
 ## [1.0.2] — 2026-11-14
 
 ### Added

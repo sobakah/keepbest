@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -207,3 +208,117 @@ def test_groups_count_only_pairs_that_pass_the_pre_check(pairs, run_cli, tmp_pat
     groups = groups_file(tmp_path, [lib / "one/a.png", lib / "two/a.jpg", lib / "one/b.png", lib / "two/b small.jpg"])
     result = run_cli("--groups", groups, "--auto", "--dry-run")
     assert "2 candidate pair(s)" in result.stdout and summary(result)["visual"] == 2
+
+
+# --- review fixes ------------------------------------------------------------------
+def test_files_on_drives_and_in_atomic_homes_are_not_system_files(monkeypatch):
+    for path in ("/run/media/me/Drive/a.jpg", "/var/home/me/Pictures/a.jpg", "/var/mnt/data/a.jpg",
+                 "/Volumes/Drive/a.jpg"):
+        assert not app._in_system_folder(Path(path)), path
+    for path in ("/usr/share/backgrounds/a.jpg", "/var/lib/a.jpg", "/run/user/1000/a.jpg", "/etc/a.jpg"):
+        assert app._in_system_folder(Path(path)), path
+
+
+def test_the_home_folder_is_not_a_system_folder_wherever_it_is(monkeypatch, tmp_path):
+    # Fedora Atomic: the home folder resolves to /var/home/…, below the system folder /var.
+    monkeypatch.setattr(app, "SYSTEM_FOLDERS", app.SYSTEM_FOLDERS | {str(tmp_path)})
+    assert not app._in_system_folder(Path.home() / "Pictures" / "a.jpg")
+    assert app._in_system_folder(tmp_path / "elsewhere" / "a.jpg")
+
+
+@pytest.fixture
+def linked(tmp_path):
+    """~/Pictures is a symlink to the real folder (as /home -> /var/home on Fedora Atomic)."""
+    real = tmp_path / "data" / "Pictures"
+    (real / "old").mkdir(parents=True)
+    link = tmp_path / "home" / "Pictures"
+    link.symlink_to(real)
+    from conftest import Library
+    return Library(real), link
+
+
+def test_groups_through_a_symlinked_folder_work_like_a_folder_run(linked, run_cli, tmp_path):
+    lib, link = linked
+    lib.photo("a.png", 1)
+    lib.copy_of("a.png", "a copy.png")
+    lib.copy_of("a.png", "old/a old.png")
+    groups = groups_file(tmp_path, [link / "a.png", link / "a copy.png", link / "old/a old.png"])
+    result = run_cli("--groups", groups, "--exclude", link / "old", "--auto")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "not inside" not in result.stdout + result.stderr
+    files = lib.files()
+    assert len(files) == 2 and "old/a old.png" in files          # one copy removed, the left-out folder's stays
+
+
+def test_a_renamed_kept_file_is_still_compared_in_stage_3(library, run_cli, tmp_path):
+    library.photo("IMG (1).png", 1)
+    library.copy_of("IMG (1).png", "IMG (2).png")
+    library.variant("IMG (1).png", "IMG small.jpg", pictures.downscaled)
+    groups = groups_file(tmp_path, [library / "IMG (1).png", library / "IMG (2).png", library / "IMG small.jpg"])
+    assert summary(run_cli("--groups", groups, "--auto", "--dry-run"))["visual"] == 1
+    result = run_cli("--groups", groups, "--auto")
+    assert summary(result)["visual"] == 1 and summary(result)["renamed"] == 1   # as the dry run showed
+    assert library.files() == ["IMG.png"]
+
+
+def test_back_to_settings_knows_the_renamed_file(library, run_cli, tmp_path):
+    library.photo("IMG (1).png", 1)
+    library.copy_of("IMG (1).png", "IMG (2).png")
+    library.photo("other.png", 2)
+    groups = groups_file(tmp_path, [library / "IMG (1).png", library / "IMG (2).png", library / "other.png"])
+    result = run_cli("--groups", groups, keys=["", "b", "q"])     # start, back to settings, quit
+    starts = asked(result, "StartScreen")
+    assert library.files() == ["IMG.png", "other.png"]
+    assert [s["inScope"] for s in starts] == [3, 2]
+
+
+def test_exclude_on_the_command_line_is_not_remembered(library, run_cli, tmp_path, isolated):
+    library.photo("one/a.png", 1)
+    library.copy_of("one/a.png", "one/a copy.png")
+    library.copy_of("one/a.png", "two/a.png")
+    groups = groups_file(tmp_path, [library / "one/a.png", library / "one/a copy.png", library / "two/a.png"])
+    result = run_cli("--groups", groups, "--exclude", "two", "--dry-run", keys=["", "q"])
+    assert "Left out: 1 folder(s)." in result.stdout and summary(result)["exact"] == 1
+    assert not (isolated / "state" / app.GROUPS_FOLDERS_FILE).exists()
+    again = run_cli("--groups", groups, "--dry-run", keys=["", "q"])
+    assert "Left out" not in again.stdout and asked(again, "StartScreen")[0]["inScope"] == 3
+
+
+@pytest.fixture
+def locked(library):
+    """A subfolder whose files can't be removed (moving them needs write access)."""
+    folder = library / "locked"
+    folder.mkdir(parents=True)
+    yield folder
+    folder.chmod(0o755)
+
+
+def test_a_carried_out_dry_run_that_failed_to_remove_ends_with_1(library, run_cli, locked, tmp_path):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "locked/a copy.png")
+    locked.chmod(0o555)
+    groups = groups_file(tmp_path, [library / "a.png", library / "locked/a copy.png"])
+    grouped = run_cli("--groups", groups, keys=["4", "", "", "y", "q"])   # dry run, start, carry out, yes, quit
+    assert summary(grouped)["failed"] == 1 and grouped.returncode == 1
+
+
+def test_a_carried_out_dry_run_of_a_folder_that_failed_to_remove_ends_with_1(library, run_cli, locked):
+    library.photo("a.png", 1)
+    library.copy_of("a.png", "locked/a copy.png")
+    locked.chmod(0o555)
+    folder = run_cli(library.path, "-r", keys=["4", "", "", "y", "q"])
+    assert summary(folder)["failed"] == 1 and folder.returncode == 1
+
+
+def test_two_groups_runs_keep_each_others_marks(tmp_path):
+    from keepbest.session import IgnoreList
+    shared = tmp_path / "state" / app.GROUPS_IGNORE_FILE
+    first, second = IgnoreList(Path("/"), file=shared), IgnoreList(Path("/"), file=shared)   # both loaded empty
+
+    def meta(name):
+        return {"path": f"/pics/{name}", "size": 1, "mtime_ns": 2}
+    first.add(meta("a.jpg"), meta("b.jpg"))
+    second.add(meta("c.jpg"), meta("d.jpg"))
+    again = IgnoreList(Path("/"), file=shared)
+    assert again.contains(meta("a.jpg"), meta("b.jpg")) and again.contains(meta("c.jpg"), meta("d.jpg"))
+    assert len(json.loads(shared.read_text())["pairs"]) == 2

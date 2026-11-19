@@ -25,7 +25,10 @@ _flatpak_state: dict[str, bool | None] = {}
 def _flatpak_installed(app_id: str) -> bool | None:
     """True/False whether the Flatpak app is installed; None if Flatpak itself is missing."""
     if app_id not in _flatpak_state:
-        if shutil.which("flatpak") is None and container.container() is None:
+        inside = container.container() is not None
+        # In a container Flatpak is the host's: there, a missing flatpak makes
+        # `flatpak-spawn --host flatpak info` fail like a missing app would.
+        if (shutil.which("flatpak") is None and not inside) or (inside and container._host_program("flatpak") == "flatpak"):
             _flatpak_state[app_id] = None
         else:
             try:

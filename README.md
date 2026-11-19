@@ -281,7 +281,7 @@ Comparing every pair is the slow part (a group of 300 files has 44 850 pairs), s
 
 The page has no folder to change. Names are shown relative to the folder all files are in, and no other keepbest run may work there meanwhile. *Choose folders to leave out* (`f`) lists only the folders the groups' files are in: the files in a folder switched off are neither compared nor removed. keepbest remembers the choice (`groups_excluded.json` in the state folder, as absolute paths) for the next groups run. `--exclude DIR` does the same from the command line, for that run only (absolute, or relative to the files' common folder). There are no saved sessions. Pairs marked "not duplicates" are kept in `groups_ignore.json` in the state folder, by their full paths, not in a picture folder.
 
-The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out, and so are groups with fewer than two files left.
+The file is JSON: `{"v": 1, "from": "picktag", "groups": [["/abs/a.jpg", "/abs/b.png"], …]}`. Paths must be absolute; a name that isn't UTF-8 is written as `\udcXX`, as in the journal. Symlinks, hidden files, files of other kinds and files in system folders are left out (the home folder and removable drives are not system folders, also where they are below `/var` or `/run`), and so are groups with fewer than two files left. A folder reached through a symlink counts by its real path, as in a folder run.
 
 ### D-Bus
 
